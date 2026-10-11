@@ -193,7 +193,7 @@ fun Throwable.toApiMessage(): String = when (this) {
     }
 
     is java.io.IOException ->
-        "连不上服务器：请检查网络，或确认服务器已开机、地址填写正确"
+        "连接服务器失败，请检查网络或稍后再试"
     else -> {
         val detail = if (message.isNullOrBlank()) this::class.java.simpleName else message
         "网络请求失败：$detail"
