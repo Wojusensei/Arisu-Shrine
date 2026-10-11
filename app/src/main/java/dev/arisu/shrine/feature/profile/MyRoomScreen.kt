@@ -251,11 +251,16 @@ fun MyRoomScreen(
                 onNote = { note = it },
                 achievements = achievements,
                 onToggleActiveAvatar = { on ->
+
+                    val before = me
+                    me = before?.copy(activeAvatarEnabled = on)
                     scope.launch {
                         try {
                             Shrine.updateMe(dev.arisu.shrine.data.remote.ProfilePatchReq(activeAvatarEnabled = on))
                             load()
                         } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            me = before
                             note = e.toApiMessage()
                         }
                     }
