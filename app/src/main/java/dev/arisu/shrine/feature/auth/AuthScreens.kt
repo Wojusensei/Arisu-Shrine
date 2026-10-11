@@ -71,8 +71,6 @@ import dev.arisu.shrine.core.design.VermilionButton
 import dev.arisu.shrine.core.design.InkMuted
 import dev.arisu.shrine.core.design.InkTitle
 import dev.arisu.shrine.core.design.Vermilion
-import dev.arisu.shrine.BuildConfig
-import dev.arisu.shrine.data.remote.Api
 import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
 import kotlinx.coroutines.launch
@@ -120,8 +118,6 @@ fun RegisterScreen(
         Spacer(Modifier.height(30.dp))
 
         AuthFormCard {
-            ServerAddressRow()
-
             AuthFieldLabel("昵称")
             ArisuTextField(
                 value = nickname,
@@ -354,8 +350,6 @@ fun LoginScreen(
         }
 
         AuthFormCard {
-            ServerAddressRow()
-
             AuthFieldLabel("邮箱")
             ArisuTextField(
                 value = email,
@@ -620,80 +614,6 @@ fun ForgotPasswordScreen(
             action = "去登录",
             onClick = onBack,
         )
-    }
-}
-
-@Composable
-private fun ServerAddressRow() {
-    if (!BuildConfig.DEBUG) return
-    var expanded by remember { mutableStateOf(false) }
-
-    val saved by Shrine.baseUrl.collectAsState()
-
-    val effective = saved.ifEmpty { Api.DEFAULT_BASE_URL }
-    var value by rememberSaveable { mutableStateOf(saved) }
-    var saving by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
-
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .clickable { expanded = !expanded }
-                .padding(horizontal = 2.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                text = "服务器",
-                style = MaterialTheme.typography.labelMedium,
-                color = InkMuted,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = effective.ifEmpty { "未设置（点击填写）" },
-                style = MaterialTheme.typography.labelSmall,
-                color = if (effective.isEmpty()) Vermilion else InkMuted,
-                maxLines = 1,
-            )
-        }
-        AnimatedVisibility(visible = expanded) {
-            Column {
-                ArisuTextField(
-                    value = value,
-                    onValueChange = { value = it },
-                    placeholder = "http://192.168.1.100:8080",
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                )
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    text = "保存后即可注册登录。手机需与服务器在同一网络。",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = InkMuted,
-                )
-                Spacer(Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        text = if (saving) "保存中…" else "保存",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Vermilion,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable {
-                                scope.launch {
-                                    saving = true
-                                    Shrine.saveBaseUrl(value)
-                                    saving = false
-                                    expanded = false
-                                }
-                            }
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(10.dp))
     }
 }
 
