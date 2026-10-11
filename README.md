@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="assets/logo_white.png" width="200" alt="有栖神社">
+</div>
+
 # ⛩️ 有栖神社_Arisu Shrine
 
 建造于人间之里外的飘渺存在 —— 高自由度论坛，由 *东方有栖神社开发组* 研制
