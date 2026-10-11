@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo_white.png" width="200" alt="有栖神社">
+  <img src="assets/logo_white.png" width="280" alt="有栖神社">
   <h1>⛩️ 有栖神社_Arisu Shrine ⛩️</h1>
 </div>
 
