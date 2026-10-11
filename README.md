@@ -2,16 +2,16 @@
 
 建造于人间之里外的飘渺存在——由 *东方有栖神社开发组* 研制
 - 用户可加入官方 QQ 用户交流群：`1126676443`
-- 有意向加入开发组 *东方有栖神社* 可加入官方 QQ 用户交流群后添加管理员为好友进行申请，审核通过可入开发者群
+- 有意向加入开发组 *东方有栖神社* 可加入官方 QQ 用户交流群后添加管理员为好友进行申请，审核通过可入开发者群，参与游戏研发或者日常讨论均可
 
 # ⚙️ 开发
 
 ## 仓库结构
 
 ```
-app/          Android 客户端（Kotlin + Jetpack Compose）
-server/       服务端（Go + Gin + PostgreSQL + Redis）
-web-preview/  网页端设计原型（静态 HTML）
+app/          Kotlin and Jetpack Compose
+server/       Go plus Gin and PostgreSQL and Redis
+web-preview/  HTML
 ```
 
 ## 客户端构建
