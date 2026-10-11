@@ -1,0 +1,7 @@
+uploads/
+
+/arisu
+.jwt-secret
+*.log
+.env
+backup/

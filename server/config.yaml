@@ -1,0 +1,42 @@
+addr: ":8080"
+
+dev_mode: false
+base_url: "http://127.0.0.1:8080"
+
+trusted_proxies: []
+
+db:
+  dsn: "postgres://arisu:arisu@127.0.0.1:5432/arisu?sslmode=disable"
+
+redis:
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 0
+
+jwt:
+
+  secret: "change-me-to-a-long-random-string-please"
+  access_ttl: 24h
+  refresh_ttl: 720h
+
+smtp:
+
+  host: ""
+  port: 465
+  username: ""
+  password: ""
+  from: ""
+
+upload:
+  dir: "uploads"
+  max_bytes: 10485760
+
+limits:
+  code_per_email_per_day: 10
+  code_per_ip_per_day: 30
+  post_interval: 30s
+  comment_interval: 8s
+  newbie_post_interval: 120s
+  staff_apply_cooldown: 168h
+  deactivate_cooldown: 24h
+  hot_author_up_threshold: 20

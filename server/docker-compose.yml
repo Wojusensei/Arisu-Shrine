@@ -1,0 +1,55 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: arisu
+      POSTGRES_PASSWORD: arisu
+      POSTGRES_DB: arisu
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arisu"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  arisu:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - uploads:/app/uploads
+    environment:
+
+      ARISU_DB_DSN: "postgres://arisu:arisu@postgres:5432/arisu?sslmode=disable"
+      ARISU_REDIS_ADDR: "redis:6379"
+
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:

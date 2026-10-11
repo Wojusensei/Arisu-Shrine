@@ -1,0 +1,100 @@
+name: arisu-prod
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: arisu
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?缺 POSTGRES_PASSWORD，用 scripts/init_server_env.sh 生成 .env}
+      POSTGRES_DB: arisu
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U arisu"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    logging: &rotate
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  redis:
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?缺 REDIS_PASSWORD，用 scripts/init_server_env.sh 生成 .env}
+    command: /bin/sh -c 'exec redis-server --requirepass "$$REDIS_PASSWORD"'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    logging: *rotate
+
+  arisu:
+    build: .
+    environment:
+      ARISU_JWT_SECRET: ${JWT_SECRET:?缺 JWT_SECRET，用 scripts/init_server_env.sh 生成 .env}
+      ARISU_DB_DSN: postgres://arisu:${POSTGRES_PASSWORD}@postgres:5432/arisu?sslmode=disable
+      ARISU_REDIS_ADDR: redis:6379
+      ARISU_REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+      ARISU_DEV_MODE: "false"
+      ARISU_BASE_URL: https://${DOMAIN:?缺 DOMAIN，用 scripts/init_server_env.sh 生成 .env}
+
+      ARISU_TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12}
+
+      ARISU_SMTP_HOST: ${ARISU_SMTP_HOST:-}
+      ARISU_SMTP_PORT: ${ARISU_SMTP_PORT:-465}
+      ARISU_SMTP_USERNAME: ${ARISU_SMTP_USERNAME:-}
+      ARISU_SMTP_PASSWORD: ${ARISU_SMTP_PASSWORD:-}
+      ARISU_SMTP_FROM: ${ARISU_SMTP_FROM:-}
+      TZ: Asia/Shanghai
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+
+      - ./config.yaml:/app/config.yaml:ro
+      - uploads:/app/uploads
+    healthcheck:
+
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/health | grep -q '\"ok\":true'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    stop_grace_period: 20s
+    restart: unless-stopped
+    logging: *rotate
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?缺 DOMAIN，用 scripts/init_server_env.sh 生成 .env}
+      ACME_EMAIL: ${ACME_EMAIL:?缺 ACME_EMAIL（Let's Encrypt 通知邮箱），用 scripts/init_server_env.sh 生成 .env}
+    volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      arisu:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *rotate
+
+volumes:
+  pgdata:
+  redisdata:
+  uploads:
+  caddydata:
+  caddyconfig:
