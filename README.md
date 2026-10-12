@@ -10,7 +10,7 @@
 > **当前版本**：稳定版 version 1.0.1.0
 
 ## ⭐️ STAR
-[![Star History Chart](https://api.star-history.com/svg?repos=Wojusensei/GitSync&type=date&legend=top-left)](https://www.star-history.com/#Wojusensei/Gitsync&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=Wojusensei/Arisu-Shrine&type=date&legend=top-left)](https://www.star-history.com/#Wojusensei/Arisu-Shrine&type=date&legend=top-left)
 
 ## 板块
 - 承载着一些活动区域
