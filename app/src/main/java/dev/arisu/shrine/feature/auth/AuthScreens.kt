@@ -252,6 +252,7 @@ fun RegisterScreen(
                 }
             },
             enabled = canSubmit,
+            busy = busy,
         )
 
         Spacer(Modifier.height(20.dp))
@@ -413,6 +414,7 @@ fun LoginScreen(
                 }
             },
             enabled = isEmail(email) && password.isNotEmpty() && !busy,
+            busy = busy,
         )
 
         Spacer(Modifier.height(20.dp))
@@ -605,6 +607,7 @@ fun ForgotPasswordScreen(
                 }
             },
             enabled = canSubmit || done,
+            busy = busy,
         )
 
         Spacer(Modifier.height(20.dp))

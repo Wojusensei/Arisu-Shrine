@@ -16,8 +16,8 @@ android {
         applicationId = "dev.arisu.shrine"
         minSdk = 26
         targetSdk = 35
-        versionCode = 31
-        versionName = "1.0.0.2"
+        versionCode = 32
+        versionName = "1.0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }

@@ -481,11 +481,17 @@ object Shrine {
             apiCall { Api.service.comments(postKey(postNo)) }.items.map { it.toComment() }
         }
 
-    suspend fun addComment(postNo: String, content: String, parentId: String? = null, replyToUserId: String? = null): Comment =
+    suspend fun addComment(
+        postNo: String,
+        content: String,
+        parentId: String? = null,
+        replyToUserId: String? = null,
+        imageUrl: String? = null,
+    ): Comment =
         apiCall {
             Api.service.addComment(
                 postKey(postNo),
-                CommentReq(content, parentId?.toLongOrNull(), replyToUserId?.let { userKey(it) }),
+                CommentReq(content, parentId?.toLongOrNull(), replyToUserId?.let { userKey(it) }, imageUrl),
             )
         }.toComment()
 
@@ -1031,6 +1037,7 @@ private fun CommentDto.toComment(): Comment = Comment(
     authorRole = author.role.toRole() ?: Role.MEMBER,
     authorAvatar = author.avatar.ifEmpty { null },
     content = content,
+    imageUrl = imageUrl.ifEmpty { null },
     createdAt = TimeFmt.epoch(createdAt),
     likeCount = likeCount.toInt(),
     liked = liked,

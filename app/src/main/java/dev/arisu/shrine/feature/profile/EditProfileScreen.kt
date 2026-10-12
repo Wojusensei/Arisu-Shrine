@@ -120,6 +120,10 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
 
     var email by rememberSaveable { mutableStateOf(meState.email) }
 
+    var fixedAvatarDraft by rememberSaveable { mutableStateOf(meState.fixedAvatarUrl.orEmpty()) }
+    var activeAvatarDraft by rememberSaveable { mutableStateOf(meState.activeAvatarUrl.orEmpty()) }
+    var activeAvatarEnabledDraft by rememberSaveable { mutableStateOf(meState.activeAvatarEnabled) }
+
     fun uploadAvatar(uri: Uri, target: String) {
         if (avatarBusy) return
         avatarBusy = true
@@ -175,9 +179,9 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     }
                 }
                 if (target == TARGET_FIXED) {
-                    Shrine.updateMe(ProfilePatchReq(fixedAvatarUrl = url))
+                    fixedAvatarDraft = url
                 } else {
-                    Shrine.updateMe(ProfilePatchReq(activeAvatarUrl = url))
+                    activeAvatarDraft = url
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
@@ -219,9 +223,9 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 try {
                     val url = Shrine.uploadImage(file)
                     if (target == TARGET_FIXED) {
-                        Shrine.updateMe(ProfilePatchReq(fixedAvatarUrl = url))
+                        fixedAvatarDraft = url
                     } else {
-                        Shrine.updateMe(ProfilePatchReq(activeAvatarUrl = url))
+                        activeAvatarDraft = url
                     }
                 } catch (e: Exception) {
                     error = e.toApiMessage()
@@ -266,7 +270,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     AvatarNavRow(
                         seed = meState.fixedAvatarSeed,
                         name = meState.nickname,
-                        url = meState.fixedAvatarUrl,
+                        url = fixedAvatarDraft.ifEmpty { null },
                         title = "固定头像",
                         subtitle = "点击更换固定头像",
                         onClick = { pickerTarget = TARGET_FIXED },
@@ -275,7 +279,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     AvatarNavRow(
                         seed = meState.fixedAvatarSeed,
                         name = meState.nickname,
-                        url = meState.activeAvatarUrl,
+                        url = activeAvatarDraft.ifEmpty { null },
                         title = "活跃头像",
                         subtitle = "点击更换活跃头像",
                         onClick = { pickerTarget = TARGET_ACTIVE },
@@ -283,19 +287,12 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     HairlineDivider(startIndent = 18.dp)
                     SettingSwitchRow(
                         title = "启用活跃头像",
-                        checked = meState.activeAvatarEnabled,
-                        onCheckedChange = { on ->
-                            scope.launch {
-                                try {
-                                    Shrine.updateMe(ProfilePatchReq(activeAvatarEnabled = on))
-                                } catch (e: Exception) {
-                                    error = e.toApiMessage()
-                                }
-                            }
-                        },
+                        checked = activeAvatarEnabledDraft,
+
+                        onCheckedChange = { on -> activeAvatarEnabledDraft = on },
                         showDivider = false,
                     )
-                    if (!meState.activeAvatarEnabled) {
+                    if (!activeAvatarEnabledDraft) {
                         Text(
                             text = "关闭后所有地方将显示固定头像",
                             style = MaterialTheme.typography.labelSmall,
@@ -499,6 +496,9 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                                         blogUrl = blogUrl.trim(),
                                         customMarkdown = customMarkdown,
                                         customCss = customCss,
+                                        fixedAvatarUrl = fixedAvatarDraft,
+                                        activeAvatarUrl = activeAvatarDraft,
+                                        activeAvatarEnabled = activeAvatarEnabledDraft,
                                     )
                                 )
                                 onBack()

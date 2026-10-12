@@ -102,10 +102,12 @@ fun NoticeDetailScreen(
 
     LaunchedEffect(notice?.id) {
 
-        notice?.let {
-            if (!it.read) {
-                val ok = runCatching { Shrine.markRead(it.id) }.isSuccess
-                if (ok) onChanged()
+        notice?.let { n ->
+            val ok = runCatching { Shrine.markRead(n.id) }.isSuccess
+            if (ok) {
+                notice = n.copy(read = true)
+
+                onChanged()
             }
         }
     }
@@ -271,6 +273,9 @@ fun NoticeDetailScreen(
                                 onValueChange = { if (it.length <= 2000) reply = it },
                                 placeholder = "回复这篇帖子…",
                                 modifier = Modifier.weight(1f),
+
+                                singleLine = false,
+                                maxLines = 5,
                             )
                             Spacer(Modifier.width(8.dp))
                             IconButton(

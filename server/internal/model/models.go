@@ -98,10 +98,12 @@ type Comment struct {
 	ReplyToUser *UserBrief `json:"reply_to_user"`
 	Author      UserBrief  `json:"author"`
 	Content     string     `json:"content"`
-	LikeCount   int64      `json:"like_count"`
-	Liked       bool       `json:"liked"`
-	Mine        bool       `json:"mine"`
-	CreatedAt   int64      `json:"created_at"`
+
+	ImageURL  string `json:"image_url"`
+	LikeCount int64  `json:"like_count"`
+	Liked     bool   `json:"liked"`
+	Mine      bool   `json:"mine"`
+	CreatedAt int64  `json:"created_at"`
 }
 
 type Ema struct {

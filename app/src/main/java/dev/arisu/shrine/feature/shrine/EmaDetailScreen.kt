@@ -525,19 +525,25 @@ private fun EmaReplyRow(
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = reply.authorName,
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .clickable { onOpenUser(reply.authorId) },
-                )
-                Spacer(Modifier.width(5.dp))
-                RoleTag(role = reply.authorRole)
-                Spacer(Modifier.weight(1f))
+
+                Row(
+                    Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = reply.authorName,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f, fill = false)
+                            .clickable { onOpenUser(reply.authorId) },
+                    )
+                    Spacer(Modifier.width(5.dp))
+                    RoleTag(role = reply.authorRole)
+                }
+                Spacer(Modifier.width(10.dp))
                 Text(
                     text = reply.createdAt,
                     style = MaterialTheme.typography.labelSmall,
@@ -612,6 +618,9 @@ private fun ReplyComposer(
             placeholder = "写下您的回复…",
             containerColor = NeuInset,
             modifier = Modifier.weight(1f),
+
+            singleLine = false,
+            maxLines = 5,
         )
 
         Spacer(Modifier.width(8.dp))

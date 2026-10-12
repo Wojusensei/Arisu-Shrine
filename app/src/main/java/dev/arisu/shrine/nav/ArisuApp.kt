@@ -443,9 +443,11 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
                             route.startsWith("user/") -> navController.navigate(route) { launchSingleTop = true }
                             route == "staff" -> navController.navigate(Routes.SHRINE + "?tab=1") { launchSingleTop = true }
                             route == "changelog" -> navController.navigate(Routes.SHRINE + "?tab=2") { launchSingleTop = true }
-                            route == "reports" -> navController.navigate(Routes.REPORTS) { launchSingleTop = true }
+                            route == "reports" -> navController.navigate(Routes.reports()) { launchSingleTop = true }
 
-                            route.startsWith("report/") -> navController.navigate(Routes.REPORTS) { launchSingleTop = true }
+                            route.startsWith("report/") -> navController.navigate(
+                                Routes.reports(route.removePrefix("report/"))
+                            ) { launchSingleTop = true }
                         }
                     }
                 },
@@ -457,8 +459,12 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
                 },
             )
         }
-        composable(Routes.REPORTS) {
+        composable(
+            route = Routes.REPORTS,
+            arguments = listOf(navArgument("focus") { type = NavType.StringType; defaultValue = "" }),
+        ) { entry ->
             ReportsScreen(
+                focusReportId = entry.arguments?.getString("focus").orEmpty(),
                 onBack = { navController.popBackStack() },
                 onOpenPost = { navController.navigate(Routes.postDetail(it)) { launchSingleTop = true } },
                 onOpenEma = { navController.navigate(Routes.emaDetail(it)) { launchSingleTop = true } },

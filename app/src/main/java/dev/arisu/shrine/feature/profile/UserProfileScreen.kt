@@ -53,6 +53,7 @@ import dev.arisu.shrine.core.components.ToriiWatermark
 import dev.arisu.shrine.core.components.ArisuPrimaryButton
 import dev.arisu.shrine.core.components.ArisuTextField
 import dev.arisu.shrine.core.components.ArisuTopBar
+import dev.arisu.shrine.core.components.HeatmapCard
 import dev.arisu.shrine.core.components.NeuSurface
 import dev.arisu.shrine.core.components.PillTabs
 import dev.arisu.shrine.core.components.PostCard
@@ -273,7 +274,16 @@ fun UserProfileScreen(
             Spacer(Modifier.height(12.dp))
 
             SectionLabel(text = "参拜热度", modifier = Modifier.padding(horizontal = 16.dp))
-            HeatmapCard(tiles = tiles)
+            HeatmapCard(
+                tiles = tiles,
+                header = {
+                    Text(
+                        text = "活跃度按当日在线、发帖与评论加权累计",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = InkMuted,
+                    )
+                },
+            )
 
             Spacer(Modifier.height(12.dp))
 
@@ -623,128 +633,6 @@ private fun StatsCard(user: User, isSelf: Boolean, onOpenFollowList: (String) ->
                 label = "总在线小时数",
                 modifier = Modifier.weight(1f),
             )
-    }
-}
-
-@Composable
-private fun HeatmapCard(tiles: List<TileDay>) {
-    val columns = tiles.chunked(7)
-    val scroll = rememberScrollState()
-
-    LaunchedEffect(scroll, columns.size) {
-        snapshotFlow { scroll.maxValue }.collect { max ->
-            if (max > 0) scroll.scrollTo(max)
-        }
-    }
-
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .padding(14.dp),
-    ) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = "活跃度按当日在线、发帖与评论加权累计",
-                style = MaterialTheme.typography.labelSmall,
-                color = InkMuted,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(6.dp))
-            TileLegend()
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        Row(Modifier.fillMaxWidth()) {
-            WeekdayLabels()
-            Spacer(Modifier.width(5.dp))
-            Row(
-                Modifier
-                    .weight(1f)
-                    .horizontalScroll(scroll),
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-            ) {
-                columns.forEach { week ->
-                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                        week.forEach { day -> TileSquare(day.level) }
-                        repeat(7 - week.size) { TileSquare(0) }
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(10.dp))
-
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Spacer(Modifier.weight(1f))
-            Text(
-                text = "今天",
-                style = MaterialTheme.typography.labelSmall,
-                color = Vermilion,
-                fontWeight = FontWeight.SemiBold,
-            )
-        }
-    }
-}
-
-@Composable
-private fun WeekdayLabels() {
-    val labels = listOf("周一", "", "周三", "", "周五", "", "")
-    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-        labels.forEach { label ->
-            Box(
-                Modifier
-                    .width(22.dp)
-                    .height(10.dp),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                if (label.isNotEmpty()) {
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontSize = 8.sp,
-                            lineHeight = 10.sp,
-                        ),
-                        color = InkMuted,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun TileSquare(level: Int) {
-    Box(
-        Modifier
-            .size(10.dp)
-            .clip(RoundedCornerShape(2.dp))
-            .background(tileColor(level))
-    )
-}
-
-private fun tileColor(level: Int): Color = heatColor(level)
-
-@Composable
-private fun TileLegend() {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            text = "少",
-            style = MaterialTheme.typography.labelSmall,
-            color = InkMuted,
-        )
-        Spacer(Modifier.width(4.dp))
-        for (level in 0..4) {
-            TileSquare(level)
-            Spacer(Modifier.width(3.dp))
-        }
-        Text(
-            text = "多",
-            style = MaterialTheme.typography.labelSmall,
-            color = InkMuted,
-        )
     }
 }
 

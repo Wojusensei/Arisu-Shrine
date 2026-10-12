@@ -161,6 +161,8 @@ data class Comment(
     val authorRole: Role = Role.MEMBER,
     val authorAvatar: String? = null,
     val content: String,
+
+    val imageUrl: String? = null,
     val createdAt: String,
     val likeCount: Int = 0,
     val liked: Boolean = false,

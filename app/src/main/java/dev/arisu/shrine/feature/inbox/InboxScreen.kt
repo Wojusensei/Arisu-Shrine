@@ -271,7 +271,7 @@ fun InboxScreen(
                                             Shrine.markRead(notice.id); true
                                         } catch (e: Exception) {
                                             if (e is kotlinx.coroutines.CancellationException) throw e
-                                            false
+                                            bar = e.toApiMessage(); false
                                         }
                                         if (ok) {
                                             notices = notices.map {

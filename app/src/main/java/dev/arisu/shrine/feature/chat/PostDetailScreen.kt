@@ -18,10 +18,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -180,6 +182,9 @@ fun PostDetailScreen(
 
     var draft by rememberSaveable { mutableStateOf("") }
     var replyTo by rememberSaveable(stateSaver = ReplySaver) { mutableStateOf<Comment?>(null) }
+
+    var draftImage by rememberSaveable { mutableStateOf<String?>(null) }
+    var uploadingImage by remember { mutableStateOf(false) }
     var newCollection by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var showMention by remember { mutableStateOf(false) }
@@ -355,7 +360,10 @@ fun PostDetailScreen(
                             start = 16.dp,
                             end = 16.dp,
                             top = 18.dp,
-                            bottom = if (replyingTo != null) 182.dp else 122.dp,
+
+                            bottom = 122.dp +
+                                (if (replyingTo != null) 60.dp else 0.dp) +
+                                (if (draftImage != null) 68.dp else 0.dp),
                         ),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
@@ -469,6 +477,7 @@ fun PostDetailScreen(
                                         reportTargetComment = comment
                                         reporting = true
                                     },
+                                    onOpenImage = { previewUrl = it },
                                 )
                             }
                             item { ShrineListEnd(text = "已经到底了 · 共 ${comments.size} 条评论") }
@@ -494,6 +503,8 @@ fun PostDetailScreen(
                         }
                         CommentInputBar(
                             draft = draft,
+                            draftImage = draftImage,
+                            uploading = uploadingImage,
                             onDraftChange = { new ->
 
                                 if (new.length == draft.length + 1 && new.endsWith("@")) showMention = true
@@ -501,9 +512,23 @@ fun PostDetailScreen(
                                 if (new.length <= 2000) draft = new
                             },
                             onEmoji = { showEmoji = true },
+                            onPickImage = pickImage@{ uri ->
+                                if (uploadingImage) return@pickImage
+                                uploadingImage = true
+                                scope.launch {
+                                    try {
+                                        draftImage = Shrine.uploadImageFromUri(context, uri)
+                                    } catch (e: Exception) {
+                                        if (e is kotlinx.coroutines.CancellationException) throw e
+                                        errorMsg = e.toApiMessage()
+                                    }
+                                    uploadingImage = false
+                                }
+                            },
+                            onRemoveImage = { draftImage = null },
                             onSend = {
                                 val text = draft.trim()
-                                if (text.isNotEmpty() && !sending) {
+                                if (text.isNotEmpty() && !sending && !uploadingImage) {
                                     sending = true
                                     scope.launch {
                                         try {
@@ -511,9 +536,11 @@ fun PostDetailScreen(
                                                 postId, text,
                                                 parentId = replyTo?.id,
                                                 replyToUserId = replyTo?.authorId,
+                                                imageUrl = draftImage?.takeIf { it.isNotBlank() },
                                             )
 
                                             draft = ""
+                                            draftImage = null
                                             replyTo = null
                                             comments = comments + created
                                             post = post?.copy(commentCount = comments.size)
@@ -1108,6 +1135,7 @@ private fun CommentItem(
     onDelete: () -> Unit,
     onCopy: () -> Unit,
     onReport: () -> Unit,
+    onOpenImage: (String) -> Unit,
 ) {
     val nested = comment.parentId != null
     val canDelete = comment.mine || canModerate
@@ -1139,19 +1167,25 @@ private fun CommentItem(
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = comment.authorName,
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .clickable { onOpenUser(comment.authorId) },
-                    )
-                    Spacer(Modifier.width(5.dp))
-                    RoleTag(role = comment.authorRole)
-                    Spacer(Modifier.weight(1f))
+
+                    Row(
+                        Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = comment.authorName,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .clickable { onOpenUser(comment.authorId) },
+                        )
+                        Spacer(Modifier.width(5.dp))
+                        RoleTag(role = comment.authorRole)
+                    }
+                    Spacer(Modifier.width(10.dp))
                     Text(
                         text = comment.createdAt,
                         style = MaterialTheme.typography.labelSmall,
@@ -1177,6 +1211,20 @@ private fun CommentItem(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
 
+                comment.imageUrl?.let { url ->
+                    Spacer(Modifier.height(6.dp))
+                    coil3.compose.AsyncImage(
+                        model = url,
+                        contentDescription = "评论附图",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                        modifier = Modifier
+                            .widthIn(max = 132.dp)
+                            .heightIn(max = 148.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onOpenImage(url) },
+                    )
+                }
+
                 Spacer(Modifier.height(4.dp))
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1196,11 +1244,14 @@ private fun CommentItem(
                             modifier = Modifier.size(14.dp),
                         )
                         Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = if (comment.likeCount > 0) "顶 " + comment.likeCount else "顶",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = likeTint,
-                        )
+
+                        Box(Modifier.widthIn(min = 34.dp)) {
+                            Text(
+                                text = if (comment.likeCount > 0) "顶 " + comment.likeCount else "顶",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = likeTint,
+                            )
+                        }
                     }
                     Spacer(Modifier.width(12.dp))
                     Text(
@@ -1296,62 +1347,122 @@ private fun ReplyBanner(nickname: String, onCancel: () -> Unit) {
 @Composable
 private fun CommentInputBar(
     draft: String,
+    draftImage: String?,
+    uploading: Boolean,
     onDraftChange: (String) -> Unit,
     onEmoji: () -> Unit,
+    onPickImage: (android.net.Uri) -> Unit,
+    onRemoveImage: () -> Unit,
     onSend: () -> Unit,
 ) {
-    val canSend = draft.isNotBlank()
+    val canSend = draft.isNotBlank() && !uploading
+    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) onPickImage(uri) }
 
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .imePadding()
-            .padding(horizontal = 14.dp)
-            .padding(bottom = 12.dp)
-            .glassPanel(
-                shape = RoundedCornerShape(26.dp),
-                elevation = 14.dp,
-                tint = NeuBaseHigh,
-                alpha = 0.92f,
-            )
-            .padding(horizontal = 6.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        IconButton(onClick = onEmoji) {
-            Icon(
-                imageVector = Icons.Rounded.EmojiEmotions,
-                contentDescription = "表情",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(22.dp),
-            )
-        }
-        ArisuTextField(
-            value = draft,
-            onValueChange = onDraftChange,
-            placeholder = "说点什么…",
-            modifier = Modifier.weight(1f),
-            containerColor = NeuInset,
-        )
-        Spacer(Modifier.width(8.dp))
-        Box(
-            Modifier
-                .size(40.dp)
-                .then(
-                    if (canSend) Modifier.accentRaised(shape = CircleShape, color = dev.arisu.shrine.core.design.VermilionButton)
-                    else Modifier.neuInset(shape = CircleShape, color = NeuInset)
+    Column(Modifier.fillMaxWidth().imePadding()) {
+
+        if (draftImage != null) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp)
+                    .padding(bottom = 8.dp)
+                    .softCard(shape = RoundedCornerShape(14.dp), elevation = 4.dp)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                coil3.compose.AsyncImage(
+                    model = draftImage,
+                    contentDescription = "待发送的附图",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier
+                        .size(width = 56.dp, height = 44.dp)
+                        .clip(RoundedCornerShape(8.dp)),
                 )
-                .clickable(enabled = canSend) { onSend() },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Send,
-                contentDescription = "发送",
-                tint = if (canSend) Color.White
-                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(19.dp),
-            )
+                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onRemoveImage) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "移除附图",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
         }
-        Spacer(Modifier.width(2.dp))
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp)
+                .padding(bottom = 12.dp)
+                .glassPanel(
+                    shape = RoundedCornerShape(26.dp),
+                    elevation = 14.dp,
+                    tint = NeuBaseHigh,
+                    alpha = 0.92f,
+                )
+                .padding(horizontal = 6.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            IconButton(onClick = onEmoji) {
+                Icon(
+                    imageVector = Icons.Rounded.EmojiEmotions,
+                    contentDescription = "表情",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
+            ArisuTextField(
+                value = draft,
+                onValueChange = onDraftChange,
+                placeholder = "说点什么…",
+                modifier = Modifier.weight(1f),
+                containerColor = NeuInset,
+
+                singleLine = false,
+                maxLines = 5,
+            )
+            Spacer(Modifier.width(6.dp))
+            IconButton(
+                onClick = { launcher.launch(androidx.activity.result.PickVisualMediaRequest(
+                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                enabled = !uploading,
+            ) {
+                if (uploading) {
+                    dev.arisu.shrine.core.components.YinYangOrb(size = 18.dp)
+                } else {
+                    Icon(
+                        imageVector = Icons.Rounded.AddPhotoAlternate,
+                        contentDescription = "添加图片",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(21.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.width(2.dp))
+            Box(
+                Modifier
+                    .size(40.dp)
+                    .then(
+                        if (canSend) Modifier.accentRaised(shape = CircleShape, color = dev.arisu.shrine.core.design.VermilionButton)
+                        else Modifier.neuInset(shape = CircleShape, color = NeuInset)
+                    )
+                    .clickable(enabled = canSend) { onSend() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Send,
+                    contentDescription = "发送",
+                    tint = if (canSend) Color.White
+                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+            Spacer(Modifier.width(2.dp))
+        }
     }
 }
 

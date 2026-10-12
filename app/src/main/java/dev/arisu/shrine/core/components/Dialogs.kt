@@ -51,6 +51,10 @@ fun ArisuConfirmDialog(
                         value = reason,
                         onValueChange = { if (it.length <= reasonMaxChars) reason = it },
                         placeholder = reasonHint,
+
+                        singleLine = false,
+                        minLines = 2,
+                        maxLines = 5,
                     )
                 }
                 error?.let {

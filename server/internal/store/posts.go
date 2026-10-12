@@ -21,7 +21,7 @@ const postSelect = `SELECT p.id, p.board, p.title, p.body, p.intro, p.cover_url,
 	(SELECT count(*) FROM collection_posts sc WHERE sc.post_id=p.id)
 	FROM posts p JOIN users u ON u.id=p.author_id`
 
-const commentSelect = `SELECT c.id, c.post_id, c.parent_id, c.content, c.like_count, c.created_at,
+const commentSelect = `SELECT c.id, c.post_id, c.parent_id, c.content, c.image_url, c.like_count, c.created_at,
 	u.id, u.nickname, u.role,
 	CASE WHEN u.active_avatar_enabled AND u.active_avatar_url<>'' THEN u.active_avatar_url ELSE u.fixed_avatar_url END,
 	COALESCE(ru.id, 0), (ru.id IS NOT NULL), COALESCE(ru.nickname,''), COALESCE(ru.role,''),
@@ -566,7 +566,7 @@ func scanComment(row pgx.Row) (*model.Comment, error) {
 	var parentID *int64
 	var created time.Time
 	var hasReplyTo bool
-	err := row.Scan(&c.ID, &c.PostID, &parentID, &c.Content, &c.LikeCount, &created,
+	err := row.Scan(&c.ID, &c.PostID, &parentID, &c.Content, &c.ImageURL, &c.LikeCount, &created,
 		&aID, &aNick, &aRole, &aAvatar,
 		&rID, &hasReplyTo, &rNick, &rRole, &rAvatar,
 		&c.Liked)
@@ -613,6 +613,7 @@ type CommentCreate struct {
 	ParentID      *int64
 	ReplyToUserID *int64
 	Content       string
+	ImageURL      string
 }
 
 func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comment, error) {
@@ -644,9 +645,9 @@ func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comm
 				return ErrBadRequest
 			}
 		}
-		if err := tx.QueryRow(ctx, `INSERT INTO comments(post_id, author_id, parent_id, reply_to_user_id, content)
-			VALUES($1,$2,$3,$4,$5) RETURNING id`,
-			c.PostID, c.AuthorID, c.ParentID, c.ReplyToUserID, c.Content).Scan(&id); err != nil {
+		if err := tx.QueryRow(ctx, `INSERT INTO comments(post_id, author_id, parent_id, reply_to_user_id, content, image_url)
+			VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
+			c.PostID, c.AuthorID, c.ParentID, c.ReplyToUserID, c.Content, c.ImageURL).Scan(&id); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `UPDATE posts SET comment_count=comment_count+1 WHERE id=$1`, c.PostID); err != nil {

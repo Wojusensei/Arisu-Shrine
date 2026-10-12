@@ -33,7 +33,10 @@ object Routes {
 
     fun editEma(id: Int) = "editEma/$id"
     const val NOTICE_DETAIL = "noticeDetail?noticeId={noticeId}"
-    const val REPORTS = "reports"
+
+    const val REPORTS = "reports?focus={focus}"
+
+    fun reports(focusId: String? = null) = if (focusId.isNullOrEmpty()) "reports?focus=" else "reports?focus=$focusId"
     const val CHANGELOG = "changelog"
     const val CHANGELOG_DETAIL = "changelog/{version}"
 

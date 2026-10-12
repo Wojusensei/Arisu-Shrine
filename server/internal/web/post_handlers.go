@@ -494,6 +494,24 @@ type commentReq struct {
 	Content       string `json:"content"`
 	ParentID      *int64 `json:"parent_id"`
 	ReplyToUserID *int64 `json:"reply_to_user_id"`
+	ImageURL      string `json:"image_url"`
+}
+
+func (w *Web) commentImageOK(u string) bool {
+	if u == "" {
+		return true
+	}
+	if len(u) > 300 {
+		return false
+	}
+	rel := u
+	if base := strings.TrimSuffix(w.Cfg.BaseURL, "/"); base != "" && strings.HasPrefix(u, base) {
+		rel = strings.TrimPrefix(u, base)
+	}
+	if !strings.HasPrefix(rel, "/uploads/") {
+		return false
+	}
+	return !strings.ContainsAny(rel, "\"'()<>\n\r\t ")
 }
 
 func (w *Web) createComment(c *gin.Context) {
@@ -520,13 +538,18 @@ func (w *Web) createComment(c *gin.Context) {
 		w.bad(c, "评论最多 2000 字")
 		return
 	}
+	imageURL := strings.TrimSpace(req.ImageURL)
+	if !w.commentImageOK(imageURL) {
+		w.bad(c, "参数错误")
+		return
+	}
 
 	if !w.intervalRateLimit(c, v, w.Cfg.Limits.CommentInterval) {
 		return
 	}
 	cm, err := w.St.CreateComment(c.Request.Context(), store.CommentCreate{
 		PostID: id, AuthorID: v.ID, ParentID: req.ParentID, ReplyToUserID: req.ReplyToUserID,
-		Content: content,
+		Content: content, ImageURL: imageURL,
 	})
 	if errors.Is(err, store.ErrBadRequest) {
 		w.bad(c, "回复目标不合法")

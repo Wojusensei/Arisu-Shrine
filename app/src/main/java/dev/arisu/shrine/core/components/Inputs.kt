@@ -218,6 +218,8 @@ fun ArisuPrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     icon: ImageVector? = null,
+
+    busy: Boolean = false,
 ) {
     Row(
         modifier
@@ -231,7 +233,16 @@ fun ArisuPrimaryButton(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (icon != null) {
+        if (busy) {
+            YinYangOrb(
+                size = 18.dp,
+                primary = if (enabled) Color.White else MaterialTheme.colorScheme.primary,
+                base = Color.Transparent,
+                ring = Color.Transparent,
+                rotating = true,
+            )
+            Spacer(Modifier.width(8.dp))
+        } else if (icon != null) {
             Icon(
                 icon, null,
                 tint = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,

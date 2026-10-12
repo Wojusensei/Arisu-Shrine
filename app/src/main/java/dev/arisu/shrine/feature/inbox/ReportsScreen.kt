@@ -58,6 +58,7 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun ReportsScreen(
+    focusReportId: String,
     onBack: () -> Unit,
     onOpenPost: (String) -> Unit,
     onOpenEma: (Int) -> Unit,
@@ -83,6 +84,8 @@ fun ReportsScreen(
 
     var failed by remember { mutableStateOf(false) }
 
+    var focusChecked by remember { mutableStateOf(false) }
+
     fun load() {
         val seq = ++loadSeq
         scope.launch {
@@ -94,6 +97,12 @@ fun ReportsScreen(
                 page = 1
                 endReached = res.items.size >= res.total
                 failed = false
+                if (!focusChecked && focusReportId.isNotEmpty()) {
+                    focusChecked = true
+                    if (res.items.none { it.id.toString() == focusReportId }) {
+                        bar = "没有待处理的举报"
+                    }
+                }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 if (seq != loadSeq) return@launch
@@ -127,6 +136,21 @@ fun ReportsScreen(
         }
     }
     LaunchedEffect(Unit) { load() }
+
+    suspend fun refreshQueueContaining(id: Long): Boolean? = try {
+        val res = Api.service.reports("pending", 1, REPORTS_PAGE_SIZE)
+        loadSeq++
+        reports = res.items
+        total = res.total
+        page = 1
+        endReached = res.items.size >= res.total
+        failed = false
+        loadMoreFailed = false
+        res.items.any { it.id == id }
+    } catch (e: Exception) {
+        if (e is kotlinx.coroutines.CancellationException) throw e
+        null
+    }
 
     Column(modifier.fillMaxSize()) {
         ArisuTopBar(title = "举报处理", subtitle = "奉仕及以上可见", onBack = onBack)
@@ -295,10 +319,14 @@ fun ReportsScreen(
                         value = comment,
                         onValueChange = { if (it.length <= 100) comment = it },
                         placeholder = "附言（选填）",
+
+                        singleLine = false,
+                        minLines = 2,
+                        maxLines = 4,
                     )
                 }
             },
-            confirmButton = {
+                    confirmButton = {
                 TextButton(
                     enabled = !busy,
                     onClick = {
@@ -310,7 +338,13 @@ fun ReportsScreen(
                                 target = null
                                 load()
                             } catch (e: Exception) {
-                                bar = e.toApiMessage()
+                                if (e is kotlinx.coroutines.CancellationException) throw e
+
+                                bar = if (refreshQueueContaining(r.id) == false) {
+                                    "没有待处理的举报"
+                                } else {
+                                    e.toApiMessage()
+                                }
                             }
                             busy = false
                         }

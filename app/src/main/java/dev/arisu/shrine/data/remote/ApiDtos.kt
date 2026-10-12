@@ -100,6 +100,7 @@ data class CommentDto(
     @SerialName("reply_to_user") val replyToUser: UserBriefDto? = null,
     val author: UserBriefDto = UserBriefDto(),
     val content: String = "",
+    @SerialName("image_url") val imageUrl: String = "",
     @SerialName("like_count") val likeCount: Long = 0,
     val liked: Boolean = false,
     val mine: Boolean = false,
@@ -320,6 +321,7 @@ data class CommentReq(
     val content: String,
     @SerialName("parent_id") val parentId: Long? = null,
     @SerialName("reply_to_user_id") val replyToUserId: Long? = null,
+    @SerialName("image_url") val imageUrl: String? = null,
 )
 
 @Serializable

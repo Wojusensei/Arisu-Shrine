@@ -47,6 +47,11 @@ services:
       ARISU_DB_DSN: "postgres://arisu:arisu@postgres:5432/arisu?sslmode=disable"
       ARISU_REDIS_ADDR: "redis:6379"
 
+      ARISU_JWT_SECRET: "${JWT_SECRET:?缺 JWT_SECRET，写进 server/.env}"
+
+      ARISU_ALLOW_DEV_MODE: "1"
+
+      ARISU_BASE_URL: "${DEV_BASE_URL:-http://10.0.2.2:8080}"
     restart: unless-stopped
 
 volumes:
