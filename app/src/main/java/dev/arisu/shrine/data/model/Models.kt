@@ -244,6 +244,7 @@ data class ReleaseNote(
 @Serializable
 enum class NoticeKind(val label: String) {
     REPLY("回复/@"),
+    UP("顶帖"),
     SYSTEM("系统通知"),
     REPORT("举报动态"),
     APPLICATION("奉纳者申请"),
@@ -273,6 +274,13 @@ data class Notice(
     val status: NoticeStatus? = null,
 
     val targetRoute: String? = null,
+)
+
+@Serializable
+data class Sticker(
+    val id: String,
+    val url: String,
+    val animated: Boolean = false,
 )
 
 @Serializable

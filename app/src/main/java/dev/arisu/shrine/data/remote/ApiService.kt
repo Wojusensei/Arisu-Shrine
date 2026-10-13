@@ -291,6 +291,18 @@ interface ApiService {
     @Multipart
     @POST("api/upload")
     suspend fun upload(@Part file: MultipartBody.Part): UploadRes
+
+    @GET("api/stickers")
+    suspend fun myStickers(): StickerListRes
+
+    @POST("api/stickers")
+    suspend fun addSticker(@Body req: StickerAddReq): StickerDto
+
+    @DELETE("api/stickers/{id}")
+    suspend fun deleteSticker(@Path("id") id: Long): OkRes
+
+    @GET("api/users/{id}/stickers")
+    suspend fun userStickers(@Path("id") id: String): StickerListRes
 }
 
 @kotlinx.serialization.Serializable

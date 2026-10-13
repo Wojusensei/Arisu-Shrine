@@ -12,29 +12,36 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.AddPhotoAlternate
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Collections
+import androidx.compose.material.icons.rounded.EmojiEmotions
 import androidx.compose.material.icons.rounded.FormatBold
 import androidx.compose.material.icons.rounded.FormatItalic
 import androidx.compose.material.icons.rounded.FormatListBulleted
-import androidx.compose.material.icons.rounded.AddPhotoAlternate
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -42,10 +49,11 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -57,22 +65,28 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import dev.arisu.shrine.core.components.ArisuTextField
 import dev.arisu.shrine.core.components.ArisuTopBar
-import dev.arisu.shrine.core.components.NeuSurface
+import dev.arisu.shrine.core.components.EmojiSheet
 import dev.arisu.shrine.core.components.SectionLabel
+import dev.arisu.shrine.core.components.SoftPill
 import dev.arisu.shrine.core.components.UnderlineTabs
 import dev.arisu.shrine.core.components.YinYangOrb
 import dev.arisu.shrine.core.components.accentRaised
-import coil3.compose.AsyncImage
-import dev.arisu.shrine.core.components.SoftPill
 import dev.arisu.shrine.core.components.neuInset
-import dev.arisu.shrine.core.components.softCard
-import dev.arisu.shrine.core.design.NeuBaseHigh
 import dev.arisu.shrine.core.design.NeuInset
+import dev.arisu.shrine.core.markdown.MARKDOWN_STICKER_ALT
+import dev.arisu.shrine.core.media.stagePickedImage
 import dev.arisu.shrine.data.model.Board
 import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
+import dev.arisu.shrine.feature.editor.ImageEditorOverlay
 import java.io.File
+import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+private const val MAX_PICK = 9
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -91,36 +105,108 @@ fun NewPostScreen(
     var intro by rememberSaveable { mutableStateOf("") }
     var body by rememberSaveable { mutableStateOf("") }
     var showImageSheet by remember { mutableStateOf(false) }
+    var showStickers by remember { mutableStateOf(false) }
     var showMention by remember { mutableStateOf(false) }
     var publishing by remember { mutableStateOf(false) }
     var coverUrl by rememberSaveable { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    var uploadCount by remember { mutableStateOf(0) }
-    val uploading = uploadCount > 0
-    fun setUploading(on: Boolean) {
-        uploadCount = (uploadCount + if (on) 1 else -1).coerceAtLeast(0)
-    }
+    val staged = remember { mutableStateListOf<StagedImage>() }
+    var coverFile by remember { mutableStateOf<File?>(null) }
+    var coverProgress by remember { mutableStateOf(-1f) }
+    var editing by remember { mutableStateOf<EditTarget?>(null) }
+    val uploading = staged.any { it.url == null && it.error == null } || coverProgress in 0f..1f
 
-    val canPublish = title.isNotBlank() && body.isNotBlank() && !publishing
+    val canPublish = title.isNotBlank() && body.isNotBlank() && !publishing && !uploading
     var confirmDiscard by remember { mutableStateOf(false) }
-    val hasDraft = title.isNotBlank() || body.isNotBlank()
+    val hasDraft = title.isNotBlank() || body.isNotBlank() || staged.isNotEmpty()
     androidx.activity.compose.BackHandler(enabled = hasDraft && !publishing) { confirmDiscard = true }
 
+    fun upload(item: StagedImage) {
+        scope.launch {
+            item.error = null
+            item.progress = 0f
+            try {
+                val url = Shrine.uploadImage(item.file) { item.progress = it }
+                val snippet = "![图片]($url)"
+                val old = item.markdown
+                body = if (old != null && body.contains(old)) body.replace(old, snippet)
+                else appendSnippet(body, snippet)
+                item.markdown = snippet
+                item.url = url
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                item.error = e.toApiMessage()
+            }
+        }
+    }
+
+    fun stage(uri: Uri) {
+        scope.launch {
+            val item = try {
+                val file = withContext(Dispatchers.IO) {
+                    stagePickedImage(context, uri, File(context.cacheDir, "upload"))
+                }
+                StagedImage(id = System.nanoTime(), file = file).also { staged += it }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                error = e.toApiMessage()
+                return@launch
+            }
+            upload(item)
+        }
+    }
+
+    fun removeStaged(item: StagedImage) {
+        item.markdown?.let { body = body.replace(it, "").trimEnd() }
+        item.file.delete()
+        staged -= item
+    }
+
     val galleryLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri -> if (uri != null) insertImage(context, scope, uri, onUploading = ::setUploading) { url, err ->
-        if (url != null) body = appendSnippet(body, "![图片]($url)") else error = err
-    } }
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)
+    ) { uris -> uris.forEach { stage(it) } }
+
+    fun uploadCover(file: File) {
+        scope.launch {
+            coverProgress = 0f
+            try {
+                coverUrl = Shrine.uploadImage(file) { coverProgress = it }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                coverUrl = null
+                error = e.toApiMessage()
+            }
+            coverProgress = -1f
+        }
+    }
+
+    fun stageCover(uri: Uri) {
+        scope.launch {
+            coverProgress = 0f
+            val file = try {
+                withContext(Dispatchers.IO) {
+                    stagePickedImage(context, uri, File(context.cacheDir, "upload"))
+                }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                coverProgress = -1f
+                error = e.toApiMessage()
+                return@launch
+            }
+            coverFile?.delete()
+            coverFile = file
+            uploadCover(file)
+        }
+    }
 
     val coverLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
-    ) { uri -> if (uri != null) insertImage(context, scope, uri, onUploading = ::setUploading) { url, err ->
-        if (url != null) coverUrl = url else error = err
-    } }
+    ) { uri -> if (uri != null) stageCover(uri) }
 
     var pendingCameraUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     var pendingCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
+
     val cameraLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.TakePicture()
     ) { ok ->
@@ -129,13 +215,9 @@ fun NewPostScreen(
         pendingCameraUri = null
         pendingCameraPath = null
         if (ok && uri != null && file != null) {
-            insertImage(context, scope, uri, onUploading = ::setUploading) { url, err ->
-                file.delete()
-                if (url != null) body = appendSnippet(body, "![图片]($url)") else error = err
-            }
-        } else {
-            file?.delete()
+            stage(uri)
         }
+        file?.delete()
     }
 
     fun publish() {
@@ -146,12 +228,48 @@ fun NewPostScreen(
         scope.launch {
             try {
                 val post = Shrine.createPost(board, title.trim(), body.trim(), intro.trim(), cover = coverUrl ?: "")
+
+                staged.forEach { it.file.delete() }
+                staged.clear()
+                coverFile?.delete()
+                coverFile = null
                 onPublished(post.id)
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 error = e.toApiMessage()
             }
             publishing = false
         }
+    }
+
+    val editingTarget = editing
+    if (editingTarget != null) {
+        ImageEditorOverlay(
+            sourcePath = editingTarget.path,
+            onCancel = { editing = null },
+            onConfirm = { path ->
+                editing = null
+                val edited = File(path)
+                when (editingTarget) {
+                    is EditTarget.Cover -> {
+                        editingTarget.file.delete()
+                        coverFile = edited
+                        coverUrl = null
+                        uploadCover(edited)
+                    }
+
+                    is EditTarget.Staged -> {
+                        val item = editingTarget.item
+                        item.file.delete()
+                        item.file = edited
+                        item.url = null
+
+                        upload(item)
+                    }
+                }
+            },
+        )
+        return
     }
 
     if (confirmDiscard) {
@@ -161,7 +279,13 @@ fun NewPostScreen(
             text = { Text("尚未发布的内容不会被保存。") },
             confirmButton = {
                 androidx.compose.material3.TextButton(
-                    onClick = { confirmDiscard = false; onBack() },
+                    onClick = {
+                        confirmDiscard = false
+                        staged.forEach { it.file.delete() }
+                        staged.clear()
+                        coverFile?.delete()
+                        onBack()
+                    },
                 ) { Text("放弃") }
             },
             dismissButton = {
@@ -174,7 +298,7 @@ fun NewPostScreen(
         modifier
             .fillMaxSize()
             .background(Color.Transparent)
-        .imePadding()
+            .imePadding()
     ) {
         ArisuTopBar(
             title = "撰写帖子",
@@ -219,12 +343,17 @@ fun NewPostScreen(
             SectionLabel(text = "封面", trailing = "选填 · 未选时以您的头像为封面")
             CoverPicker(
                 coverUrl = coverUrl,
-                uploading = uploading,
+                progress = coverProgress,
                 onPick = {
-                    coverLauncher.launch(androidx.activity.result.PickVisualMediaRequest(
-                        ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    coverLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 },
-                onRemove = { coverUrl = null },
+                onEdit = coverFile?.let { file -> { editing = EditTarget.Cover(file) } },
+                onRemove = {
+                    coverFile?.delete()
+                    coverFile = null
+                    coverUrl = null
+                    coverProgress = -1f
+                },
             )
 
             Spacer(Modifier.height(18.dp))
@@ -241,6 +370,16 @@ fun NewPostScreen(
                 onInsert = { snippet -> body = appendSnippet(body, snippet) },
                 onPickImage = { showImageSheet = true },
             )
+
+            if (staged.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                StagedImageRow(
+                    list = staged,
+                    onEdit = { editing = EditTarget.Staged(it) },
+                    onRemove = { removeStaged(it) },
+                    onRetry = { upload(it) },
+                )
+            }
 
             if (uploading) {
                 Spacer(Modifier.height(8.dp))
@@ -325,7 +464,7 @@ fun NewPostScreen(
                     ImageSourceRow(
                         icon = Icons.Rounded.Collections,
                         title = "从相册选择",
-                        subtitle = "挑一张本地已保存的图片",
+                        subtitle = "一次最多挑 $MAX_PICK 张，发前还能裁剪旋转",
                         onClick = {
                             showImageSheet = false
                             galleryLauncher.launch(
@@ -357,8 +496,28 @@ fun NewPostScreen(
                             }
                         },
                     )
+                    Spacer(Modifier.height(10.dp))
+                    ImageSourceRow(
+                        icon = Icons.Rounded.EmojiEmotions,
+                        title = "表情包",
+                        subtitle = "从自留表情里挑一张，会动的那种也在",
+                        onClick = {
+                            showImageSheet = false
+                            showStickers = true
+                        },
+                    )
                 }
             }
+        }
+
+        if (showStickers) {
+            EmojiSheet(
+                onSelect = { emoji -> body = appendSnippet(body, emoji) },
+                onSticker = { sticker ->
+                    body = appendSnippet(body, "![$MARKDOWN_STICKER_ALT](${sticker.url})")
+                },
+                onDismiss = { showStickers = false },
+            )
         }
 
         if (showMention) {
@@ -374,35 +533,164 @@ fun NewPostScreen(
     }
 }
 
+private class StagedImage(val id: Long, var file: File) {
+    var progress by mutableStateOf(0f)
+    var url by mutableStateOf<String?>(null)
+
+    var markdown by mutableStateOf<String?>(null)
+    var error by mutableStateOf<String?>(null)
+}
+
+private sealed interface EditTarget {
+    val path: String
+
+    data class Staged(val item: StagedImage) : EditTarget {
+        override val path: String get() = item.file.absolutePath
+    }
+
+    data class Cover(val file: File) : EditTarget {
+        override val path: String get() = file.absolutePath
+    }
+}
+
+@Composable
+private fun StagedImageRow(
+    list: List<StagedImage>,
+    onEdit: (StagedImage) -> Unit,
+    onRemove: (StagedImage) -> Unit,
+    onRetry: (StagedImage) -> Unit,
+) {
+    LazyRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        contentPadding = PaddingValues(vertical = 2.dp),
+    ) {
+        items(list, key = { it.id }) { item ->
+            Box(Modifier.size(76.dp)) {
+                coil3.compose.AsyncImage(
+                    model = item.file,
+                    contentDescription = "待发配图",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(enabled = item.url != null) { onEdit(item) },
+                )
+                when {
+                    item.error != null -> Box(
+                        Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.Black.copy(alpha = 0.45f))
+                            .clickable { onRetry(item) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        SoftPill(
+                            text = "重试",
+                            color = Color.White,
+                            background = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+
+                    item.url == null -> Box(
+                        Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color.Black.copy(alpha = 0.3f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            progress = { item.progress },
+                            strokeWidth = 3.dp,
+                            color = Color.White,
+                            trackColor = Color.White.copy(alpha = 0.25f),
+                            modifier = Modifier.size(38.dp),
+                        )
+                        Text(
+                            text = "${(item.progress * 100).roundToInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                        )
+                    }
+
+                    else -> Box(
+                        Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(3.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color.Black.copy(alpha = 0.45f))
+                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Rounded.Tune,
+                                contentDescription = "编辑这张图",
+                                tint = Color.White,
+                                modifier = Modifier.size(10.dp),
+                            )
+                            Spacer(Modifier.width(2.dp))
+                            Text(
+                                text = "编辑",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                            )
+                        }
+                    }
+                }
+
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(2.dp)
+                        .size(20.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .clickable { onRemove(item) },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.Close,
+                        contentDescription = "移除这张图",
+                        tint = Color.White,
+                        modifier = Modifier.size(13.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun CoverPicker(
     coverUrl: String?,
-    uploading: Boolean,
+
+    progress: Float,
     onPick: () -> Unit,
+    onEdit: (() -> Unit)?,
     onRemove: () -> Unit,
 ) {
+    val busy = progress in 0f..1f
     Row(verticalAlignment = Alignment.CenterVertically) {
-        if (coverUrl != null) {
-            coil3.compose.AsyncImage(
-                model = coverUrl,
-                contentDescription = "封面预览",
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                modifier = Modifier
-                    .size(width = 128.dp, height = 80.dp)
-                    .clip(RoundedCornerShape(12.dp)),
-            )
-        } else {
-            Box(
-                Modifier
-                    .size(width = 128.dp, height = 80.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .neuInset(shape = RoundedCornerShape(12.dp), color = NeuInset)
-                    .clickable { onPick() },
-                contentAlignment = Alignment.Center,
-            ) {
-                if (uploading) {
-                    YinYangOrb(size = 18.dp)
-                } else {
+        Box(Modifier.size(width = 128.dp, height = 80.dp)) {
+            if (coverUrl != null) {
+                coil3.compose.AsyncImage(
+                    model = coverUrl,
+                    contentDescription = "封面预览",
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(enabled = onEdit != null) { onEdit?.invoke() },
+                )
+            } else {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(12.dp))
+                        .neuInset(shape = RoundedCornerShape(12.dp), color = NeuInset)
+                        .clickable(enabled = !busy) { onPick() },
+                    contentAlignment = Alignment.Center,
+                ) {
                     Icon(
                         imageVector = Icons.Rounded.AddPhotoAlternate,
                         contentDescription = "选择封面图",
@@ -411,11 +699,37 @@ private fun CoverPicker(
                     )
                 }
             }
+            if (busy) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Black.copy(alpha = 0.35f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator(
+                        progress = { progress },
+                        strokeWidth = 3.dp,
+                        color = Color.White,
+                        trackColor = Color.White.copy(alpha = 0.25f),
+                        modifier = Modifier.size(38.dp),
+                    )
+                    Text(
+                        text = "${(progress * 100).roundToInt()}%",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                    )
+                }
+            }
         }
         Spacer(Modifier.width(12.dp))
         Column {
             Text(
-                text = if (coverUrl != null) "封面已就绪" else "从相册选择一张封面图",
+                text = when {
+                    busy -> "正在寄送封面……"
+                    coverUrl != null -> "封面已就绪"
+                    else -> "从相册选择一张封面图"
+                },
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -425,39 +739,28 @@ private fun CoverPicker(
                     text = if (coverUrl != null) "更换封面" else "选择封面图",
                     color = MaterialTheme.colorScheme.primary,
                     background = NeuInset,
-                    modifier = Modifier.clickable(enabled = !uploading) { onPick() },
+                    modifier = Modifier.clickable(enabled = !busy) { onPick() },
                 )
+                if (coverUrl != null && onEdit != null) {
+                    Spacer(Modifier.width(8.dp))
+                    SoftPill(
+                        text = "编辑封面",
+                        color = MaterialTheme.colorScheme.primary,
+                        background = NeuInset,
+                        modifier = Modifier.clickable(enabled = !busy) { onEdit() },
+                    )
+                }
                 if (coverUrl != null) {
                     Spacer(Modifier.width(8.dp))
                     SoftPill(
                         text = "移除封面",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         background = NeuInset,
-                        modifier = Modifier.clickable { onRemove() },
+                        modifier = Modifier.clickable(enabled = !busy) { onRemove() },
                     )
                 }
             }
         }
-    }
-}
-
-private fun insertImage(
-    context: Context,
-    scope: kotlinx.coroutines.CoroutineScope,
-    uri: Uri,
-    onUploading: (Boolean) -> Unit,
-    onDone: (String?, String?) -> Unit,
-) {
-    scope.launch {
-        onUploading(true)
-        try {
-
-            val url = Shrine.uploadImageFromUri(context, uri)
-            onDone(url, null)
-        } catch (e: Exception) {
-            onDone(null, e.toApiMessage())
-        }
-        onUploading(false)
     }
 }
 

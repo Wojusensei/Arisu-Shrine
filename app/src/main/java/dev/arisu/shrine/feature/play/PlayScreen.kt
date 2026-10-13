@@ -67,6 +67,7 @@ import dev.arisu.shrine.core.components.ShrineStaleBanner
 import dev.arisu.shrine.core.components.SoftPill
 import dev.arisu.shrine.core.components.TopBarIcon
 import dev.arisu.shrine.core.components.YinYangOrb
+import dev.arisu.shrine.core.components.smoothScrollToTop
 import dev.arisu.shrine.core.design.SerifFamily
 import dev.arisu.shrine.core.components.neuInset
 import dev.arisu.shrine.core.design.Gold
@@ -185,7 +186,7 @@ fun PlayScreen(
 
     LaunchedEffect(Unit) {
         ScrollTopBus.events.collect { route ->
-            if (route == Routes.PLAY) playScroll.animateScrollTo(0)
+            if (route == Routes.PLAY) playScroll.smoothScrollToTop()
         }
     }
     Box(Modifier.fillMaxSize()) {
@@ -502,7 +503,7 @@ fun PlayScreen(
         }
         ScrollTopOrb(
             scrollState = playScroll,
-            onClick = { scope.launch { playScroll.animateScrollTo(0) } },
+            onClick = { scope.launch { playScroll.smoothScrollToTop() } },
             modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 118.dp),
         )
     }

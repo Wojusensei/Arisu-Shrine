@@ -173,6 +173,21 @@ object Api {
             .build()
             .create(ApiService::class.java)
     }
+
+    val uploadService: ApiService by lazy {
+        Retrofit.Builder()
+            .baseUrl(PLACEHOLDER_BASE)
+            .client(
+                client.newBuilder()
+                    .writeTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+                    .callTimeout(180, java.util.concurrent.TimeUnit.SECONDS)
+                    .build()
+            )
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+            .build()
+            .create(ApiService::class.java)
+    }
 }
 
 class ApiError(message: String) : Exception(message)

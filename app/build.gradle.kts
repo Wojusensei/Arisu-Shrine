@@ -16,8 +16,8 @@ android {
         applicationId = "dev.arisu.shrine"
         minSdk = 26
         targetSdk = 35
-        versionCode = 33
-        versionName = "1.0.1.1"
+        versionCode = 35
+        versionName = "1.0.1.2"
 
         val prodBaseUrl = "https://arisushrine.com"
         val baseUrlOverride = (project.findProperty("arisuBaseUrl") as String?)?.trimEnd('/')
@@ -117,6 +117,8 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.coil.svg)
+
+    implementation(libs.coil.gif)
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.retrofit)

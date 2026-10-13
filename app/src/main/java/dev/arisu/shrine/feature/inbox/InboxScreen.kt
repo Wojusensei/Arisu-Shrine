@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Markunread
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.Warning
 import androidx.compose.material.icons.rounded.Notifications
@@ -70,6 +71,7 @@ import dev.arisu.shrine.core.components.ShrineListEnd
 import dev.arisu.shrine.core.components.ShrineNoticeBar
 import dev.arisu.shrine.core.components.SoftPill
 import dev.arisu.shrine.core.components.neuInset
+import dev.arisu.shrine.core.components.smoothScrollToTop
 import dev.arisu.shrine.core.components.softCard
 import dev.arisu.shrine.core.design.Gold
 import dev.arisu.shrine.core.design.GoldSoft
@@ -79,6 +81,7 @@ import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.design.Plum
 import dev.arisu.shrine.core.design.Slate
 import dev.arisu.shrine.core.design.SlateSoft
+import dev.arisu.shrine.core.design.Vermilion
 import dev.arisu.shrine.data.model.Notice
 import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
@@ -351,7 +354,7 @@ fun InboxScreen(
                 }
                 ScrollTopOrb(
                     listState = inboxListState,
-                    onClick = { scope.launch { inboxListState.animateScrollToItem(0) } },
+                    onClick = { scope.launch { inboxListState.smoothScrollToTop() } },
                     modifier = Modifier.align(Alignment.BottomEnd).padding(end = 24.dp, bottom = 18.dp),
                 )
                     }
@@ -571,6 +574,7 @@ private fun NoticeKindIcon(kind: NoticeKind) {
 
 internal fun noticeKindVisual(kind: NoticeKind): Pair<ImageVector, Color> = when (kind) {
     NoticeKind.REPLY -> Icons.Rounded.ChatBubbleOutline to Indigo
+    NoticeKind.UP -> Icons.Rounded.ThumbUp to Vermilion
     NoticeKind.SYSTEM -> Icons.Rounded.Campaign to Gold
     NoticeKind.REPORT -> Icons.Rounded.Flag to Slate
     NoticeKind.APPLICATION -> ShrineIcons.Ema to Plum

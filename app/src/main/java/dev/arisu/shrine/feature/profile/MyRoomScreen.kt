@@ -73,6 +73,7 @@ import dev.arisu.shrine.core.components.SoftPill
 import dev.arisu.shrine.core.components.ScrollTopBus
 import dev.arisu.shrine.core.components.StatColumn
 import dev.arisu.shrine.core.components.TopBarIcon
+import dev.arisu.shrine.core.components.smoothScrollToTop
 import dev.arisu.shrine.core.components.softCard
 import dev.arisu.shrine.core.components.neuInset
 import dev.arisu.shrine.core.design.InkMuted
@@ -217,7 +218,7 @@ fun MyRoomScreen(
 
         LaunchedEffect(Unit) {
             ScrollTopBus.events.collect { route ->
-                if (route == Routes.ME) scope.launch { meScroll.animateScrollTo(0) }
+                if (route == Routes.ME) scope.launch { meScroll.smoothScrollToTop() }
             }
         }
         Column(
@@ -297,7 +298,7 @@ fun MyRoomScreen(
         }
         ScrollTopOrb(
             scrollState = meScroll,
-            onClick = { scope.launch { meScroll.animateScrollTo(0) } },
+            onClick = { scope.launch { meScroll.smoothScrollToTop() } },
             modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 110.dp),
         )
         }

@@ -134,6 +134,13 @@ type Collection struct {
 	CoverURL  string `json:"cover_url"`
 }
 
+type Sticker struct {
+	ID        int64  `json:"id"`
+	URL       string `json:"url"`
+	Animated  bool   `json:"animated"`
+	CreatedAt int64  `json:"created_at"`
+}
+
 type Notice struct {
 	ID          int64  `json:"id"`
 	Kind        string `json:"kind"`

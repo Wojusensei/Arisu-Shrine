@@ -1,6 +1,7 @@
 package dev.arisu.shrine.data.repo
 
 import android.content.Context
+import dev.arisu.shrine.core.media.stagePickedImage
 import dev.arisu.shrine.core.util.TimeFmt
 import dev.arisu.shrine.data.AccountVault
 import dev.arisu.shrine.data.SessionStore
@@ -24,6 +25,7 @@ import dev.arisu.shrine.data.model.PostSort
 import dev.arisu.shrine.data.model.ReleaseChannel
 import dev.arisu.shrine.data.model.ReleaseNote
 import dev.arisu.shrine.data.model.Role
+import dev.arisu.shrine.data.model.Sticker
 import dev.arisu.shrine.data.model.TileDay
 import dev.arisu.shrine.data.model.User
 import dev.arisu.shrine.data.model.avatarUrl
@@ -51,6 +53,7 @@ import dev.arisu.shrine.data.remote.PasswordPatchReq
 import dev.arisu.shrine.data.remote.PostDto
 import dev.arisu.shrine.data.remote.PostPatchReq
 import dev.arisu.shrine.data.remote.PostReq
+import dev.arisu.shrine.data.remote.ProgressRequestBody
 import dev.arisu.shrine.data.remote.ProfilePatchReq
 import dev.arisu.shrine.data.remote.RefreshReq
 import dev.arisu.shrine.data.remote.RegisterReq
@@ -61,6 +64,7 @@ import dev.arisu.shrine.data.remote.ResolveReq
 import dev.arisu.shrine.data.remote.SendCodeReq
 import dev.arisu.shrine.data.remote.SessionDto
 import dev.arisu.shrine.data.remote.StaffApplyReq
+import dev.arisu.shrine.data.remote.StickerAddReq
 import dev.arisu.shrine.data.remote.UserBriefDto
 import dev.arisu.shrine.data.remote.UserDto
 import dev.arisu.shrine.data.remote.apiCall
@@ -82,7 +86,6 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
-import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
 
 sealed interface SessionState {
@@ -523,7 +526,10 @@ object Shrine {
         }
 
     suspend fun createPost(board: Board, title: String, body: String, intro: String = "", cover: String = ""): Post =
-        apiCall { Api.service.createPost(PostReq(board.wire, title, body, intro, cover)) }.toPost()
+        apiCall { Api.service.createPost(PostReq(board.wire, title, body, intro, cover)) }
+            .toPost()
+
+            .also { _justPublished.value = true }
 
     suspend fun updatePost(id: String, title: String?, intro: String?, body: String?, board: Board? = null, cover: String? = null): Post =
         apiCall {
@@ -993,36 +999,75 @@ object Shrine {
         }
     }
 
-    suspend fun uploadImageFromUri(context: Context, uri: android.net.Uri): String =
-        withContext(Dispatchers.IO) {
-            val dir = File(context.cacheDir, "upload").apply { mkdirs() }
+    suspend fun uploadImageFromUri(
+        context: Context,
+        uri: android.net.Uri,
+        onProgress: (Float) -> Unit = {},
+    ): String = withContext(Dispatchers.IO) {
+        val dir = File(context.cacheDir, "upload").apply { mkdirs() }
+        val file = stagePickedImage(context, uri, dir)
+        try {
+            uploadImage(file, onProgress)
+        } finally {
+            file.delete()
+        }
+    }
 
-            val ext = when (context.contentResolver.getType(uri)) {
-                "image/png" -> "png"
-                "image/gif" -> "gif"
-                "image/webp" -> "webp"
-                else -> "jpg"
+    suspend fun uploadImage(file: File, onProgress: (Float) -> Unit = {}): String =
+        withContext(Dispatchers.IO) {
+            val mime = when (file.extension.lowercase()) {
+                "png" -> "image/png"
+                "gif" -> "image/gif"
+                "webp" -> "image/webp"
+                else -> "image/jpeg"
+            }.toMediaType()
+            val body = ProgressRequestBody(file, mime) { sent, total ->
+                onProgress((sent.toFloat() / total).coerceIn(0f, 1f))
             }
-            val file = File(dir, "img_${System.currentTimeMillis()}.$ext")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                file.outputStream().use { output -> input.copyTo(output) }
-            } ?: throw IllegalStateException("读取图片失败")
-            try {
-                uploadImage(file)
-            } finally {
-                file.delete()
-            }
+            val part = MultipartBody.Part.createFormData("file", file.name, body)
+
+            apiCall { Api.uploadService.upload(part) }.url
         }
 
-    suspend fun uploadImage(file: File): String = withContext(Dispatchers.IO) {
-        val mime = when (file.extension.lowercase()) {
-            "png" -> "image/png"
-            "gif" -> "image/gif"
-            "webp" -> "image/webp"
-            else -> "image/jpeg"
-        }.toMediaType()
-        val part = MultipartBody.Part.createFormData("file", file.name, file.asRequestBody(mime))
-        apiCall { Api.service.upload(part) }.url
+    private val _justPublished = MutableStateFlow(false)
+
+    fun consumeJustPublished(): Boolean = _justPublished.value.also { if (it) _justPublished.value = false }
+
+    @Volatile
+    private var stickerLimitValue: Int = 64
+    val stickerLimit: Int get() = stickerLimitValue
+
+    suspend fun myStickers(): List<Sticker> = cached(
+        cacheKey("stickers"),
+        ListSerializer(Sticker.serializer()),
+        cacheIf = { it.isNotEmpty() },
+    ) {
+        val res = apiCall { Api.service.myStickers() }
+        if (res.limit > 0) stickerLimitValue = res.limit
+        res.items.map { it.toSticker() }
+    }
+
+    fun peekStickers(): List<Sticker>? =
+        peekCache(cacheKey("stickers"), ListSerializer(Sticker.serializer()))
+
+    suspend fun userStickers(userId: String): List<Sticker> =
+        apiCall { Api.service.userStickers(userId) }.items.map { it.toSticker() }
+
+    suspend fun addSticker(url: String): Sticker {
+        val sticker = apiCall { Api.service.addSticker(StickerAddReq(url)) }.toSticker()
+        writeStickerCache(listOf(sticker) + (peekStickers() ?: emptyList()).filterNot { it.url == sticker.url })
+        return sticker
+    }
+
+    suspend fun deleteSticker(id: String) {
+        val numeric = id.toLongOrNull() ?: return
+        apiCall { Api.service.deleteSticker(numeric) }
+        writeStickerCache((peekStickers() ?: emptyList()).filterNot { it.id == id })
+    }
+
+    private suspend fun writeStickerCache(list: List<Sticker>) = withContext(Dispatchers.IO) {
+
+        CacheStore.put(scopedKey(cacheKey("stickers")), ListSerializer(Sticker.serializer()), list)
     }
 
     val achievementCatalog: List<Pair<String, Achievement>> = listOf(
@@ -1191,6 +1236,7 @@ private fun NoticeKindOf(kind: String): NoticeKind = when (kind) {
     "follow" -> NoticeKind.FOLLOW
     "warn" -> NoticeKind.WARN
     "mute" -> NoticeKind.MUTE
+    "up" -> NoticeKind.UP
     else -> NoticeKind.SYSTEM
 }
 
@@ -1205,6 +1251,9 @@ private fun dev.arisu.shrine.data.remote.NoticeDto.toNotice(): Notice = Notice(
     status = null,
     targetRoute = targetRoute.ifEmpty { null },
 )
+
+private fun dev.arisu.shrine.data.remote.StickerDto.toSticker(): Sticker =
+    Sticker(id = id.toString(), url = url, animated = animated)
 
 private fun MeDto.toUser(): User = User(
     id = no,

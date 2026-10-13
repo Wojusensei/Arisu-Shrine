@@ -294,7 +294,8 @@ func (s *Store) ToggleUp(ctx context.Context, postID, userID int64, hotThreshold
 		}
 
 		var alive bool
-		if err := tx.QueryRow(ctx, `SELECT deleted_at IS NULL FROM posts WHERE id=$1`, postID).Scan(&alive); err != nil {
+		var title string
+		if err := tx.QueryRow(ctx, `SELECT deleted_at IS NULL, title FROM posts WHERE id=$1`, postID).Scan(&alive, &title); err != nil {
 			return ErrNotFound
 		}
 		if !alive {
@@ -321,6 +322,17 @@ func (s *Store) ToggleUp(ctx context.Context, postID, userID int64, hotThreshold
 		}
 		if active && count >= int64(hotThreshold) {
 			if _, err := tx.Exec(ctx, `INSERT INTO achievements(user_id, code) VALUES($1,'hot_author') ON CONFLICT DO NOTHING`, authorID); err != nil {
+				return err
+			}
+		}
+
+		if active && authorID != userID {
+			if err := createNotice(tx, ctx, NoticeInput{
+				UserID: authorID, Kind: "up", Category: "reply",
+				Content:     fmt.Sprintf("%s 顶了您的帖子《%s》", nicknameOf(tx, ctx, userID), title),
+				TargetRoute: model.FormatPostNo2(postID),
+				DedupeKey:   fmt.Sprintf("up:%d:%d", postID, userID),
+			}); err != nil {
 				return err
 			}
 		}

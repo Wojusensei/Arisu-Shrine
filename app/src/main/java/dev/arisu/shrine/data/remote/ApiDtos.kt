@@ -403,6 +403,24 @@ data class ReleaseReq(val version: String, val channel: String, @SerialName("cha
 data class UploadRes(val url: String)
 
 @Serializable
+data class StickerDto(
+    val id: Long = 0,
+    val url: String = "",
+    val animated: Boolean = false,
+    @SerialName("created_at") val createdAt: Long = 0,
+)
+
+@Serializable
+data class StickerListRes(
+    val limit: Int = 64,
+    val total: Int = 0,
+    val items: List<StickerDto> = emptyList(),
+)
+
+@Serializable
+data class StickerAddReq(val url: String)
+
+@Serializable
 data class OkRes(val ok: Boolean = true)
 
 @Serializable

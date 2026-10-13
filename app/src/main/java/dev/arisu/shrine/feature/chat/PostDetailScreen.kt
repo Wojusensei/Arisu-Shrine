@@ -107,14 +107,15 @@ import dev.arisu.shrine.core.components.TopBarIcon
 import dev.arisu.shrine.core.components.accentRaised
 import dev.arisu.shrine.core.components.glassPanel
 import dev.arisu.shrine.core.components.neuInset
+import dev.arisu.shrine.core.components.smoothScrollToTop
 import dev.arisu.shrine.core.components.softCard
+import dev.arisu.shrine.core.components.ImageViewerDialog
 import dev.arisu.shrine.core.design.InkFaint
 import dev.arisu.shrine.core.design.InkMuted
 import dev.arisu.shrine.core.design.NeuBaseHigh
 import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.design.NeuShadow
 import dev.arisu.shrine.core.design.Vermilion
-import dev.arisu.shrine.core.markdown.MarkdownImagePlaceholder
 import dev.arisu.shrine.core.markdown.MarkdownText
 import dev.arisu.shrine.data.model.Comment
 import dev.arisu.shrine.data.model.Post
@@ -180,6 +181,11 @@ fun PostDetailScreen(
     var showEmoji by remember { mutableStateOf(false) }
     var previewUrl by remember { mutableStateOf<String?>(null) }
 
+    var pendingCommentImage by remember { mutableStateOf<java.io.File?>(null) }
+    var uploadProgress by remember { mutableStateOf(-1f) }
+
+    var collectedStickers by remember { mutableStateOf<Set<String>>(emptySet()) }
+
     var draft by rememberSaveable { mutableStateOf("") }
     var replyTo by rememberSaveable(stateSaver = ReplySaver) { mutableStateOf<Comment?>(null) }
 
@@ -210,6 +216,21 @@ fun PostDetailScreen(
     }
 
     LaunchedEffect(postId) { refresh() }
+
+    fun uploadCommentImage(file: java.io.File) {
+        uploadingImage = true
+        uploadProgress = 0f
+        scope.launch {
+            try {
+                draftImage = Shrine.uploadImage(file) { uploadProgress = it }
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                errorMsg = e.toApiMessage()
+            }
+            uploadingImage = false
+            uploadProgress = -1f
+        }
+    }
 
     val currentUser = me
     val isAuthor = post != null && currentUser != null && post!!.authorId == currentUser.id
@@ -486,7 +507,7 @@ fun PostDetailScreen(
 
                     ScrollTopOrb(
                         listState = listState,
-                        onClick = { scope.launch { listState.animateScrollToItem(0) } },
+                        onClick = { scope.launch { listState.smoothScrollToTop() } },
                         modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 92.dp),
                     )
 
@@ -505,6 +526,7 @@ fun PostDetailScreen(
                             draft = draft,
                             draftImage = draftImage,
                             uploading = uploadingImage,
+                            uploadProgress = uploadProgress,
                             onDraftChange = { new ->
 
                                 if (new.length == draft.length + 1 && new.endsWith("@")) showMention = true
@@ -514,15 +536,20 @@ fun PostDetailScreen(
                             onEmoji = { showEmoji = true },
                             onPickImage = pickImage@{ uri ->
                                 if (uploadingImage) return@pickImage
-                                uploadingImage = true
+
                                 scope.launch {
-                                    try {
-                                        draftImage = Shrine.uploadImageFromUri(context, uri)
+                                    val file = try {
+                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                            dev.arisu.shrine.core.media.stagePickedImage(
+                                                context, uri, java.io.File(context.cacheDir, "upload"),
+                                            )
+                                        }
                                     } catch (e: Exception) {
                                         if (e is kotlinx.coroutines.CancellationException) throw e
                                         errorMsg = e.toApiMessage()
+                                        null
                                     }
-                                    uploadingImage = false
+                                    if (file != null) pendingCommentImage = file
                                 }
                             },
                             onRemoveImage = { draftImage = null },
@@ -858,6 +885,8 @@ fun PostDetailScreen(
         if (showEmoji) {
             EmojiSheet(
                 onSelect = { draft += it },
+
+                onSticker = { sticker -> draftImage = sticker.url },
                 onDismiss = { showEmoji = false },
             )
         }
@@ -875,7 +904,39 @@ fun PostDetailScreen(
 
         val previewing = previewUrl
         if (previewing != null) {
-            ImagePreviewDialog(url = previewing, onDismiss = { previewUrl = null })
+            ImageViewerDialog(
+                url = previewing,
+                addedToStickers = previewing in collectedStickers,
+                onAddSticker = { imageUrl ->
+                    scope.launch {
+                        try {
+                            Shrine.addSticker(imageUrl)
+                            collectedStickers = collectedStickers + imageUrl
+                            notice = "已添加到表情包"
+                        } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            notice = e.toApiMessage()
+                        }
+                    }
+                },
+                onDismiss = { previewUrl = null },
+            )
+        }
+
+        val editingImage = pendingCommentImage
+        if (editingImage != null) {
+            dev.arisu.shrine.feature.editor.ImageEditorOverlay(
+                sourcePath = editingImage.absolutePath,
+                onCancel = {
+                    editingImage.delete()
+                    pendingCommentImage = null
+                },
+                onConfirm = { path ->
+                    editingImage.delete()
+                    pendingCommentImage = null
+                    uploadCommentImage(java.io.File(path))
+                },
+            )
         }
     }
 }
@@ -1349,6 +1410,8 @@ private fun CommentInputBar(
     draft: String,
     draftImage: String?,
     uploading: Boolean,
+
+    uploadProgress: Float,
     onDraftChange: (String) -> Unit,
     onEmoji: () -> Unit,
     onPickImage: (android.net.Uri) -> Unit,
@@ -1432,7 +1495,11 @@ private fun CommentInputBar(
                 enabled = !uploading,
             ) {
                 if (uploading) {
-                    dev.arisu.shrine.core.components.YinYangOrb(size = 18.dp)
+                    androidx.compose.material3.CircularProgressIndicator(
+                        progress = { uploadProgress.coerceAtLeast(0f) },
+                        strokeWidth = 2.5.dp,
+                        modifier = Modifier.size(20.dp),
+                    )
                 } else {
                     Icon(
                         imageVector = Icons.Rounded.AddPhotoAlternate,
@@ -1462,42 +1529,6 @@ private fun CommentInputBar(
                 )
             }
             Spacer(Modifier.width(2.dp))
-        }
-    }
-}
-
-@Composable
-private fun ImagePreviewDialog(url: String, onDismiss: () -> Unit) {
-    Dialog(
-        onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false),
-    ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.94f))
-                .clickable { onDismiss() },
-            contentAlignment = Alignment.Center,
-        ) {
-            BoxWithConstraints(Modifier.fillMaxWidth().padding(horizontal = 14.dp)) {
-
-                val imageHeight = maxHeight * 0.62f
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    MarkdownImagePlaceholder(
-                        alt = "图片",
-                        url = url,
-                        height = imageHeight,
-                        onClick = onDismiss,
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    Text(
-                        text = "点击任意处关闭",
-                        style = MaterialTheme.typography.labelSmall,
-
-                        color = Color.White.copy(alpha = 0.75f),
-                    )
-                }
-            }
         }
     }
 }

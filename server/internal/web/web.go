@@ -191,6 +191,11 @@ func (w *Web) Router() *gin.Engine {
 		guarded.GET("/releases/check", w.checkUpdate)
 		guarded.POST("/releases", w.createRelease)
 		guarded.POST("/upload", w.upload)
+
+		guarded.GET("/stickers", w.myStickers)
+		guarded.POST("/stickers", w.addSticker)
+		guarded.DELETE("/stickers/:id", w.deleteSticker)
+		guarded.GET("/users/:id/stickers", w.userStickers)
 	}
 	return r
 }

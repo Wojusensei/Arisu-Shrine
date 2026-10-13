@@ -48,6 +48,7 @@ import dev.arisu.shrine.core.components.ShrineRefreshingHint
 import dev.arisu.shrine.core.components.SortBar
 import dev.arisu.shrine.core.components.TopBarIcon
 import dev.arisu.shrine.core.components.UnderlineTabs
+import dev.arisu.shrine.core.components.smoothScrollToTop
 import dev.arisu.shrine.data.model.Board
 import dev.arisu.shrine.data.model.Post
 import dev.arisu.shrine.data.model.PostSort
@@ -189,8 +190,15 @@ fun ChatBoardScreen(
         val chatListState = rememberLazyListState()
 
         LaunchedEffect(Unit) {
+            if (Shrine.consumeJustPublished()) {
+                reloadKey++
+                chatListState.scrollToItem(0)
+            }
+        }
+
+        LaunchedEffect(Unit) {
             ScrollTopBus.events.collect { route ->
-                if (route == Routes.CHAT) scope.launch { chatListState.animateScrollToItem(0) }
+                if (route == Routes.CHAT) scope.launch { chatListState.smoothScrollToTop() }
             }
         }
 
@@ -265,7 +273,7 @@ fun ChatBoardScreen(
 
                 ScrollTopOrb(
                     listState = chatListState,
-                    onClick = { scope.launch { chatListState.animateScrollToItem(0) } },
+                    onClick = { scope.launch { chatListState.smoothScrollToTop() } },
                     modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 118.dp),
                 )
             }

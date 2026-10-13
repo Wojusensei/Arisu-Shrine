@@ -76,6 +76,8 @@ internal sealed interface MdBlock {
     data object Divider : MdBlock
 }
 
+const val MARKDOWN_STICKER_ALT = "表情"
+
 private val imageTokenRe = Regex(
     """\[!\[([^\]]*)]\(([^)\s]+)\)]\(([^)\s]+)\)""" +
         """|!\[([^\]]*)]\(([^)\s]+)\)""",
@@ -687,12 +689,16 @@ fun MarkdownText(
                         }
                     }
 
-                    is MdBlock.Image -> MarkdownImagePlaceholder(
-                        alt = block.alt,
-                        url = block.url,
-                        natural = naturalImages,
-                        onClick = { onImageTap(block) },
-                    )
+                    is MdBlock.Image -> if (block.alt == MARKDOWN_STICKER_ALT) {
+                        StickerInlineImage(block.alt, block.url) { onImageTap(block) }
+                    } else {
+                        MarkdownImagePlaceholder(
+                            alt = block.alt,
+                            url = block.url,
+                            natural = naturalImages,
+                            onClick = { onImageTap(block) },
+                        )
+                    }
 
                     is MdBlock.ImageRow -> if (naturalImages) {
                         androidx.compose.foundation.layout.FlowRow(
@@ -843,6 +849,28 @@ fun MarkdownImagePlaceholder(
                     )
                 }
             },
+        )
+    }
+}
+
+@Composable
+private fun StickerInlineImage(
+    alt: String,
+    url: String,
+    onClick: (() -> Unit)?,
+) {
+    Box(
+        Modifier
+            .size(96.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        coil3.compose.SubcomposeAsyncImage(
+            model = url,
+            contentDescription = alt.ifBlank { "表情" },
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            modifier = Modifier.fillMaxSize(),
         )
     }
 }

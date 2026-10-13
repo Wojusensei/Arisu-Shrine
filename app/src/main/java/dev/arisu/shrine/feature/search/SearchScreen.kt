@@ -60,6 +60,7 @@ import dev.arisu.shrine.core.components.ShrineListEnd
 import dev.arisu.shrine.core.components.SoftPill
 import dev.arisu.shrine.core.components.headerAtmosphere
 import dev.arisu.shrine.core.components.neuInset
+import dev.arisu.shrine.core.components.smoothScrollToTop
 import dev.arisu.shrine.core.design.InkMuted
 import dev.arisu.shrine.core.design.NeuInsetDeep
 import dev.arisu.shrine.data.remote.toApiMessage
@@ -265,7 +266,7 @@ fun SearchScreen(
     }
     ScrollTopOrb(
         listState = searchListState,
-        onClick = { scope.launch { searchListState.animateScrollToItem(0) } },
+        onClick = { scope.launch { searchListState.smoothScrollToTop() } },
         modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 28.dp),
     )
     }

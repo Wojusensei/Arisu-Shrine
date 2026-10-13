@@ -865,15 +865,8 @@ private fun CustomPreview(markdown: String, css: String) {
     }
 }
 
-internal fun generateImageSample(width: Int, height: Int, target: Int): Int {
-    var sample = 1
-    var longest = maxOf(width, height)
-    while (longest / 2 >= target) {
-        sample *= 2
-        longest /= 2
-    }
-    return sample
-}
+internal fun generateImageSample(width: Int, height: Int, target: Int): Int =
+    dev.arisu.shrine.core.media.imageSampleSize(width, height, target)
 
 private val RebindEmailRegex = Regex("^[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}$")
 private fun isEmailLocal(s: String) = RebindEmailRegex.matches(s.trim())

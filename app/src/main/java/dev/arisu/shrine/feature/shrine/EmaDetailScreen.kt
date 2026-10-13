@@ -68,6 +68,7 @@ import dev.arisu.shrine.core.components.TopBarIcon
 import dev.arisu.shrine.core.components.accentRaised
 import dev.arisu.shrine.core.components.glassPanel
 import dev.arisu.shrine.core.components.neuInset
+import dev.arisu.shrine.core.components.smoothScrollToTop
 import dev.arisu.shrine.core.design.NeuBaseHigh
 import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.design.Vermilion
@@ -95,6 +96,9 @@ fun EmaDetailScreen(
     var stateMenuOpen by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     var showEmoji by remember { mutableStateOf(false) }
+
+    var previewUrl by remember { mutableStateOf<String?>(null) }
+    var collectedStickers by remember { mutableStateOf<Set<String>>(emptySet()) }
     var reportOpen by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<dev.arisu.shrine.data.model.Ema?>(null) }
 
@@ -200,7 +204,32 @@ fun EmaDetailScreen(
         if (showEmoji) {
             EmojiSheet(
                 onSelect = { reply += it },
+                onSticker = { sticker ->
+                    val snippet = "![${dev.arisu.shrine.core.markdown.MARKDOWN_STICKER_ALT}](${sticker.url})"
+                    reply = if (reply.isBlank()) snippet else reply.trimEnd('\n') + "\n" + snippet
+                },
                 onDismiss = { showEmoji = false },
+            )
+        }
+
+        val previewing = previewUrl
+        if (previewing != null) {
+            dev.arisu.shrine.core.components.ImageViewerDialog(
+                url = previewing,
+                addedToStickers = previewing in collectedStickers,
+                onAddSticker = { imageUrl ->
+                    scope.launch {
+                        try {
+                            Shrine.addSticker(imageUrl)
+                            collectedStickers = collectedStickers + imageUrl
+                            notice = "已添加到表情包"
+                        } catch (e: Exception) {
+                            if (e is kotlinx.coroutines.CancellationException) throw e
+                            notice = e.toApiMessage()
+                        }
+                    }
+                },
+                onDismiss = { previewUrl = null },
             )
         }
 
@@ -292,7 +321,7 @@ fun EmaDetailScreen(
                             }
 
                             Spacer(Modifier.height(13.dp))
-                            MarkdownText(ema0.body)
+                            MarkdownText(ema0.body, onImageClick = { previewUrl = it })
 
                             Spacer(Modifier.height(6.dp))
 
@@ -346,6 +375,7 @@ fun EmaDetailScreen(
                                                 (me?.role?.canModerate == true && item.authorRole.rank < (me?.role?.rank ?: 0)),
                                             onOpenUser = onOpenUser,
                                             onDelete = { pendingReplyDelete = item },
+                                            onOpenImage = { previewUrl = it },
                                         )
                                     }
                                 }
@@ -357,7 +387,7 @@ fun EmaDetailScreen(
 
                         ScrollTopOrb(
                             scrollState = emaScroll,
-                            onClick = { scope.launch { emaScroll.animateScrollTo(0) } },
+                            onClick = { scope.launch { emaScroll.smoothScrollToTop() } },
                             modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 96.dp),
                         )
 
@@ -511,6 +541,7 @@ private fun EmaReplyRow(
     canDelete: Boolean,
     onOpenUser: (String) -> Unit,
     onDelete: () -> Unit,
+    onOpenImage: (String) -> Unit = {},
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(
@@ -557,7 +588,11 @@ private fun EmaReplyRow(
                 )
             }
             Spacer(Modifier.height(4.dp))
-            MarkdownText(reply.content, style = MaterialTheme.typography.bodyMedium)
+            MarkdownText(
+                reply.content,
+                style = MaterialTheme.typography.bodyMedium,
+                onImageClick = onOpenImage,
+            )
         }
         if (canDelete) {
             Box {

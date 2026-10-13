@@ -46,6 +46,8 @@ import dev.arisu.shrine.core.components.ArisuTopBar
 import dev.arisu.shrine.core.components.ShrineLoadingState
 import dev.arisu.shrine.core.design.InkTitle
 import dev.arisu.shrine.core.design.NeuBase
+import dev.arisu.shrine.core.media.CropTransform
+import dev.arisu.shrine.core.media.coverFit
 import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -53,8 +55,6 @@ import kotlinx.coroutines.launch
 private const val CROP_OUT = 640
 
 private const val CROP_DECODE_MAX = 1600
-
-private const val CROP_MAX_ZOOM = 4f
 
 @Composable
 fun AvatarCropOverlay(
@@ -135,7 +135,7 @@ fun AvatarCropOverlay(
                         val source = bitmap ?: return@ArisuPrimaryButton
                         cropping = true
                         scope.launch {
-                            val fit = viewportPx / minOf(source.width, source.height).toFloat()
+                            val fit = coverFit(source.width, source.height, viewportPx, viewportPx)
                             val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 runCatching {
                                     cropToFile(context, source, transform.offset, fit * transform.zoom, viewportPx)
@@ -151,19 +151,6 @@ fun AvatarCropOverlay(
     }
 }
 
-internal class CropTransform {
-    var zoom by mutableStateOf(1f)
-        private set
-    var offset by mutableStateOf(Offset.Zero)
-        private set
-
-    fun apply(pan: Offset, zoomChange: Float, bmpW: Int, bmpH: Int, fit: Float, viewportPx: Float) {
-        zoom = (zoom * zoomChange).coerceIn(1f, CROP_MAX_ZOOM)
-
-        offset = clampPan(offset + pan, bmpW, bmpH, fit * zoom, viewportPx)
-    }
-}
-
 @Composable
 private fun CropViewport(
     bitmap: android.graphics.Bitmap,
@@ -174,14 +161,14 @@ private fun CropViewport(
 ) {
     val image = remember(bitmap) { bitmap.asImageBitmap() }
 
-    val fit = viewportPx / minOf(bitmap.width, bitmap.height).toFloat()
+    val fit = coverFit(bitmap.width, bitmap.height, viewportPx, viewportPx)
 
     Box(
         modifier
             .size(viewport)
             .pointerInput(bitmap, viewportPx) {
                 detectTransformGestures { _, pan, zoomChange, _ ->
-                    transform.apply(pan, zoomChange, bitmap.width, bitmap.height, fit, viewportPx)
+                    transform.apply(pan, zoomChange, bitmap.width, bitmap.height, fit, viewportPx, viewportPx)
                 }
             },
     ) {
@@ -219,47 +206,8 @@ private fun CropViewport(
     }
 }
 
-private fun clampPan(
-    pan: Offset,
-    bmpW: Int,
-    bmpH: Int,
-    scale: Float,
-    viewportPx: Float,
-): Offset {
-    val maxX = ((bmpW * scale - viewportPx) / 2f).coerceAtLeast(0f)
-    val maxY = ((bmpH * scale - viewportPx) / 2f).coerceAtLeast(0f)
-    return Offset(pan.x.coerceIn(-maxX, maxX), pan.y.coerceIn(-maxY, maxY))
-}
-
-private fun decodeCropSource(file: File): android.graphics.Bitmap? {
-    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-    val opts = android.graphics.BitmapFactory.Options().apply {
-        inSampleSize = generateImageSample(bounds.outWidth, bounds.outHeight, CROP_DECODE_MAX)
-    }
-    val src = android.graphics.BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
-    val degrees = readExifDegrees(file)
-    if (degrees == 0) return src
-    val rotated = android.graphics.Bitmap.createBitmap(
-        src, 0, 0, src.width, src.height,
-        android.graphics.Matrix().apply { postRotate(degrees.toFloat()) },
-        true,
-    )
-    if (rotated !== src) src.recycle()
-    return rotated
-}
-
-private fun readExifDegrees(file: File): Int = runCatching {
-    val orientation = android.media.ExifInterface(file.absolutePath)
-        .getAttributeInt(android.media.ExifInterface.TAG_ORIENTATION, android.media.ExifInterface.ORIENTATION_NORMAL)
-    when (orientation) {
-        android.media.ExifInterface.ORIENTATION_ROTATE_90 -> 90
-        android.media.ExifInterface.ORIENTATION_ROTATE_180 -> 180
-        android.media.ExifInterface.ORIENTATION_ROTATE_270 -> 270
-        else -> 0
-    }
-}.getOrDefault(0)
+private fun decodeCropSource(file: File): android.graphics.Bitmap? =
+    dev.arisu.shrine.core.media.decodeForEdit(file, CROP_DECODE_MAX)
 
 private fun cropToFile(
     context: android.content.Context,

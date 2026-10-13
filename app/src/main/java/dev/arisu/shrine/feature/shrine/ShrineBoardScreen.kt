@@ -91,6 +91,7 @@ import dev.arisu.shrine.core.components.UnderlineTabs
 import dev.arisu.shrine.core.components.YinYangOrb
 import dev.arisu.shrine.core.components.accentRaised
 import dev.arisu.shrine.core.components.neuInset
+import dev.arisu.shrine.core.components.smoothScrollToTop
 import dev.arisu.shrine.core.components.softCard
 import dev.arisu.shrine.core.design.InkMuted
 import dev.arisu.shrine.core.design.NeuBase
@@ -376,7 +377,7 @@ private fun EmaSection(
                 val emaListState = rememberLazyListState()
                 LaunchedEffect(Unit) {
                     ScrollTopBus.events.collect { route ->
-                        if (route == Routes.SHRINE) scope.launch { emaListState.animateScrollToItem(0) }
+                        if (route == Routes.SHRINE) scope.launch { emaListState.smoothScrollToTop() }
                     }
                 }
 
@@ -427,7 +428,7 @@ private fun EmaSection(
                 }
                 ScrollTopOrb(
                     listState = emaListState,
-                    onClick = { scope.launch { emaListState.animateScrollToItem(0) } },
+                    onClick = { scope.launch { emaListState.smoothScrollToTop() } },
                     modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 118.dp),
                 )
             }
@@ -692,7 +693,7 @@ private fun StaffSection(onOpenUser: (String) -> Unit) {
 
     LaunchedEffect(Unit) {
         ScrollTopBus.events.collect { route ->
-            if (route == Routes.SHRINE) scope.launch { staffListState.animateScrollToItem(0) }
+            if (route == Routes.SHRINE) scope.launch { staffListState.smoothScrollToTop() }
         }
     }
 
@@ -1078,7 +1079,7 @@ private fun ChangelogSection(onOpenChangelog: (String) -> Unit) {
 
     LaunchedEffect(Unit) {
         ScrollTopBus.events.collect { route ->
-            if (route == Routes.SHRINE) scope.launch { logListState.animateScrollToItem(0) }
+            if (route == Routes.SHRINE) scope.launch { logListState.smoothScrollToTop() }
         }
     }
 
