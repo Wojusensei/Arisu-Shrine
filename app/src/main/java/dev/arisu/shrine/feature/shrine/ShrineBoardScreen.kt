@@ -251,7 +251,6 @@ fun ShrineBoardScreen(
 
     if (filterOpen) {
         EmaFilterSheet(
-            tags = tagFilter,
             states = stateFilter,
             sort = sort,
             onSortChange = { sort = it },
@@ -367,10 +366,19 @@ private fun EmaSection(
     ShrinePullRefreshBox(onRefresh = { load() }, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             EmaFilterBar(
-                tags = tags,
                 states = states,
                 sort = sort,
                 onClearSort = { onSortChange(EmaSort.NEWEST) },
+            )
+
+            UnderlineTabs(
+                items = EmaTagTabs,
+                selected = tags.firstOrNull(),
+                onSelect = { picked ->
+                    tags.clear()
+                    if (picked != null) tags.add(picked)
+                },
+                label = { it?.label ?: "全部" },
             )
 
             Box(Modifier.fillMaxSize()) {
@@ -447,15 +455,16 @@ private fun EmaSection(
     }
 }
 
+private val EmaTagTabs: List<EmaTag?> = listOf(null) + EmaTag.entries
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EmaFilterBar(
-    tags: MutableList<EmaTag>,
     states: MutableList<EmaState>,
     sort: EmaSort,
     onClearSort: () -> Unit,
 ) {
-    val active = tags.isNotEmpty() || states.isNotEmpty() || sort != EmaSort.NEWEST
+    val active = states.isNotEmpty() || sort != EmaSort.NEWEST
     if (!active) return
 
     Row(
@@ -479,14 +488,6 @@ private fun EmaFilterBar(
         ) {
             val pillBg = MaterialTheme.colorScheme.surfaceContainerHigh
             val pillFg = MaterialTheme.colorScheme.onSurfaceVariant
-            tags.toList().forEach { tag ->
-                SoftPill(
-                    text = "${tag.label} ×",
-                    color = pillFg,
-                    background = pillBg,
-                    modifier = Modifier.clickable { tags.remove(tag) },
-                )
-            }
             states.toList().forEach { state ->
                 SoftPill(
                     text = "${state.label} ×",
@@ -510,13 +511,11 @@ private fun EmaFilterBar(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EmaFilterSheet(
-    tags: MutableList<EmaTag>,
     states: MutableList<EmaState>,
     sort: EmaSort,
     onSortChange: (EmaSort) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val draftTags = remember { mutableStateListOf<EmaTag>().also { it.addAll(tags) } }
     val draftStates = remember { mutableStateListOf<EmaState>().also { it.addAll(states) } }
     var draftSort by remember { mutableStateOf(sort) }
 
@@ -531,33 +530,11 @@ private fun EmaFilterSheet(
         Column(Modifier.fillMaxWidth().padding(bottom = 28.dp)) {
             SheetHeader(
                 title = "筛选绘马",
-                subtitle = "按标签、状态筛选，或切换时间排序。",
+                subtitle = "按状态筛选，或切换时间排序。",
                 onClose = onDismiss,
             )
 
             Column(Modifier.padding(horizontal = 20.dp)) {
-                SectionLabel(text = "标签")
-                SectionCard {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        EmaTag.entries.forEach { tag ->
-                            FilterPill(
-                                text = tag.label,
-                                color = tag.color,
-                                background = tag.background,
-                                selected = tag in draftTags,
-                                onClick = {
-                                    if (tag in draftTags) draftTags.remove(tag) else draftTags.add(tag)
-                                },
-                            )
-                        }
-                    }
-                }
-
                 SectionLabel(text = "状态")
                 SectionCard {
                     Row(
@@ -605,7 +582,6 @@ private fun EmaFilterSheet(
                     ArisuGhostButton(
                         text = "重置",
                         onClick = {
-                            draftTags.clear()
                             draftStates.clear()
                             draftSort = EmaSort.NEWEST
                         },
@@ -615,8 +591,6 @@ private fun EmaFilterSheet(
                     ArisuPrimaryButton(
                         text = "应用",
                         onClick = {
-                            tags.clear()
-                            tags.addAll(draftTags)
                             states.clear()
                             states.addAll(draftStates)
                             onSortChange(draftSort)

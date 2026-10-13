@@ -421,6 +421,9 @@ data class StickerListRes(
 data class StickerAddReq(val url: String)
 
 @Serializable
+data class StickerReorderReq(val ids: List<Long>)
+
+@Serializable
 data class OkRes(val ok: Boolean = true)
 
 @Serializable

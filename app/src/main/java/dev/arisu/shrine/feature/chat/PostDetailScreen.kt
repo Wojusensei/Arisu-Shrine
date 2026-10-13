@@ -908,16 +908,9 @@ fun PostDetailScreen(
                 url = previewing,
                 addedToStickers = previewing in collectedStickers,
                 onAddSticker = { imageUrl ->
-                    scope.launch {
-                        try {
-                            Shrine.addSticker(imageUrl)
-                            collectedStickers = collectedStickers + imageUrl
-                            notice = "已添加到表情包"
-                        } catch (e: Exception) {
-                            if (e is kotlinx.coroutines.CancellationException) throw e
-                            notice = e.toApiMessage()
-                        }
-                    }
+
+                    Shrine.addSticker(imageUrl)
+                    collectedStickers = collectedStickers + imageUrl
                 },
                 onDismiss = { previewUrl = null },
             )

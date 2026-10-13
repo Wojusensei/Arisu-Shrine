@@ -493,8 +493,16 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
 
 private fun NavHostController.switchTab(tab: ArisuTab) {
 
+    val isChat = tab.route == Routes.CHAT
     navigate(tab.route) {
-        popUpTo(graph.findStartDestination().id)
+        if (isChat) {
+            popUpTo(graph.findStartDestination().id) {
+                inclusive = true
+                saveState = false
+            }
+        } else {
+            popUpTo(graph.findStartDestination().id)
+        }
         launchSingleTop = true
     }
 }

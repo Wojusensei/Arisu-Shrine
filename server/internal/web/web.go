@@ -194,6 +194,7 @@ func (w *Web) Router() *gin.Engine {
 
 		guarded.GET("/stickers", w.myStickers)
 		guarded.POST("/stickers", w.addSticker)
+		guarded.POST("/stickers/reorder", w.reorderStickers)
 		guarded.DELETE("/stickers/:id", w.deleteSticker)
 		guarded.GET("/users/:id/stickers", w.userStickers)
 	}
@@ -203,6 +204,10 @@ func (w *Web) Router() *gin.Engine {
 func serveUploads(w *Web) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("X-Content-Type-Options", "nosniff")
+
+		if strings.HasSuffix(strings.ToLower(c.Request.URL.Path), ".apk") {
+			c.Header("Content-Type", "application/vnd.android.package-archive")
+		}
 
 		http.StripPrefix("/uploads", http.FileServer(noDirListFS{http.Dir(w.Cfg.Upload.Dir)})).ServeHTTP(c.Writer, c.Request)
 	}

@@ -124,7 +124,6 @@ fun UserProfileScreen(
     var warnPanelOpen by remember { mutableStateOf(false) }
     var rolePanelOpen by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
-    var showStickers by remember { mutableStateOf(false) }
     var reportOpen by remember { mutableStateOf(false) }
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
 
@@ -275,30 +274,6 @@ fun UserProfileScreen(
             StatsCard(user = userState, isSelf = userId == me?.id, onOpenFollowList = onOpenFollowList)
 
             Spacer(Modifier.height(12.dp))
-            SectionLabel(text = "表情包", modifier = Modifier.padding(horizontal = 16.dp))
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .softCard(shape = RoundedCornerShape(14.dp), elevation = 2.dp)
-                    .clickable { showStickers = true }
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "看看 ${userState.nickname} 收藏的表情",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f),
-                )
-                SoftPill(
-                    text = "翻一翻",
-                    color = MaterialTheme.colorScheme.primary,
-                    background = NeuInset,
-                )
-            }
-
-            Spacer(Modifier.height(12.dp))
 
             SectionLabel(text = "参拜热度", modifier = Modifier.padding(horizontal = 16.dp))
             HeatmapCard(
@@ -339,15 +314,6 @@ fun UserProfileScreen(
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)
                 .padding(bottom = 24.dp),
-        )
-    }
-
-    if (showStickers) {
-        dev.arisu.shrine.feature.profile.StickerPackDialog(
-            userId = userId,
-            nickname = userState.nickname,
-            onNotice = { notice = it },
-            onDismiss = { showStickers = false },
         )
     }
 

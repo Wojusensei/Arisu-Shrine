@@ -4,6 +4,10 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -67,7 +71,7 @@ fun ImageViewerDialog(
     url: String,
     onDismiss: () -> Unit,
 
-    onAddSticker: ((String) -> Unit)? = null,
+    onAddSticker: (suspend (String) -> Unit)? = null,
     addedToStickers: Boolean = false,
 ) {
     val context = LocalContext.current
@@ -102,13 +106,6 @@ fun ImageViewerDialog(
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> if (granted) save() else notice = "没有存储权限，存不进相册" }
-
-    LaunchedEffect(notice) {
-        if (notice != null) {
-            delay(2000)
-            notice = null
-        }
-    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -199,7 +196,9 @@ fun ImageViewerDialog(
                         .padding(bottom = 20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    val hint = notice ?: when {
+
+                    NoticePill(notice) { notice = null }
+                    val hint = when {
                         saving -> "正在存进相册…"
                         menu -> ""
                         zoom > 1f -> "单击回正 · 双指缩放 · 长按保存"
@@ -239,7 +238,15 @@ fun ImageViewerDialog(
                                     enabled = !addedToStickers,
                                 ) {
                                     menu = false
-                                    onAddSticker(url)
+                                    scope.launch {
+                                        try {
+                                            onAddSticker(url)
+                                            notice = "已添加到表情包"
+                                        } catch (e: Exception) {
+                                            if (e is kotlinx.coroutines.CancellationException) throw e
+                                            notice = e.toApiMessage()
+                                        }
+                                    }
                                 }
                             }
                             ViewerMenuRow(Icons.Rounded.Close, "收起") { menu = false }
@@ -247,6 +254,38 @@ fun ImageViewerDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun NoticePill(text: String?, onDismiss: () -> Unit) {
+    var shown by remember { mutableStateOf("") }
+    if (text != null) shown = text
+    LaunchedEffect(text) {
+        if (text != null) {
+            delay(2000)
+            onDismiss()
+        }
+    }
+    AnimatedVisibility(
+        visible = text != null,
+        enter = fadeIn(tween(180)),
+        exit = fadeOut(tween(260)),
+    ) {
+        Box(
+            Modifier
+                .padding(bottom = 10.dp)
+                .clip(RoundedCornerShape(24.dp))
+                .background(Color.White.copy(alpha = 0.93f))
+                .padding(horizontal = 18.dp, vertical = 11.dp)
+        ) {
+            Text(
+                text = shown,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF2B2823),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            )
         }
     }
 }

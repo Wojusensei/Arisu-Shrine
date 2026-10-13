@@ -80,3 +80,25 @@ func (w *Web) deleteSticker(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 	}
 }
+
+func (w *Web) reorderStickers(c *gin.Context) {
+	v := w.viewer(c)
+	var req struct {
+		IDs []int64 `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.IDs) == 0 || len(req.IDs) > store.StickerLimit {
+		w.bad(c, "请求格式不对")
+		return
+	}
+	err := w.St.ReorderStickers(c.Request.Context(), v.ID, req.IDs)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		w.err(c, http.StatusNotFound, "表情夹已变化，请重新打开设置")
+	case errors.Is(err, store.ErrBadRequest):
+		w.bad(c, "请求格式不对")
+	case err != nil:
+		w.err(c, http.StatusInternalServerError, "排序保存失败，点击重试")
+	default:
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	}
+}

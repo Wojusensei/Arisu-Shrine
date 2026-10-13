@@ -65,6 +65,7 @@ import dev.arisu.shrine.data.remote.SendCodeReq
 import dev.arisu.shrine.data.remote.SessionDto
 import dev.arisu.shrine.data.remote.StaffApplyReq
 import dev.arisu.shrine.data.remote.StickerAddReq
+import dev.arisu.shrine.data.remote.StickerReorderReq
 import dev.arisu.shrine.data.remote.UserBriefDto
 import dev.arisu.shrine.data.remote.UserDto
 import dev.arisu.shrine.data.remote.apiCall
@@ -706,6 +707,8 @@ object Shrine {
             NoticePage.serializer(),
             fetch = {
                 val dto = apiCall { Api.service.notices(category, only, page, pageSize) }
+
+                _unreadCount.value = dto.unread.toInt()
                 NoticePage(dto.items.map { it.toNotice() }, dto.unread.toInt(), dto.total)
             },
             cacheIf = { it.items.isNotEmpty() },
@@ -1050,9 +1053,6 @@ object Shrine {
     fun peekStickers(): List<Sticker>? =
         peekCache(cacheKey("stickers"), ListSerializer(Sticker.serializer()))
 
-    suspend fun userStickers(userId: String): List<Sticker> =
-        apiCall { Api.service.userStickers(userId) }.items.map { it.toSticker() }
-
     suspend fun addSticker(url: String): Sticker {
         val sticker = apiCall { Api.service.addSticker(StickerAddReq(url)) }.toSticker()
         writeStickerCache(listOf(sticker) + (peekStickers() ?: emptyList()).filterNot { it.url == sticker.url })
@@ -1063,6 +1063,13 @@ object Shrine {
         val numeric = id.toLongOrNull() ?: return
         apiCall { Api.service.deleteSticker(numeric) }
         writeStickerCache((peekStickers() ?: emptyList()).filterNot { it.id == id })
+    }
+
+    suspend fun reorderStickers(ordered: List<Sticker>) {
+        val ids = ordered.mapNotNull { it.id.toLongOrNull() }
+        if (ids.isEmpty()) return
+        apiCall { Api.service.reorderStickers(StickerReorderReq(ids)) }
+        writeStickerCache(ordered)
     }
 
     private suspend fun writeStickerCache(list: List<Sticker>) = withContext(Dispatchers.IO) {

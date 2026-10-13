@@ -1,9 +1,5 @@
 package dev.arisu.shrine.core.components
 
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.PickVisualMediaRequest
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -22,9 +18,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Handyman
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -40,7 +35,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.data.model.Sticker
@@ -54,14 +48,12 @@ fun StickerPanel(
     onPick: (Sticker) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var items by remember { mutableStateOf(Shrine.peekStickers() ?: emptyList()) }
     var loading by remember { mutableStateOf(Shrine.peekStickers() == null) }
-    var uploading by remember { mutableStateOf(false) }
-    var progress by remember { mutableStateOf(0f) }
     var notice by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<Sticker?>(null) }
+    var settingsOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         try {
@@ -72,39 +64,6 @@ fun StickerPanel(
             loading = false
 
             if (items.isEmpty()) notice = e.toApiMessage()
-        }
-    }
-
-    fun collect(url: String) {
-        scope.launch {
-            try {
-                val sticker = Shrine.addSticker(url)
-                items = listOf(sticker) + items.filterNot { it.url == sticker.url }
-                notice = "已添加到表情包"
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                notice = e.toApiMessage()
-            }
-            uploading = false
-            progress = 0f
-        }
-    }
-
-    val addLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
-    ) { uri: Uri? ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        uploading = true
-        progress = 0f
-        scope.launch {
-            try {
-
-                collect(Shrine.uploadImageFromUri(context, uri) { progress = it })
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                notice = e.toApiMessage()
-                uploading = false
-            }
         }
     }
 
@@ -141,7 +100,7 @@ fun StickerPanel(
 
         if (items.isEmpty()) {
             Text(
-                text = "还没有收藏的表情。点「添加」从相册选一张，长按别人发过的图也可以收进来。",
+                text = "还没有收藏的表情。点第一个格子进设置，从相册选一张；长按别人发过的图也能收进来。",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(bottom = 12.dp),
@@ -158,26 +117,13 @@ fun StickerPanel(
             cells.chunked(4).forEach { row ->
                 Row(
                     Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+
+                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     row.forEach { sticker ->
                         if (sticker == null) {
-                            AddStickerCell(
-                                busy = uploading,
-                                progress = progress,
-                                enabled = !atLimit,
-                                onClick = {
-                                    if (uploading) return@AddStickerCell
-                                    if (atLimit) {
-                                        notice = "表情夹最多 ${Shrine.stickerLimit} 张，先删几张再加"
-                                    } else {
-                                        addLauncher.launch(
-                                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                                        )
-                                    }
-                                },
-                            )
+                            SettingsCell { settingsOpen = true }
                         } else {
                             StickerCell(
                                 sticker = sticker,
@@ -217,6 +163,13 @@ fun StickerPanel(
             },
         )
     }
+    if (settingsOpen) {
+        StickerSettingsOverlay(onClose = {
+            settingsOpen = false
+
+            scope.launch { runCatching { items = Shrine.myStickers() } }
+        })
+    }
 }
 
 @Composable
@@ -244,41 +197,28 @@ private fun StickerCell(
 }
 
 @Composable
-private fun AddStickerCell(
-    busy: Boolean,
-    progress: Float,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
+private fun SettingsCell(onClick: () -> Unit) {
     Box(
         Modifier
             .size(64.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
-            .clickable(enabled = enabled || busy, onClick = onClick),
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        if (busy) {
-            CircularProgressIndicator(
-                progress = { progress },
-                strokeWidth = 2.5.dp,
-                modifier = Modifier.size(38.dp),
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = Icons.Rounded.Handyman,
+                contentDescription = "表情包设置",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
             )
-        } else {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = Icons.Rounded.Add,
-                    contentDescription = "添加表情",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    text = "添加",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Spacer(Modifier.height(3.dp))
+            Text(
+                text = "设置",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

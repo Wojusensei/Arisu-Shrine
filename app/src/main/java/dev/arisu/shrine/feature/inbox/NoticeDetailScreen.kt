@@ -103,7 +103,15 @@ fun NoticeDetailScreen(
     LaunchedEffect(notice?.id) {
 
         notice?.let { n ->
-            val ok = runCatching { Shrine.markRead(n.id) }.isSuccess
+
+            var ok = false
+            for (attempt in 0 until 3) {
+                if (runCatching { Shrine.markRead(n.id) }.isSuccess) {
+                    ok = true
+                    break
+                }
+                kotlinx.coroutines.delay(400L * (attempt + 1))
+            }
             if (ok) {
                 notice = n.copy(read = true)
 

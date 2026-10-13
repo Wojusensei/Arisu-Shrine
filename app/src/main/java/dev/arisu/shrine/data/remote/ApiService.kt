@@ -298,11 +298,11 @@ interface ApiService {
     @POST("api/stickers")
     suspend fun addSticker(@Body req: StickerAddReq): StickerDto
 
+    @POST("api/stickers/reorder")
+    suspend fun reorderStickers(@Body req: StickerReorderReq): OkRes
+
     @DELETE("api/stickers/{id}")
     suspend fun deleteSticker(@Path("id") id: Long): OkRes
-
-    @GET("api/users/{id}/stickers")
-    suspend fun userStickers(@Path("id") id: String): StickerListRes
 }
 
 @kotlinx.serialization.Serializable

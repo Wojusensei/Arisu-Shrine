@@ -20,8 +20,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -859,6 +863,12 @@ private fun StickerInlineImage(
     url: String,
     onClick: (() -> Unit)?,
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    var attempt by remember(url) { mutableStateOf(0) }
+    val model = remember(url, attempt) {
+        coil3.request.ImageRequest.Builder(context).data(url).build()
+    }
     Box(
         Modifier
             .size(96.dp)
@@ -867,10 +877,21 @@ private fun StickerInlineImage(
         contentAlignment = Alignment.Center,
     ) {
         coil3.compose.SubcomposeAsyncImage(
-            model = url,
+            model = model,
             contentDescription = alt.ifBlank { "表情" },
             contentScale = androidx.compose.ui.layout.ContentScale.Fit,
             modifier = Modifier.fillMaxSize(),
+            error = {
+                androidx.compose.material3.Icon(
+                    imageVector = androidx.compose.material.icons.Icons.Rounded.Refresh,
+                    contentDescription = "重新加载",
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .clickable { attempt++ },
+                )
+            },
         )
     }
 }
@@ -878,12 +899,6 @@ private fun StickerInlineImage(
 private val rasterUrlRe = Regex("""\.(png|jpe?g|webp|gif|bmp|avif)([?#].*)?$""", RegexOption.IGNORE_CASE)
 
 private val viewBoxAttrRe = Regex("""viewBox\s*=\s*["']""", RegexOption.IGNORE_CASE)
-
-private val svgHttpClient by lazy {
-    okhttp3.OkHttpClient.Builder()
-        .callTimeout(15L, java.util.concurrent.TimeUnit.SECONDS)
-        .build()
-}
 
 @Composable
 private fun NaturalImage(
@@ -897,18 +912,28 @@ private fun NaturalImage(
     var decoded by remember(url) { mutableStateOf<Pair<Int, Int>?>(null) }
 
     var model by remember(url) { mutableStateOf<Any?>(null) }
+    var failed by remember(url) { mutableStateOf(false) }
+    var attempt by remember(url) { mutableStateOf(0) }
     val density = androidx.compose.ui.platform.LocalDensity.current
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    androidx.compose.runtime.LaunchedEffect(url) {
+    androidx.compose.runtime.LaunchedEffect(url, attempt) {
+        failed = false
         if (rasterUrlRe.containsMatchIn(url)) {
             model = url
+            return@LaunchedEffect
+        }
+        val dir = java.io.File(context.cacheDir, "md_svg")
+        val file = java.io.File(dir, "${url.hashCode()}.svg")
+
+        if (file.exists() && file.length() > 0L) {
+            model = file
             return@LaunchedEffect
         }
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             runCatching {
                 val request = okhttp3.Request.Builder().url(url).build()
-                svgHttpClient.newCall(request).execute().use { response ->
+                dev.arisu.shrine.core.net.imageClient.newCall(request).execute().use { response ->
                     val text = response.body?.string().orEmpty()
                     if (text.isBlank()) throw IllegalStateException("空响应")
                     val patched = if (viewBoxAttrRe.containsMatchIn(text)) text else {
@@ -920,8 +945,6 @@ private fun NaturalImage(
                             text
                         }
                     }
-                    val dir = java.io.File(context.cacheDir, "md_svg")
-                    val file = java.io.File(dir, "${url.hashCode()}.svg")
                     dir.mkdirs()
                     file.writeText(patched)
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -961,7 +984,7 @@ private fun NaturalImage(
         if (dim == null) {
             Row(
                 Modifier
-                    .widthIn(min = 72.dp, max = 160.dp)
+                    .widthIn(min = 72.dp, max = if (failed) 190.dp else 160.dp)
                     .height(30.dp)
                     .clip(RoundedCornerShape(8.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant),
@@ -981,8 +1004,22 @@ private fun NaturalImage(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = if (failed) Modifier.weight(1f, fill = false) else Modifier,
                 )
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(8.dp))
+                if (failed) {
+
+                    androidx.compose.material3.Icon(
+                        imageVector = androidx.compose.material.icons.Icons.Rounded.Refresh,
+                        contentDescription = "重新加载",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .clickable { attempt++ },
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
             }
         }
         if (model != null) {
@@ -994,6 +1031,7 @@ private fun NaturalImage(
                 contentDescription = alt.ifBlank { "图片" },
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                 onSuccess = { st -> decoded = st.result.image.width to st.result.image.height },
+                onError = { failed = true },
                 modifier = Modifier
                     .then(dim?.let { (w, h) -> Modifier.width(w).height(h) } ?: Modifier)
                     .clip(RoundedCornerShape(8.dp))
