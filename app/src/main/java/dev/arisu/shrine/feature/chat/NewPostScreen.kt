@@ -186,7 +186,6 @@ fun NewPostScreen(
 
     fun stageCover(uri: Uri) {
         scope.launch {
-            coverProgress = 0f
             val file = try {
                 withContext(Dispatchers.IO) {
                     stagePickedImage(context, uri, File(context.cacheDir, "upload"))
@@ -197,8 +196,6 @@ fun NewPostScreen(
                 error = e.toApiMessage()
                 return@launch
             }
-            coverFile?.delete()
-            coverFile = file
 
             editing = EditTarget.Cover(file)
         }
@@ -250,14 +247,23 @@ fun NewPostScreen(
     if (editingTarget != null) {
         ImageEditorOverlay(
             sourcePath = editingTarget.path,
-            onCancel = { editing = null },
+
+            onCancel = {
+                if (editingTarget is EditTarget.Cover) {
+                    editingTarget.file.delete()
+                    coverProgress = -1f
+                }
+                editing = null
+            },
             lockedAspect = if (editingTarget is EditTarget.Cover) COVER_ASPECT else null,
             onConfirm = { path ->
                 editing = null
                 val edited = File(path)
                 when (editingTarget) {
                     is EditTarget.Cover -> {
+
                         editingTarget.file.delete()
+                        coverFile?.takeIf { it.absolutePath != edited.absolutePath }?.delete()
                         coverFile = edited
                         coverUrl = null
                         uploadCover(edited)
