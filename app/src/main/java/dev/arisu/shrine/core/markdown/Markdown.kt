@@ -64,17 +64,17 @@ import dev.arisu.shrine.core.design.PlaceholderTeal
 import dev.arisu.shrine.core.design.Vermilion
 
 internal sealed interface MdBlock {
-    data class Heading(val level: Int, val text: String) : MdBlock
-    data class Paragraph(val text: String) : MdBlock
+    data class Heading(val level: Int, val text: String, val centered: Boolean = false) : MdBlock
+    data class Paragraph(val text: String, val centered: Boolean = false) : MdBlock
     data class Bullet(val items: List<String>) : MdBlock
     data class Ordered(val items: List<String>) : MdBlock
     data class Code(val lang: String, val code: String) : MdBlock
     data class Quote(val text: String) : MdBlock
     data class Table(val header: List<String>, val rows: List<List<String>>) : MdBlock
 
-    data class Image(val alt: String, val url: String, val link: String? = null) : MdBlock
+    data class Image(val alt: String, val url: String, val link: String? = null, val centered: Boolean = false) : MdBlock
 
-    data class ImageRow(val items: List<Image>) : MdBlock
+    data class ImageRow(val items: List<Image>, val centered: Boolean = false) : MdBlock
     data class Tasks(val items: List<Pair<Boolean, String>>) : MdBlock
     data class Footnotes(val notes: Map<String, String>) : MdBlock
     data object Divider : MdBlock
@@ -87,12 +87,12 @@ private val imageTokenRe = Regex(
         """|!\[([^\]]*)]\(([^)\s]+)\)""",
 )
 
-private fun MutableList<MdBlock.Image>.toImageBlock(): MdBlock =
-    if (size == 1) this[0] else MdBlock.ImageRow(toList())
+private fun MutableList<MdBlock.Image>.toImageBlock(centered: Boolean = false): MdBlock =
+    if (size == 1) this[0] else MdBlock.ImageRow(toList(), centered)
 
-private fun MatchResult.toImage(): MdBlock.Image =
-    if (groups[3] != null) MdBlock.Image(groupValues[1], groupValues[2], link = groupValues[3])
-    else MdBlock.Image(groupValues[4], groupValues[5])
+private fun MatchResult.toImage(centered: Boolean = false): MdBlock.Image =
+    if (groups[3] != null) MdBlock.Image(groupValues[1], groupValues[2], link = groupValues[3], centered = centered)
+    else MdBlock.Image(groupValues[4], groupValues[5], centered = centered)
 
 private val headingRe = Regex("""^(#{1,6})\s+(.*)$""")
 private val bulletRe = Regex("""^\s*[-*+]\s+(.*)$""")
@@ -134,6 +134,11 @@ internal fun normalizeHtml(source: String): String {
     }
     text = text.replace(htmlComment, "")
     text = text.replace(Regex("""<br\s*/?>""", RegexOption.IGNORE_CASE), "\n")
+
+    text = text.replace(centerBlockRe) { m ->
+        val inner = m.groupValues[2].ifBlank { m.groupValues[3] }
+        "\n$CENTER_OPEN\n$inner\n$CENTER_CLOSE\n"
+    }
 
     text = text.replace(htmlDetails) { m ->
         val body = m.groupValues[1]
@@ -220,6 +225,8 @@ internal fun parseMarkdown(source: String, profileMode: Boolean = false): List<M
     val lines = normalizeHtml(source).replace("\r\n", "\n").split("\n")
     val blocks = mutableListOf<MdBlock>()
     var i = 0
+
+    var inCenter = false
     val footnotes = linkedMapOf<String, String>()
 
     while (i < lines.size) {
@@ -227,6 +234,10 @@ internal fun parseMarkdown(source: String, profileMode: Boolean = false): List<M
         val line = raw.trimEnd()
 
         when {
+            line == CENTER_OPEN -> { inCenter = true; i++ }
+
+            line == CENTER_CLOSE -> { inCenter = false; i++ }
+
             line.isBlank() -> i++
 
             line.startsWith("```") -> {
@@ -255,22 +266,22 @@ internal fun parseMarkdown(source: String, profileMode: Boolean = false): List<M
 
             headingRe.matches(line) -> {
                 val m = headingRe.find(line)!!
-                blocks += MdBlock.Heading(m.groupValues[1].length, m.groupValues[2].trim())
+                blocks += MdBlock.Heading(m.groupValues[1].length, m.groupValues[2].trim(), centered = inCenter)
                 i++
             }
 
             imageTokenRe.matchEntire(line.trim()) != null -> {
-                val first = imageTokenRe.matchEntire(line.trim())!!.toImage()
+                val first = imageTokenRe.matchEntire(line.trim())!!.toImage(inCenter)
                 if (profileMode) {
 
                     val group = mutableListOf(first)
                     i++
                     while (i < lines.size) {
                         val next = imageTokenRe.matchEntire(lines[i].trim()) ?: break
-                        group += next.toImage()
+                        group += next.toImage(inCenter)
                         i++
                     }
-                    blocks += if (group.size == 1) group[0] else MdBlock.ImageRow(group)
+                    blocks += if (group.size == 1) group[0] else MdBlock.ImageRow(group, centered = inCenter)
                 } else {
                     blocks += first
                     i++
@@ -348,20 +359,20 @@ internal fun parseMarkdown(source: String, profileMode: Boolean = false): List<M
                             val gap = joined.substring(last, m.range.first)
                             if (gap.isNotBlank()) {
                                 if (row.isNotEmpty()) { blocks += row.toImageBlock(); row = mutableListOf() }
-                                blocks += MdBlock.Paragraph(gap.trim())
+                                blocks += MdBlock.Paragraph(gap.trim(), centered = inCenter)
                             }
                             row += m.toImage()
                             last = m.range.last + 1
                         }
                         if (row.isNotEmpty()) blocks += row.toImageBlock()
                         val tail = joined.substring(last).trim()
-                        if (tail.isNotEmpty()) blocks += MdBlock.Paragraph(tail)
+                        if (tail.isNotEmpty()) blocks += MdBlock.Paragraph(tail, centered = inCenter)
                     } else {
                         var last = 0
                         for (m in imageTokenRe.findAll(joined)) {
                             if (m.range.first > last) {
                                 val before = joined.substring(last, m.range.first).trim()
-                                if (before.isNotEmpty()) blocks += MdBlock.Paragraph(before)
+                                if (before.isNotEmpty()) blocks += MdBlock.Paragraph(before, centered = inCenter)
                             }
                             blocks += m.toImage()
                             last = m.range.last + 1
@@ -535,6 +546,7 @@ fun MarkdownText(
                             3 -> 16.sp to FontWeight.SemiBold
                             else -> 15.sp to FontWeight.SemiBold
                         }
+                        CenteredBlock(block.centered) {
                         Column {
                             if (block.level <= 2) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -559,13 +571,19 @@ fun MarkdownText(
                                 )
                             }
                         }
+                        }
                     }
 
-                    is MdBlock.Paragraph -> Text(
-                        text = renderInline(block.text, color, codeBg, codeColor, onMentionClick),
-                        style = style,
-                        color = color,
-                    )
+                    is MdBlock.Paragraph -> CenteredBlock(block.centered) {
+                        Text(
+                            text = renderInline(block.text, color, codeBg, codeColor, onMentionClick),
+                            style = style,
+                            color = color,
+                            textAlign = if (block.centered) androidx.compose.ui.text.style.TextAlign.Center
+                            else androidx.compose.ui.text.style.TextAlign.Start,
+                            modifier = if (block.centered) Modifier.fillMaxWidth() else Modifier,
+                        )
+                    }
 
                     is MdBlock.Bullet -> Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         block.items.forEach { item ->
@@ -693,7 +711,8 @@ fun MarkdownText(
                         }
                     }
 
-                    is MdBlock.Image -> if (block.alt == MARKDOWN_STICKER_ALT) {
+                    is MdBlock.Image -> CenteredBlock(block.centered) {
+                        if (block.alt == MARKDOWN_STICKER_ALT) {
                         StickerInlineImage(block.alt, block.url) { onImageTap(block) }
                     } else {
                         MarkdownImagePlaceholder(
@@ -702,9 +721,11 @@ fun MarkdownText(
                             natural = naturalImages,
                             onClick = { onImageTap(block) },
                         )
+                        }
                     }
 
-                    is MdBlock.ImageRow -> if (naturalImages) {
+                    is MdBlock.ImageRow -> CenteredBlock(block.centered) {
+                        if (naturalImages) {
                         androidx.compose.foundation.layout.FlowRow(
                             horizontalArrangement = Arrangement.spacedBy(10.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -727,6 +748,7 @@ fun MarkdownText(
                             MarkdownImagePlaceholder(alt = img.alt, url = img.url, onClick = { onImageTap(img) })
                         }
                     }
+                    }
 
                     MdBlock.Divider -> Box(
                         Modifier
@@ -738,6 +760,15 @@ fun MarkdownText(
             }
         }
     }
+}
+
+@Composable
+private fun CenteredBlock(centered: Boolean, content: @Composable () -> Unit) {
+    if (!centered) {
+        content()
+        return
+    }
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { content() }
 }
 
 @Composable
@@ -899,6 +930,13 @@ private fun StickerInlineImage(
 private val rasterUrlRe = Regex("""\.(png|jpe?g|webp|gif|bmp|avif)([?#].*)?$""", RegexOption.IGNORE_CASE)
 
 private val viewBoxAttrRe = Regex("""viewBox\s*=\s*["']""", RegexOption.IGNORE_CASE)
+
+private const val CENTER_OPEN = "\u0001center\u0001"
+private const val CENTER_CLOSE = "\u0001center-end\u0001"
+
+private val centerBlockRe = Regex(
+    """(?is)<(div|p|h[1-6])\b[^>]*\balign\s*=\s*["']?center["']?[^>]*>(.*?)</\1>|<center>(.*?)</center>""",
+)
 
 @Composable
 private fun NaturalImage(

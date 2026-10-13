@@ -379,6 +379,7 @@ private fun EmaSection(
                     if (picked != null) tags.add(picked)
                 },
                 label = { it?.label ?: "全部" },
+                compact = true,
             )
 
             Box(Modifier.fillMaxSize()) {

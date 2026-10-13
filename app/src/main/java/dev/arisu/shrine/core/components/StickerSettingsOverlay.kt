@@ -261,7 +261,8 @@ fun StickerSettingsOverlay(onClose: () -> Unit) {
                                         model = sticker.url,
                                         contentDescription = if (sticker.animated) "动图表情" else "表情",
                                         contentScale = ContentScale.Fit,
-                                        modifier = Modifier.fillMaxWidth(),
+
+                                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
                                     )
                                 }
                                 }

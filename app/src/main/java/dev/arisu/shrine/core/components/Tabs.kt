@@ -36,6 +36,8 @@ fun <T> UnderlineTabs(
     label: (T) -> String,
     modifier: Modifier = Modifier,
     evenWeight: Boolean = true,
+
+    compact: Boolean = false,
 ) {
     Column(modifier.fillMaxWidth()) {
         Row(
@@ -60,11 +62,13 @@ fun <T> UnderlineTabs(
                 ) {
                     Text(
                         text = label(item),
-                        style = MaterialTheme.typography.titleSmall,
+                        style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.titleSmall,
                         color = color,
                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                         textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 14.dp),
+                        maxLines = 1,
+                        softWrap = false,
+                        modifier = Modifier.padding(horizontal = if (compact) 4.dp else 14.dp),
                     )
                     Spacer(Modifier.height(10.dp))
                     Box(

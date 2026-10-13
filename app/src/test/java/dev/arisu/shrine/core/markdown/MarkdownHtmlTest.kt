@@ -93,4 +93,31 @@ class MarkdownHtmlTest {
         val src = "看代码：\n```html\n<b>不是标签</b>\n```\n完"
         assertEquals(src, normalizeHtml(src))
     }
+
+    @Test
+    fun `center container keeps markers`() {
+        val out = normalizeHtml("<div align=\"center\"><img src=\"https://a/logo.png\" alt=\"logo\"></div>")
+        assertTrue(out.contains("\u0001center\u0001"))
+        assertTrue(out.contains("\u0001center-end\u0001"))
+        assertTrue(out.contains("![logo](https://a/logo.png)"))
+    }
+
+    @Test
+    fun `blocks inside center container are marked centered`() {
+        val blocks = parseMarkdown(
+            "<div align=\"center\">\n<img src=\"https://a/logo.png\" alt=\"logo\">\n# 站名\n</div>",
+            profileMode = true,
+        )
+        val image = blocks.filterIsInstance<MdBlock.Image>().firstOrNull()
+        val heading = blocks.filterIsInstance<MdBlock.Heading>().firstOrNull()
+        assertTrue("图片应在居中容器内", image?.centered == true)
+        assertTrue("标题应在居中容器内", heading?.centered == true)
+    }
+
+    @Test
+    fun `blocks outside center container stay left aligned`() {
+        val blocks = parseMarkdown("# 站名\n\n正文", profileMode = true)
+        assertTrue(blocks.filterIsInstance<MdBlock.Heading>().all { !it.centered })
+        assertTrue(blocks.filterIsInstance<MdBlock.Paragraph>().all { !it.centered })
+    }
 }
