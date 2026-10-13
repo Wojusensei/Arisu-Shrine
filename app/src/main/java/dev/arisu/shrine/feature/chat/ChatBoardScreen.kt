@@ -202,8 +202,11 @@ fun ChatBoardScreen(
             }
         }
 
+        var lastFilter by rememberSaveable { mutableStateOf("") }
         LaunchedEffect(board, sort) {
-            chatListState.scrollToItem(0)
+            val key = "${board.name}|${sort.name}"
+            if (lastFilter.isNotEmpty() && lastFilter != key) chatListState.scrollToItem(0)
+            lastFilter = key
         }
 
         Crossfade(

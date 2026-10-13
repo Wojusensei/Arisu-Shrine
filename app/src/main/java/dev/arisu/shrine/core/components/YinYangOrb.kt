@@ -40,10 +40,11 @@ fun YinYangOrb(
         label = "yin-yang-angle",
     )
 
+    val fallbackPx = size.value * androidx.compose.ui.platform.LocalDensity.current.density
     Canvas(modifier = modifier.size(size)) {
-        val side = size.toPx()
+        val side = minOf(this.size.width, this.size.height).takeIf { it > 0f } ?: fallbackPx
         val r = side / 2f
-        val center = Offset(r, r)
+        val center = Offset(this.size.width / 2f, this.size.height / 2f)
         val stroke = side * 0.035f
         val rr = r - stroke
 

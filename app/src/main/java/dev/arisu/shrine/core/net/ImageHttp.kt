@@ -29,12 +29,25 @@ internal val imageRetryInterceptor = Interceptor { chain ->
     throw last ?: IOException("图片请求失败")
 }
 
+internal val imageHeadersInterceptor = Interceptor { chain ->
+    val request = chain.request().newBuilder()
+        .header(
+            "User-Agent",
+            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+        )
+        .header("Accept", "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8")
+        .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+        .build()
+    chain.proceed(request)
+}
+
 internal val imageClient: OkHttpClient by lazy {
     OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
+        .addInterceptor(imageHeadersInterceptor)
         .addInterceptor(imageRetryInterceptor)
         .build()
 }

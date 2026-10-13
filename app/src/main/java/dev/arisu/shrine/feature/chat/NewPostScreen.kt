@@ -78,6 +78,7 @@ import dev.arisu.shrine.core.media.stagePickedImage
 import dev.arisu.shrine.data.model.Board
 import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
+import dev.arisu.shrine.feature.editor.COVER_ASPECT
 import dev.arisu.shrine.feature.editor.ImageEditorOverlay
 import java.io.File
 import kotlin.math.roundToInt
@@ -119,7 +120,9 @@ fun NewPostScreen(
 
     val canPublish = title.isNotBlank() && body.isNotBlank() && !publishing && !uploading
     var confirmDiscard by remember { mutableStateOf(false) }
-    val hasDraft = title.isNotBlank() || body.isNotBlank() || staged.isNotEmpty()
+
+    val hasDraft = title.isNotBlank() || body.isNotBlank() || staged.isNotEmpty() ||
+        coverUrl != null || coverFile != null
     androidx.activity.compose.BackHandler(enabled = hasDraft && !publishing) { confirmDiscard = true }
 
     fun upload(item: StagedImage) {
@@ -196,7 +199,8 @@ fun NewPostScreen(
             }
             coverFile?.delete()
             coverFile = file
-            uploadCover(file)
+
+            editing = EditTarget.Cover(file)
         }
     }
 
@@ -247,6 +251,7 @@ fun NewPostScreen(
         ImageEditorOverlay(
             sourcePath = editingTarget.path,
             onCancel = { editing = null },
+            lockedAspect = if (editingTarget is EditTarget.Cover) COVER_ASPECT else null,
             onConfirm = { path ->
                 editing = null
                 val edited = File(path)

@@ -929,8 +929,6 @@ private fun StickerInlineImage(
 
 private val rasterUrlRe = Regex("""\.(png|jpe?g|webp|gif|bmp|avif)([?#].*)?$""", RegexOption.IGNORE_CASE)
 
-private val viewBoxAttrRe = Regex("""viewBox\s*=\s*["']""", RegexOption.IGNORE_CASE)
-
 private const val CENTER_OPEN = "\u0001center\u0001"
 private const val CENTER_CLOSE = "\u0001center-end\u0001"
 
@@ -961,7 +959,8 @@ private fun NaturalImage(
             model = url
             return@LaunchedEffect
         }
-        val dir = java.io.File(context.cacheDir, "md_svg")
+
+        val dir = java.io.File(context.cacheDir, "md_svg_v3")
         val file = java.io.File(dir, "${url.hashCode()}.svg")
 
         if (file.exists() && file.length() > 0L) {
@@ -973,16 +972,11 @@ private fun NaturalImage(
                 val request = okhttp3.Request.Builder().url(url).build()
                 dev.arisu.shrine.core.net.imageClient.newCall(request).execute().use { response ->
                     val text = response.body?.string().orEmpty()
-                    if (text.isBlank()) throw IllegalStateException("空响应")
-                    val patched = if (viewBoxAttrRe.containsMatchIn(text)) text else {
-                        val w = Regex("""width\s*=\s*"([\d.]+)"""").find(text)?.groupValues?.get(1)
-                        val h = Regex("""height\s*=\s*"([\d.]+)"""").find(text)?.groupValues?.get(1)
-                        if (w != null && h != null) {
-                            text.replaceFirst("<svg", "<svg viewBox=\"0 0 $w $h\"", ignoreCase = true)
-                        } else {
-                            text
-                        }
+
+                    if (!response.isSuccessful || !text.contains("<svg", ignoreCase = true)) {
+                        throw IllegalStateException("不是 SVG（HTTP ${response.code}）")
                     }
+                    val patched = dev.arisu.shrine.core.util.patchSvgText(text)
                     dir.mkdirs()
                     file.writeText(patched)
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {

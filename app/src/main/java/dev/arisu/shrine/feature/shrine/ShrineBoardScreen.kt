@@ -359,7 +359,15 @@ private fun EmaSection(
         }
     }
 
+    var emaFilterKey by rememberSaveable { mutableStateOf("") }
+    val emaListState = rememberLazyListState()
     LaunchedEffect(tags.toList(), states.toList(), sort) {
+        val key = tags.joinToString(",") { it.name } + "|" + states.joinToString(",") { it.name } + "|" + sort.name
+        if (emaFilterKey.isNotEmpty() && emaFilterKey != key) {
+            state = ListState.Loading
+            emaListState.scrollToItem(0)
+        }
+        emaFilterKey = key
         load()
     }
 
@@ -383,15 +391,10 @@ private fun EmaSection(
             )
 
             Box(Modifier.fillMaxSize()) {
-                val emaListState = rememberLazyListState()
                 LaunchedEffect(Unit) {
                     ScrollTopBus.events.collect { route ->
                         if (route == Routes.SHRINE) scope.launch { emaListState.smoothScrollToTop() }
                     }
-                }
-
-                LaunchedEffect(tags.toList(), states.toList(), sort) {
-                    emaListState.scrollToItem(0)
                 }
                 ShrineLoadGate(loading = state is ListState.Loading, modifier = Modifier.fillMaxSize()) {
                 when (val s = state) {

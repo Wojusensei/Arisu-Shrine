@@ -92,6 +92,7 @@ import dev.arisu.shrine.core.components.HairlineDivider
 import dev.arisu.shrine.core.components.ScrollTopOrb
 import dev.arisu.shrine.core.components.ArisuTextField
 import dev.arisu.shrine.core.components.ArisuTopBar
+import dev.arisu.shrine.feature.editor.COVER_ASPECT
 import dev.arisu.shrine.core.components.CodeLabel
 import dev.arisu.shrine.core.components.RoleTag
 import dev.arisu.shrine.core.components.SectionLabel
@@ -969,6 +970,15 @@ private fun PostHead(
             fontWeight = FontWeight.Bold,
         )
 
+        if (post.intro.isNotBlank()) {
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = post.intro,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+
         Spacer(Modifier.height(6.dp))
 
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1033,7 +1043,7 @@ private fun PostHead(
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
+                    .aspectRatio(COVER_ASPECT)
                     .clip(RoundedCornerShape(16.dp))
                     .clickable { onImageClick(cover) },
             )

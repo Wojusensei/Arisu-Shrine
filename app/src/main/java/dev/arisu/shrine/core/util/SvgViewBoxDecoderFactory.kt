@@ -9,8 +9,6 @@ import java.io.File
 import okio.FileSystem
 import okio.Path.Companion.toPath
 
-private val viewBoxAttrRe = Regex("""viewBox\s*=\s*["']""", RegexOption.IGNORE_CASE)
-
 class SvgViewBoxDecoderFactory(
     private val config: SvgDecoder.Factory,
 ) : Decoder.Factory {
@@ -44,17 +42,7 @@ class SvgViewBoxDecoderFactory(
 
         if (buffered.request(2L * 1024 * 1024)) return null
         val text = buffered.readByteString().utf8()
-        val body = when {
-            viewBoxAttrRe.containsMatchIn(text) -> text
-            else -> {
-                val w = Regex("""width\s*=\s*"([\d.]+)"""").find(text)?.groupValues?.get(1)
-                    ?: return rebuiltSource(text, data, options)
-                val h = Regex("""height\s*=\s*"([\d.]+)"""").find(text)?.groupValues?.get(1)
-                    ?: return rebuiltSource(text, data, options)
-                text.replaceFirst("<svg", "<svg viewBox=\"0 0 $w $h\"", ignoreCase = true)
-            }
-        }
-        return rebuiltSource(body, data, options)
+        return rebuiltSource(patchSvgText(text), data, options)
     }
 
     private fun rebuiltSource(

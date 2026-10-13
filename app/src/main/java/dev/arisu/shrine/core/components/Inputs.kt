@@ -234,10 +234,12 @@ fun ArisuPrimaryButton(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (busy) {
+
+            val ink = if (enabled) Color.White else MaterialTheme.colorScheme.primary
             YinYangOrb(
                 size = 18.dp,
-                primary = if (enabled) Color.White else MaterialTheme.colorScheme.primary,
-                base = Color.Transparent,
+                primary = ink,
+                base = ink.copy(alpha = 0.32f),
                 ring = Color.Transparent,
                 rotating = true,
             )

@@ -127,6 +127,19 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     var cropSource by rememberSaveable { mutableStateOf<String?>(null) }
     var cropTarget by rememberSaveable { mutableStateOf<String?>(null) }
 
+    val dirty = nickname.trim() != meState.nickname ||
+        signature != meState.signature ||
+        statusEmoji != meState.statusEmoji.orEmpty() ||
+        statusText != meState.statusText.orEmpty() ||
+        blogUrl.trim() != meState.blogUrl ||
+        customMarkdown != meState.customMarkdown ||
+        customCss != meState.customCss ||
+        fixedAvatarDraft != meState.fixedAvatarUrl.orEmpty() ||
+        activeAvatarDraft != meState.activeAvatarUrl.orEmpty() ||
+        activeAvatarEnabledDraft != meState.activeAvatarEnabled
+    var confirmDiscard by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = dirty && !saving) { confirmDiscard = true }
+
     suspend fun stagePick(uri: Uri): File {
         val dir = File(context.cacheDir, "upload").apply { mkdirs() }
 
@@ -253,8 +266,25 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         return
     }
 
+    if (confirmDiscard) {
+        AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("放弃修改？") },
+            text = { Text("尚未保存的修改不会被保留。") },
+            confirmButton = {
+                TextButton(onClick = { confirmDiscard = false; onBack() }) { Text("放弃") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDiscard = false }) { Text("继续编辑") }
+            },
+        )
+    }
+
     Column(modifier.fillMaxSize().imePadding()) {
-        ArisuTopBar(title = "编辑资料", onBack = onBack)
+        ArisuTopBar(
+            title = "编辑资料",
+            onBack = { if (dirty && !saving) confirmDiscard = true else onBack() },
+        )
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             Column(

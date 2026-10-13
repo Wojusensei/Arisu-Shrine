@@ -96,6 +96,14 @@ fun NewEmaScreen(
 
     val canSubmit = title.isNotBlank() && body.isNotBlank() && !submitting
 
+    val hasDraft = if (editEma != null) {
+        title != editEma.title || body != editEma.body || tags.toList() != editEma.tags
+    } else {
+        title.isNotBlank() || body.isNotBlank() || tags.isNotEmpty()
+    }
+    var confirmDiscard by remember { mutableStateOf(false) }
+    androidx.activity.compose.BackHandler(enabled = hasDraft && !submitting) { confirmDiscard = true }
+
     fun wrap(action: MarkdownAction) {
         val marker = action.format
         body = if (body.isNotEmpty() && marker.contains("%s")) {
@@ -105,11 +113,27 @@ fun NewEmaScreen(
         }
     }
 
+    if (confirmDiscard) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmDiscard = false },
+            title = { Text("放弃撰写？") },
+            text = { Text("尚未发布的内容不会被保存。") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = { confirmDiscard = false; onBack() },
+                ) { Text("放弃") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmDiscard = false }) { Text("继续撰写") }
+            },
+        )
+    }
+
     Column(modifier.fillMaxSize().imePadding()) {
         ArisuTopBar(
             title = if (editEma != null) "编辑绘马" else "发绘马",
             subtitle = editEma?.let { "编辑 #${it.id}" } ?: "提交后自动分配编号",
-            onBack = onBack,
+            onBack = { if (hasDraft && !submitting) confirmDiscard = true else onBack() },
             actions = {
                 SubmitAction(enabled = canSubmit) {
                     if (!canSubmit) return@SubmitAction

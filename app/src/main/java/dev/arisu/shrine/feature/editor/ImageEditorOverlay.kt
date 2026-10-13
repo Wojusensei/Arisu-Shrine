@@ -76,15 +76,20 @@ private val EditorAspects = listOf(
     "16:9" to 16f / 9f,
 )
 
+const val COVER_ASPECT = 16f / 9f
+
 @Composable
 fun ImageEditorOverlay(
     sourcePath: String,
     onCancel: () -> Unit,
     onConfirm: (String) -> Unit,
+    lockedAspect: Float? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val density = LocalDensity.current
+
+    val aspects = if (lockedAspect != null) listOf("" to lockedAspect) else EditorAspects
 
     var bitmap by remember(sourcePath) { mutableStateOf<Bitmap?>(null) }
     var decodeFailed by remember(sourcePath) { mutableStateOf(false) }
@@ -129,7 +134,7 @@ fun ImageEditorOverlay(
 
                     else -> EditorViewport(
                         bitmap = bmp,
-                        aspect = EditorAspects[aspectIndex].second,
+                        aspect = aspects[aspectIndex].second,
                         transform = transform,
                         onViewport = { w, h -> viewportSize = w to h },
                         modifier = Modifier.fillMaxSize(),
@@ -179,17 +184,20 @@ fun ImageEditorOverlay(
                     )
                 }
                 Spacer(Modifier.weight(1f))
-                EditorAspects.forEachIndexed { index, (label, _) ->
-                    SoftPill(
-                        text = label,
-                        color = if (index == aspectIndex) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.onSurfaceVariant,
-                        background = NeuInset,
-                        modifier = Modifier.clickable(enabled = bitmap != null) {
-                            aspectIndex = index
-                            transform.reset()
-                        },
-                    )
+
+                if (lockedAspect == null) {
+                    EditorAspects.forEachIndexed { index, (label, _) ->
+                        SoftPill(
+                            text = label,
+                            color = if (index == aspectIndex) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                            background = NeuInset,
+                            modifier = Modifier.clickable(enabled = bitmap != null) {
+                                aspectIndex = index
+                                transform.reset()
+                            },
+                        )
+                    }
                 }
             }
 
