@@ -5,9 +5,9 @@
 
 建造于人间之里外的飘渺存在 —— 高自由度论坛，由 *东方有栖神社开发组* 研制
 - 用户可加入官方 QQ 用户交流群：`1126676443`
-- 有意向加入开发组 *东方有栖神社* 可加入官方 QQ 用户交流群后添加管理员为好友进行申请，审核通过可加入开发者交流群，参与游戏研发或者日常讨论均可
+- 有意向加入开发组 *东方有栖神社* 者可加入官方 QQ 用户交流群后添加管理员为好友进行申请，审核通过可加入开发者交流群，参与游戏研发或者日常讨论均可，不一定要参与论坛开发
 > [!IMPORTANT]
-> **当前版本**：稳定版 version 1.0.1.0
+> **当前版本**：稳定版 version 1.0.1.2
 
 ## ⭐️ STAR
 [![Star History Chart](https://api.star-history.com/svg?repos=Wojusensei/Arisu-Shrine&type=date&legend=top-left)](https://www.star-history.com/#Wojusensei/Arisu-Shrine&type=date&legend=top-left)
@@ -382,7 +382,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 | 类别 | 技术 |
 |---|---|
-| 语言 | Go |
+| 语言 | Golang |
 | Web 框架 | Gin |
 | 数据库 | PostgreSQL |
 | 缓存 | Redis |
@@ -398,7 +398,7 @@ docker compose -f docker-compose.prod.yml up -d --build
 
 | 类别 | 技术 |
 |---|---|
-| 服务器 | 香港 VPS |
+| 服务器 | 香港 VPS 2c4g |
 | 操作系统 | Debain12 |
 | 容器 | Docker + Docker Compose |
 | 反向代理 | Caddy |
