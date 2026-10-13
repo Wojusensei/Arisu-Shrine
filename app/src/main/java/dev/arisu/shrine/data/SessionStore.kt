@@ -16,6 +16,8 @@ class SessionStore(private val context: Context) {
         val access = stringPreferencesKey("access_token")
         val refresh = stringPreferencesKey("refresh_token")
         val baseUrl = stringPreferencesKey("base_url")
+
+        val userId = stringPreferencesKey("user_id")
     }
 
     val accessToken: Flow<String> = context.dataStore.data.map { TokenCrypto.decrypt(it[Keys.access] ?: "") ?: "" }
@@ -25,6 +27,11 @@ class SessionStore(private val context: Context) {
     suspend fun currentBaseUrl(): String = baseUrl.first().ifEmpty { dev.arisu.shrine.data.remote.Api.DEFAULT_BASE_URL }
     suspend fun currentAccess(): String = accessToken.first()
     suspend fun currentRefresh(): String = refreshToken.first()
+    suspend fun currentUserId(): String = context.dataStore.data.first()[Keys.userId] ?: ""
+
+    suspend fun saveUserId(id: String) {
+        context.dataStore.edit { it[Keys.userId] = id }
+    }
 
     suspend fun saveTokens(access: String, refresh: String) {
         context.dataStore.edit {

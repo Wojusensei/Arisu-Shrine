@@ -106,9 +106,10 @@ fun UserProfileScreen(
     onOpenFollowList: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var user by remember { mutableStateOf<User?>(null) }
-    var tiles by remember { mutableStateOf<List<TileDay>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+
+    var user by remember { mutableStateOf(Shrine.peekUser(userId)?.user) }
+    var tiles by remember { mutableStateOf(Shrine.peekTiles(userId).orEmpty()) }
+    var loading by remember { mutableStateOf(user == null) }
     var failed by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableStateOf(0) }
     val me by Shrine.me.collectAsState()
@@ -640,26 +641,29 @@ private fun StatsCard(user: User, isSelf: Boolean, onOpenFollowList: (String) ->
 private fun PostsSection(userId: String, total: Int, initialTab: Int, isSelf: Boolean, onOpenPost: (String) -> Unit) {
 
     var tab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, if (isSelf) 3 else 0)) }
-    var posts by remember { mutableStateOf<List<dev.arisu.shrine.data.model.Post>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
-    var postsFailed by remember { mutableStateOf(false) }
-    var postsReload by remember { mutableStateOf(0) }
-
     val wireTab = when (tab) {
         1 -> "tracked"
         2 -> "liked"
         3 -> "favorited"
         else -> "posts"
     }
+
+    val cachedPosts = remember(userId, wireTab) { Shrine.peekAuthorPosts(userId, wireTab) }
+    var posts by remember { mutableStateOf(cachedPosts.orEmpty()) }
+    var loading by remember { mutableStateOf(cachedPosts == null) }
+    var postsFailed by remember { mutableStateOf(false) }
+    var postsReload by remember { mutableStateOf(0) }
+
     LaunchedEffect(userId, wireTab, postsReload) {
-        loading = true
+
+        loading = posts.isEmpty()
         postsFailed = false
         posts = try {
             Shrine.postsByAuthor(userId, wireTab)
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             postsFailed = true
-            emptyList()
+            posts
         }
         loading = false
     }

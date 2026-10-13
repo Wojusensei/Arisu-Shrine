@@ -110,10 +110,11 @@ fun InboxScreen(
     var tab by rememberSaveable { mutableStateOf(InboxTab.ALL) }
     val scope = rememberCoroutineScope()
 
-    var notices by remember { mutableStateOf<List<Notice>>(emptyList()) }
-    var unread by remember { mutableStateOf(0) }
-    var total by remember { mutableStateOf(0L) }
-    var loading by remember { mutableStateOf(true) }
+    val firstPaint = remember { Shrine.peekNotices() }
+    var notices by remember { mutableStateOf(firstPaint?.items ?: emptyList()) }
+    var unread by remember { mutableStateOf(firstPaint?.unread ?: 0) }
+    var total by remember { mutableStateOf(firstPaint?.total ?: 0L) }
+    var loading by remember { mutableStateOf(firstPaint == null) }
     var reloadKey by remember { mutableStateOf(0) }
 
     var page by remember { mutableStateOf(1) }

@@ -48,6 +48,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.arisu.shrine.core.components.BoardMemory
 import dev.arisu.shrine.core.components.NeuSurface
 import dev.arisu.shrine.core.components.ScrollTopOrb
 import dev.arisu.shrine.core.components.MistWatermark
@@ -96,20 +97,51 @@ import dev.arisu.shrine.data.model.OmikujiFortune
 import dev.arisu.shrine.data.model.OmikujiLeaderRow
 import dev.arisu.shrine.data.model.accent
 
+private sealed interface LuckState {
+    data object Unknown : LuckState
+    data object NotDrawn : LuckState
+    data class Drawn(val luck: Int) : LuckState
+}
+
+private class PlaySnapshot(
+    val luck: LuckState,
+    val leader: List<OmikujiLeaderRow>,
+    val stats: Shrine.OnlineStats?,
+)
+
+private val playMemory = BoardMemory<String, PlaySnapshot>()
+private const val PLAY_KEY = "play"
+
 @Composable
 fun PlayScreen(
     unreadCount: Int,
     onOpenInbox: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var luck by remember { mutableStateOf<Int?>(null) }
-    var stats by remember { mutableStateOf<Shrine.OnlineStats?>(null) }
+
+    val memo = remember { playMemory.get(PLAY_KEY, Shrine.me.value?.id) }
+    var luckState by remember {
+        mutableStateOf(
+            memo?.luck ?: when (val cached = Shrine.peekOmikujiToday()) {
+                null -> LuckState.Unknown
+                0 -> LuckState.NotDrawn
+                else -> LuckState.Drawn(cached)
+            }
+        )
+    }
+    val luck = (luckState as? LuckState.Drawn)?.luck
+    var stats by remember { mutableStateOf(memo?.stats ?: Shrine.peekOnlineStats()) }
     var drawing by remember { mutableStateOf(false) }
     var failed by remember { mutableStateOf(false) }
 
     var drawFailed by remember { mutableStateOf(false) }
-    var leader by remember { mutableStateOf<List<OmikujiLeaderRow>?>(null) }
+    var leader by remember { mutableStateOf(memo?.leader ?: Shrine.peekOmikujiLeaderboard()) }
     var reloadKey by remember { mutableStateOf(0) }
+
+    LaunchedEffect(luckState, leader, stats) {
+        val id = Shrine.me.value?.id ?: return@LaunchedEffect
+        playMemory.put(PLAY_KEY, id, PlaySnapshot(luckState, leader ?: emptyList(), stats))
+    }
 
     val refreshLeader: suspend () -> Unit = {
         try {
@@ -141,8 +173,8 @@ fun PlayScreen(
 
     LaunchedEffect(Unit) {
         try {
-            val (drawn, todayLuck) = Shrine.omikujiToday()
-            if (drawn) luck = todayLuck
+            val today = Shrine.omikujiToday()
+            luckState = if (today > 0) LuckState.Drawn(today) else LuckState.NotDrawn
         } catch (_: Exception) {
         }
     }
@@ -200,17 +232,19 @@ fun PlayScreen(
             ArisuPrimaryButton(
                 text = when {
                     drawing -> "摇签中…"
-                    luck != null -> "今日已求签，明日再来"
+                    luckState is LuckState.Drawn -> "今日已求签，明日再来"
                     else -> "今日求签"
                 },
                 icon = ShrineIcons.Torii,
-                enabled = !drawing && luck == null,
+
+                enabled = !drawing && luckState is LuckState.NotDrawn,
+                busy = drawing || luckState is LuckState.Unknown,
                 onClick = {
                     if (!drawing) {
                         drawing = true
                         scope.launch {
                             try {
-                                luck = Shrine.drawOmikuji()
+                                luckState = LuckState.Drawn(Shrine.drawOmikuji())
                                 drawFailed = false
                                 refreshLeader()
                             } catch (e: Exception) {
@@ -236,8 +270,8 @@ fun PlayScreen(
                                 scope.launch {
                                     try {
 
-                                        val (drawn, todayLuck) = Shrine.omikujiToday()
-                                        if (drawn) luck = todayLuck else luck = Shrine.drawOmikuji()
+                                        val today = Shrine.omikujiToday()
+                                        luckState = if (today > 0) LuckState.Drawn(today) else LuckState.Drawn(Shrine.drawOmikuji())
                                         drawFailed = false
                                         refreshLeader()
                                     } catch (e: Exception) {

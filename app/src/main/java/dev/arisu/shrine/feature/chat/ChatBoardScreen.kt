@@ -79,8 +79,12 @@ fun ChatBoardScreen(
 
     var board by rememberSaveable { mutableStateOf(initialBoard) }
     var sort by rememberSaveable { mutableStateOf(initialSort) }
+
+    fun firstPaint(b: Board, s: PostSort): ListState<Post>? =
+        feedMemory.get(b to s, Shrine.me.value?.id)
+            ?: Shrine.peekPosts(b, s)?.let { ListState.Ok(it.items, it.total) }
     var state by remember {
-        mutableStateOf(feedMemory.get(board to sort, Shrine.me.value?.id) ?: ListState.Loading)
+        mutableStateOf(firstPaint(board, sort) ?: ListState.Loading)
     }
     var loadingMore by remember { mutableStateOf(false) }
     var loadMoreFailed by remember { mutableStateOf(false) }
@@ -93,7 +97,7 @@ fun ChatBoardScreen(
 
     val loadFirst: suspend () -> Unit = {
         refreshGen++
-        state = feedMemory.get(board to sort, Shrine.me.value?.id) ?: ListState.Loading
+        state = firstPaint(board, sort) ?: ListState.Loading
         val restored = state as? ListState.Ok
         page = if (restored == null || restored.items.isEmpty()) 1 else (restored.items.size + FEED_PAGE_SIZE - 1) / FEED_PAGE_SIZE
         endReached = restored != null && restored.items.size >= restored.total

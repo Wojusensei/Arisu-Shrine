@@ -16,8 +16,12 @@ android {
         applicationId = "dev.arisu.shrine"
         minSdk = 26
         targetSdk = 35
-        versionCode = 32
-        versionName = "1.0.1.0"
+        versionCode = 33
+        versionName = "1.0.1.1"
+
+        val prodBaseUrl = "https://arisushrine.com"
+        val baseUrlOverride = (project.findProperty("arisuBaseUrl") as String?)?.trimEnd('/')
+        buildConfigField("String", "BASE_URL", "\"${baseUrlOverride ?: prodBaseUrl}\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }

@@ -108,7 +108,22 @@ fun MyRoomScreen(
     initialTabIndex: Int = 0,
 ) {
 
-    val cached = remember { roomMemory.get("room", Shrine.me.value?.id) }
+    val cached = remember {
+        roomMemory.get("room", Shrine.me.value?.id) ?: run {
+
+            val room = Shrine.peekMyRoom() ?: return@run null
+            val tracked = Shrine.peekAuthorPosts(room.me.id, "tracked") ?: return@run null
+            val liked = Shrine.peekAuthorPosts(room.me.id, "liked") ?: return@run null
+            val favorited = Shrine.peekAuthorPosts(room.me.id, "favorited") ?: return@run null
+            RoomSnapshot(
+                me = room.me,
+                tiles = room.tiles,
+                today = Triple(room.todayMinutes, room.todayPosts, room.todayComments),
+                achievements = room.achievements,
+                counts = Quad(room.me.postCount, tracked.size, liked.size, favorited.size),
+            )
+        }
+    }
     var me by remember { mutableStateOf(cached?.me) }
     var tiles by remember { mutableStateOf(cached?.tiles ?: emptyList()) }
     var today by remember { mutableStateOf(cached?.today ?: Triple(0, 0, 0)) }
@@ -412,8 +427,16 @@ private fun StatsCard(me: User, onOpenFollowList: (String) -> Unit) {
 
 @Composable
 private fun PostsSection(meId: String, tab: ProfileTab, onOpenPost: (String) -> Unit, reloadKey: Int) {
+    val wireTab = when (tab) {
+        ProfileTab.POSTED -> "posts"
+        ProfileTab.TRACKED -> "tracked"
+        ProfileTab.LIKED -> "liked"
+        ProfileTab.FAVORITED -> "favorited"
+    }
 
-    val cachedPosts = remember(tab) { postsMemory.get("${meId}:${tab.name}", meId) }
+    val cachedPosts = remember(tab) {
+        postsMemory.get("${meId}:${tab.name}", meId) ?: Shrine.peekAuthorPosts(meId, wireTab)
+    }
     var posts by remember(tab) { mutableStateOf(cachedPosts ?: emptyList()) }
 
     var loading by remember(tab) { mutableStateOf(cachedPosts == null) }
@@ -421,12 +444,6 @@ private fun PostsSection(meId: String, tab: ProfileTab, onOpenPost: (String) -> 
     var retryKey by remember(tab) { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
 
-    val wireTab = when (tab) {
-        ProfileTab.POSTED -> "posts"
-        ProfileTab.TRACKED -> "tracked"
-        ProfileTab.LIKED -> "liked"
-        ProfileTab.FAVORITED -> "favorited"
-    }
     LaunchedEffect(wireTab, reloadKey, retryKey) {
         if (posts.isEmpty()) loading = true
         posts = try {

@@ -79,6 +79,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
@@ -122,6 +123,8 @@ object Shrine {
         vault = AccountVault(context)
         CacheStore.init(context)
 
+        CacheStore.preload()
+
         Api.onSessionRefreshed = { access, refresh ->
             session.saveTokens(access, refresh)
         }
@@ -135,6 +138,8 @@ object Shrine {
     val staleNotice: StateFlow<String?> = _staleNotice
 
     private fun cacheKey(vararg parts: Any?): String = parts.joinToString("|")
+
+    private fun scopedKey(key: String): String = cacheKey(_me.value?.id ?: "anon", key)
 
     private fun cacheAgo(cachedAt: Long): String {
         val mins = ((System.currentTimeMillis() / 1000) - cachedAt) / 60
@@ -152,7 +157,7 @@ object Shrine {
         cacheIf: (T) -> Boolean = { true },
         fetch: suspend () -> T,
     ): T {
-        val fullKey = cacheKey(_me.value?.id ?: "anon", key)
+        val fullKey = scopedKey(key)
         return try {
             val fresh = fetch()
 
@@ -166,6 +171,80 @@ object Shrine {
             snap.value
         }
     }
+
+    private fun kPosts(board: Board, sort: PostSort, page: Int, pageSize: Int) =
+        cacheKey("posts", board, sort, "p$page", "n$pageSize")
+
+    fun peekPosts(board: Board, sort: PostSort, page: Int = 1, pageSize: Int = 20): PostPage? =
+        peekCache(kPosts(board, sort, page, pageSize), PostPage.serializer())
+
+    fun peekPost(id: String): Post? = peekCache(cacheKey("post", id), Post.serializer())
+
+    fun peekComments(postNo: String): List<Comment>? =
+        peekCache(cacheKey("comments", postNo), ListSerializer(Comment.serializer()))
+
+    private fun kEmas(tags: List<String>, states: List<String>, sort: String, page: Int, pageSize: Int) =
+        cacheKey("emas", tags.joinToString(","), states.joinToString(","), sort, "p$page", "n$pageSize")
+
+    fun peekEmas(
+        tags: List<String> = emptyList(),
+        states: List<String> = emptyList(),
+        sort: String = "new",
+        page: Int = 1,
+        pageSize: Int = 20,
+    ): EmaPage? = peekCache(kEmas(tags, states, sort, page, pageSize), EmaPage.serializer())
+
+    fun peekEma(id: Int): Ema? = peekCache(cacheKey("ema", id), Ema.serializer())
+
+    fun peekEmaReplies(id: Int): List<EmaReply>? =
+        peekCache(cacheKey("emaReplies", id), ListSerializer(EmaReply.serializer()))
+
+    fun peekStaff(): List<StaffGroup>? =
+        peekCache(cacheKey("staff"), ListSerializer(StaffGroup.serializer()))
+
+    fun peekReleases(): List<ReleaseNote>? =
+        peekCache(cacheKey("releases"), ListSerializer(ReleaseNote.serializer()))
+
+    fun peekTiles(userId: String? = null): List<TileDay>? =
+        peekCache(cacheKey("tiles", userId ?: "me"), ListSerializer(TileDay.serializer()))
+
+    fun peekMyRoom(): Room? = peekCache(cacheKey("myRoom"), Room.serializer())
+
+    fun peekAuthorPosts(userId: String, tab: String = "posts", collectionId: Long? = null): List<Post>? =
+
+        if (userId == _me.value?.id) {
+            peekCache(cacheKey("authorPosts", userId, tab, collectionId), ListSerializer(Post.serializer()))
+        } else {
+            peekCache(cacheKey("authorPosts", userId, tab), ListSerializer(Post.serializer()))
+        }
+
+    fun peekUser(id: String): UserDetail? = peekCache(cacheKey("user", id), UserDetail.serializer())
+
+    fun peekCollections(): List<Collection>? =
+        peekCache(cacheKey("collections"), ListSerializer(Collection.serializer()))
+
+    fun peekFollowing(): List<User>? =
+        peekCache(cacheKey("following"), ListSerializer(User.serializer()))
+
+    fun peekFollowers(): List<User>? =
+        peekCache(cacheKey("followers"), ListSerializer(User.serializer()))
+
+    private fun kNotices(category: String, only: String, page: Int, pageSize: Int) =
+        cacheKey("notices", category, only, "p$page", "n$pageSize")
+
+    fun peekNotices(category: String = "all", only: String = "", page: Int = 1, pageSize: Int = 30): NoticePage? =
+        peekCache(kNotices(category, only, page, pageSize), NoticePage.serializer())
+
+    fun peekOnlineStats(): OnlineStats? = peekCache(cacheKey("stats"), OnlineStats.serializer())
+
+    fun peekOmikujiToday(): Int? =
+        peekCache(cacheKey("omikuji", omikujiDayKey()), Int.serializer())
+
+    private fun omikujiDayKey(): String =
+        java.time.LocalDate.now(java.time.ZoneId.of("Asia/Shanghai")).toString()
+
+    fun <T> peekCache(key: String, serializer: KSerializer<T>): T? =
+        CacheStore.peek(scopedKey(key), serializer)
 
     suspend fun bootstrap() {
         val base = session.currentBaseUrl()
@@ -189,7 +268,7 @@ object Shrine {
             } else {
                 throw ApiError("no access")
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             val refreshed = refreshTokens()
             if (refreshed) {
                 try {
@@ -198,7 +277,18 @@ object Shrine {
                     toLoggedOut()
                 }
             } else {
-                toLoggedOut()
+
+                val cached = if (e is ApiError) null else withContext(Dispatchers.IO) {
+                    val uid = session.currentUserId()
+                    if (uid.isEmpty()) null else CacheStore.get("me|$uid", User.serializer())?.value
+                }
+                if (cached != null) {
+                    _me.value = cached
+                    _sessionState.value = SessionState.LoggedIn(cached)
+                    refreshUnread()
+                } else {
+                    toLoggedOut()
+                }
             }
         }
     }
@@ -207,6 +297,11 @@ object Shrine {
         val user = meDto.toUser()
         _me.value = user
         _sessionState.value = SessionState.LoggedIn(user)
+
+        withContext(Dispatchers.IO) {
+            session.saveUserId(user.id)
+            CacheStore.put("me|${user.id}", User.serializer(), user)
+        }
         refreshUnread()
     }
 
@@ -411,7 +506,7 @@ object Shrine {
 
     suspend fun postsOf(board: Board, sort: PostSort, page: Int, pageSize: Int = 20): PostPage =
         cached(
-            cacheKey("posts", board, sort, "p$page", "n$pageSize"),
+            kPosts(board, sort, page, pageSize),
             PostPage.serializer(),
             fetch = {
                 val dto = apiCall {
@@ -517,7 +612,7 @@ object Shrine {
         val wireTags = tags.joinToString(",")
         val wireStates = states.joinToString(",")
         return cached(
-            cacheKey("emas", wireTags, wireStates, sort, "p$page", "n$pageSize"),
+            kEmas(tags, states, sort, page, pageSize),
             EmaPage.serializer(),
             fetch = {
                 val dto = apiCall {
@@ -601,7 +696,7 @@ object Shrine {
 
     suspend fun notices(category: String = "all", only: String = "", page: Int = 1, pageSize: Int = 30): NoticePage =
         cached(
-            cacheKey("notices", category, only, "p$page", "n$pageSize"),
+            kNotices(category, only, page, pageSize),
             NoticePage.serializer(),
             fetch = {
                 val dto = apiCall { Api.service.notices(category, only, page, pageSize) }
@@ -802,21 +897,38 @@ object Shrine {
     @Serializable
     data class OnlineStats(val onlineNow: Int, val registered: Int, val todayPeak: Int, val todayMinutes: Int, val totalMinutes: Int)
 
-    suspend fun drawOmikuji(): Int = apiCall { Api.service.drawOmikuji() }.luck
+    suspend fun drawOmikuji(): Int =
+        apiCall { Api.service.drawOmikuji() }.luck.also { rememberOmikujiToday(it) }
 
-    suspend fun omikujiToday(): Pair<Boolean, Int> =
-        apiCall { Api.service.omikujiToday() }.let { it.drawn to it.luck }
+    suspend fun omikujiToday(): Int =
+        cached(cacheKey("omikuji", omikujiDayKey()), Int.serializer()) {
+            apiCall { Api.service.omikujiToday() }.let { if (it.drawn) it.luck else 0 }
+        }
+
+    private suspend fun rememberOmikujiToday(luck: Int) = withContext(Dispatchers.IO) {
+
+        CacheStore.put(scopedKey(cacheKey("omikuji", omikujiDayKey())), Int.serializer(), luck)
+    }
 
     suspend fun omikujiLeaderboard(): List<OmikujiLeaderRow> =
-        apiCall { Api.service.omikujiLeaderboard() }.items.map {
-            OmikujiLeaderRow(
-                nickname = it.nickname,
-                role = it.role.toRole() ?: Role.MEMBER,
-                avatar = it.avatar.ifEmpty { null },
-                luck = it.luck,
-                rank = it.rank,
-            )
+        cached(
+            cacheKey("omikujiBoard", omikujiDayKey()),
+            ListSerializer(OmikujiLeaderRow.serializer()),
+            cacheIf = { it.isNotEmpty() },
+        ) {
+            apiCall { Api.service.omikujiLeaderboard() }.items.map {
+                OmikujiLeaderRow(
+                    nickname = it.nickname,
+                    role = it.role.toRole() ?: Role.MEMBER,
+                    avatar = it.avatar.ifEmpty { null },
+                    luck = it.luck,
+                    rank = it.rank,
+                )
+            }
         }
+
+    fun peekOmikujiLeaderboard(): List<OmikujiLeaderRow>? =
+        peekCache(cacheKey("omikujiBoard", omikujiDayKey()), ListSerializer(OmikujiLeaderRow.serializer()))
 
     suspend fun onlineStats(): OnlineStats =
         cached(cacheKey("stats"), OnlineStats.serializer()) {

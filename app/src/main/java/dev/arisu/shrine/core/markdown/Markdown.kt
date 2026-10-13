@@ -165,8 +165,10 @@ internal fun normalizeHtml(source: String): String {
                 normalizeHtml(c.groupValues[1]).trim().replace("\n", " ").replace("|", "\\|")
             }.toList().takeIf { it.isNotEmpty() }
         }.toList()
-        if (rows.size < 2) ""
-        else "\n" + rows.joinToString("\n") { r -> "| ${r.joinToString(" | ")} |" } +
+
+        val cells = rows.map { row -> row.joinToString(" | ") }
+        if (cells.size < 2) ""
+        else "\n" + cells.joinToString("\n") { "| " + it + " |" } +
             "\n| " + rows[0].joinToString(" | ") { "---" } + " |\n"
     }
 

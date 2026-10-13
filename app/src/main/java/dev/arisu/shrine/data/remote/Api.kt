@@ -18,7 +18,7 @@ object Api {
 
     const val PLACEHOLDER_BASE = "http://arisu-placeholder/"
 
-    const val DEFAULT_BASE_URL = "https://arisushrine.com"
+    val DEFAULT_BASE_URL: String = dev.arisu.shrine.BuildConfig.BASE_URL
 
     val json = Json {
         ignoreUnknownKeys = true

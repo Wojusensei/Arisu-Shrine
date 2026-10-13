@@ -57,15 +57,23 @@ fun FollowListScreen(
     val me by Shrine.me.collectAsState()
     val scope = rememberCoroutineScope()
 
-    var users by remember { mutableStateOf<List<User>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+    val cachedUsers = remember(isFollowing) {
+        if (isFollowing) Shrine.peekFollowing() else Shrine.peekFollowers()
+    }
+    var users by remember { mutableStateOf(cachedUsers.orEmpty()) }
+    var loading by remember { mutableStateOf(cachedUsers == null) }
 
     var failed by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableStateOf(0) }
     val followState = remember { mutableStateMapOf<String, Boolean>() }
 
+    LaunchedEffect(cachedUsers) {
+        cachedUsers?.forEach { followState[it.id] = if (isFollowing) true else it.following }
+    }
+
     LaunchedEffect(isFollowing, reloadKey) {
-        loading = true
+
+        loading = users.isEmpty()
         try {
             val list = if (isFollowing) Shrine.followingUsers() else Shrine.followerUsers()
             users = list

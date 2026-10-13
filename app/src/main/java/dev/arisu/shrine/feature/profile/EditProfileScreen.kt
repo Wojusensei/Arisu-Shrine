@@ -124,58 +124,38 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     var activeAvatarDraft by rememberSaveable { mutableStateOf(meState.activeAvatarUrl.orEmpty()) }
     var activeAvatarEnabledDraft by rememberSaveable { mutableStateOf(meState.activeAvatarEnabled) }
 
-    fun uploadAvatar(uri: Uri, target: String) {
+    var cropSource by rememberSaveable { mutableStateOf<String?>(null) }
+    var cropTarget by rememberSaveable { mutableStateOf<String?>(null) }
+
+    suspend fun stagePick(uri: Uri): File {
+        val dir = File(context.cacheDir, "upload").apply { mkdirs() }
+
+        val ext = when (context.contentResolver.getType(uri)) {
+            "image/png" -> "png"
+            "image/gif" -> "gif"
+            "image/webp" -> "webp"
+            else -> "jpg"
+        }
+        val file = File(dir, "pick_${System.currentTimeMillis()}.$ext")
+        val input = try {
+            context.contentResolver.openInputStream(uri)
+        } catch (e: Exception) {
+            throw IllegalStateException("系统拒绝了图片读取，请回相册重新选一次", e)
+        } ?: throw IllegalStateException("无法打开所选图片")
+        input.use { stream -> file.outputStream().use { output -> stream.copyTo(output) } }
+        return file
+    }
+
+    fun uploadAvatar(file: File, target: String) {
         if (avatarBusy) return
         avatarBusy = true
         scope.launch {
             try {
                 val url = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val dir = File(context.cacheDir, "upload").apply { mkdirs() }
-                    val file = File(dir, "avatar_${System.currentTimeMillis()}.jpg")
-                    val picked = File(dir, "pick_${System.currentTimeMillis()}.bin")
                     try {
-
-                        val input = try {
-                            context.contentResolver.openInputStream(uri)
-                        } catch (e: Exception) {
-                            throw IllegalStateException("系统拒绝了图片读取，请回相册重新选一次", e)
-                        } ?: throw IllegalStateException("无法打开所选图片")
-                        input.use { stream ->
-                            picked.outputStream().use { output -> stream.copyTo(output) }
-                        }
-
-                        val bounds = android.graphics.BitmapFactory.Options().apply {
-                            inJustDecodeBounds = true
-                        }
-                        android.graphics.BitmapFactory.decodeFile(picked.absolutePath, bounds)
-                        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-
-                            throw IllegalStateException("识别不出这张图片的格式，请换一张试试")
-                        }
-                        val opts = android.graphics.BitmapFactory.Options().apply {
-                            inSampleSize = generateImageSample(bounds.outWidth, bounds.outHeight, 1024)
-                        }
-                        val src = android.graphics.BitmapFactory.decodeFile(picked.absolutePath, opts)
-                            ?: android.graphics.BitmapFactory.decodeFile(picked.absolutePath)
-                            ?: throw IllegalStateException("识别不出这张图片的格式，请换一张试试")
-                        val longest = maxOf(src.width, src.height)
-                        val scale = if (longest > 1024) 1024f / longest else 1f
-                        val scaled = android.graphics.Bitmap.createScaledBitmap(
-                            src, (src.width * scale).toInt().coerceAtLeast(1),
-                            (src.height * scale).toInt().coerceAtLeast(1), true,
-                        )
-                        file.outputStream().use { out ->
-                            scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, out)
-                        }
-                        src.recycle()
-                        scaled.recycle()
-                        try {
-                            Shrine.uploadImage(file)
-                        } finally {
-                            file.delete()
-                        }
+                        Shrine.uploadImage(file)
                     } finally {
-                        picked.delete()
+                        file.delete()
                     }
                 }
                 if (target == TARGET_FIXED) {
@@ -209,7 +189,18 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         val target = pendingAvatarTarget
         pendingAvatarTarget = null
-        if (uri != null && target != null) uploadAvatar(uri, target)
+        if (uri != null && target != null) {
+            scope.launch {
+                try {
+                    val staged = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { stagePick(uri) }
+                    cropSource = staged.absolutePath
+                    cropTarget = target
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    error = e.toApiMessage()
+                }
+            }
+        }
     }
 
     var pendingCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
@@ -218,22 +209,10 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         val file = pendingCameraPath?.let(::File)
         pendingAvatarTarget = null
         pendingCameraPath = null
-        if (ok && target != null && file != null) {
-            scope.launch {
-                try {
-                    val url = Shrine.uploadImage(file)
-                    if (target == TARGET_FIXED) {
-                        fixedAvatarDraft = url
-                    } else {
-                        activeAvatarDraft = url
-                    }
-                } catch (e: Exception) {
-                    error = e.toApiMessage()
-                } finally {
 
-                    file.delete()
-                }
-            }
+        if (ok && target != null && file != null && file.length() > 0) {
+            cropSource = file.absolutePath
+            cropTarget = target
         } else {
             file?.delete()
         }
@@ -252,6 +231,26 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         pendingCameraPath = file.absolutePath
         pendingAvatarTarget = target
         cameraLauncher.launch(uri)
+    }
+
+    val crop = cropSource
+    val cropTo = cropTarget
+    if (crop != null && cropTo != null) {
+        AvatarCropOverlay(
+            sourcePath = crop,
+            onCancel = {
+                File(crop).delete()
+                cropSource = null
+                cropTarget = null
+            },
+            onConfirm = { cropped ->
+                File(crop).delete()
+                cropSource = null
+                cropTarget = null
+                uploadAvatar(File(cropped), cropTo)
+            },
+        )
+        return
     }
 
     Column(modifier.fillMaxSize().imePadding()) {
@@ -866,7 +865,7 @@ private fun CustomPreview(markdown: String, css: String) {
     }
 }
 
-private fun generateImageSample(width: Int, height: Int, target: Int): Int {
+internal fun generateImageSample(width: Int, height: Int, target: Int): Int {
     var sample = 1
     var longest = maxOf(width, height)
     while (longest / 2 >= target) {

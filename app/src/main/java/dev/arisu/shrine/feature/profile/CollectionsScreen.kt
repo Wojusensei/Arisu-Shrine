@@ -68,8 +68,10 @@ fun CollectionsScreen(
     onOpenPost: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var collections by remember { mutableStateOf<List<Collection>>(emptyList()) }
-    var loading by remember { mutableStateOf(true) }
+
+    val cachedCollections = remember { Shrine.peekCollections() }
+    var collections by remember { mutableStateOf(cachedCollections.orEmpty()) }
+    var loading by remember { mutableStateOf(cachedCollections == null) }
     var reloadKey by remember { mutableStateOf(0) }
     var showCreate by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }

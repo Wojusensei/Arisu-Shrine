@@ -144,11 +144,11 @@ fun PostDetailScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
-    var post by remember { mutableStateOf<Post?>(null) }
-    var comments by remember { mutableStateOf<List<Comment>>(emptyList()) }
+    var post by remember { mutableStateOf(Shrine.peekPost(postId)) }
+    var comments by remember { mutableStateOf(Shrine.peekComments(postId) ?: emptyList()) }
 
     val commentsShown = remember(comments) { comments.groupedByThread() }
-    var loadState by remember { mutableStateOf("loading") }
+    var loadState by remember { mutableStateOf(if (post == null) "loading" else "ok") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     val me by Shrine.me.collectAsState()

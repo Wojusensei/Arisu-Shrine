@@ -268,9 +268,17 @@ private fun EmaSection(
     onOpenEma: (Int) -> Unit,
     onNewEma: () -> Unit,
 ) {
+
     var state by remember {
         mutableStateOf(
             emaMemory.get(EmaQuery(tags.toList(), states.toList(), sort), Shrine.me.value?.id)
+                ?: Shrine.peekEmas(
+                    tags = tags.map { it.wire },
+                    states = states.map { it.wire },
+                    sort = if (sort == EmaSort.OLDEST) "old" else "new",
+                    page = 1,
+                    pageSize = EMA_PAGE_SIZE,
+                )?.let { ListState.Ok(it.items, it.total) }
                 ?: ListState.Loading
         )
     }
@@ -654,10 +662,12 @@ private val StaffRoles = listOf(Role.KANNUSHI, Role.GUUJI, Role.HOUSHI, Role.TEM
 private fun StaffSection(onOpenUser: (String) -> Unit) {
     var formOpen by remember { mutableStateOf(false) }
     val cachedStaff = remember { staffMemory.get("staff", Shrine.me.value?.id) }
-    var groups by remember { mutableStateOf(cachedStaff?.groups ?: emptyList()) }
+
+    val firstGroups = remember { cachedStaff?.groups ?: Shrine.peekStaff().orEmpty() }
+    var groups by remember { mutableStateOf(firstGroups) }
     var loadState by remember {
         mutableStateOf(
-            if (cachedStaff != null) ListState.Ok(cachedStaff.groups, cachedStaff.groups.sumOf { it.members.size }.toLong())
+            if (firstGroups.isNotEmpty()) ListState.Ok(firstGroups, firstGroups.sumOf { it.members.size }.toLong())
             else ListState.Loading
         )
     }
@@ -1041,7 +1051,7 @@ private fun ArisuTextArea(
 private fun ChangelogSection(onOpenChangelog: (String) -> Unit) {
     var checkResult by remember { mutableStateOf<CheckState?>(null) }
     var toast by remember { mutableStateOf<ToastMessage?>(null) }
-    val cachedLog = remember { logMemory.get("log", Shrine.me.value?.id) }
+    val cachedLog = remember { logMemory.get("log", Shrine.me.value?.id) ?: Shrine.peekReleases() }
     var releases by remember { mutableStateOf(cachedLog ?: emptyList()) }
     var loadState by remember {
         mutableStateOf<ListState<ReleaseNote>>(

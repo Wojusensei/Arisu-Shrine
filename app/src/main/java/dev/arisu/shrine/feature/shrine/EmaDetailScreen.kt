@@ -100,9 +100,10 @@ fun EmaDetailScreen(
 
     var reply by rememberSaveable { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
-    var ema by remember { mutableStateOf<dev.arisu.shrine.data.model.Ema?>(null) }
-    var replies by remember { mutableStateOf<List<EmaReply>>(emptyList()) }
-    var loadState by remember { mutableStateOf("loading") }
+
+    var ema by remember { mutableStateOf(Shrine.peekEma(emaId)) }
+    var replies by remember { mutableStateOf(Shrine.peekEmaReplies(emaId) ?: emptyList()) }
+    var loadState by remember { mutableStateOf(if (ema == null) "loading" else "ok") }
     val me by Shrine.me.collectAsState()
     var pendingReplyDelete by remember { mutableStateOf<EmaReply?>(null) }
     val scope = rememberCoroutineScope()
@@ -114,9 +115,14 @@ fun EmaDetailScreen(
                 replies = Shrine.emaReplies(emaId)
                 loadState = "ok"
             } catch (e: dev.arisu.shrine.data.remote.ApiError) {
-                loadState = if (e.message?.contains("不存在") == true) "missing" else "fail"
+
+                loadState = when {
+                    e.message?.contains("不存在") == true -> "missing"
+                    ema != null -> "ok"
+                    else -> "fail"
+                }
             } catch (e: Exception) {
-                loadState = "fail"
+                if (ema == null) loadState = "fail"
             }
         }
     }
