@@ -69,8 +69,7 @@ fun AvatarCropOverlay(
     var bitmap by remember(sourcePath) { mutableStateOf<android.graphics.Bitmap?>(null) }
     var decodeFailed by remember(sourcePath) { mutableStateOf(false) }
     var cropping by remember { mutableStateOf(false) }
-    var zoom by remember(sourcePath) { mutableStateOf(1f) }
-    var offset by remember(sourcePath) { mutableStateOf(Offset.Zero) }
+    val transform = remember(sourcePath) { CropTransform() }
 
     LaunchedEffect(sourcePath) {
         val decoded = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -112,10 +111,7 @@ fun AvatarCropOverlay(
                     bitmap = bmp,
                     viewport = viewport,
                     viewportPx = viewportPx,
-                    zoom = zoom,
-                    onZoom = { zoom = it },
-                    offset = offset,
-                    onOffset = { offset = it },
+                    transform = transform,
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                 )
             }
@@ -142,7 +138,7 @@ fun AvatarCropOverlay(
                             val fit = viewportPx / minOf(source.width, source.height).toFloat()
                             val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                                 runCatching {
-                                    cropToFile(context, source, offset, fit * zoom, viewportPx)
+                                    cropToFile(context, source, transform.offset, fit * transform.zoom, viewportPx)
                                 }.getOrNull()
                             }
                             cropping = false
@@ -155,15 +151,25 @@ fun AvatarCropOverlay(
     }
 }
 
+internal class CropTransform {
+    var zoom by mutableStateOf(1f)
+        private set
+    var offset by mutableStateOf(Offset.Zero)
+        private set
+
+    fun apply(pan: Offset, zoomChange: Float, bmpW: Int, bmpH: Int, fit: Float, viewportPx: Float) {
+        zoom = (zoom * zoomChange).coerceIn(1f, CROP_MAX_ZOOM)
+
+        offset = clampPan(offset + pan, bmpW, bmpH, fit * zoom, viewportPx)
+    }
+}
+
 @Composable
 private fun CropViewport(
     bitmap: android.graphics.Bitmap,
     viewport: Dp,
     viewportPx: Float,
-    zoom: Float,
-    onZoom: (Float) -> Unit,
-    offset: Offset,
-    onOffset: (Offset) -> Unit,
+    transform: CropTransform,
     modifier: Modifier = Modifier,
 ) {
     val image = remember(bitmap) { bitmap.asImageBitmap() }
@@ -175,19 +181,16 @@ private fun CropViewport(
             .size(viewport)
             .pointerInput(bitmap, viewportPx) {
                 detectTransformGestures { _, pan, zoomChange, _ ->
-                    val next = (zoom * zoomChange).coerceIn(1f, CROP_MAX_ZOOM)
-                    onZoom(next)
-
-                    onOffset(clampPan(offset + pan, bitmap, fit * next, viewportPx))
+                    transform.apply(pan, zoomChange, bitmap.width, bitmap.height, fit, viewportPx)
                 }
             },
     ) {
         Canvas(Modifier.fillMaxSize().clip(CircleShape)) {
-            val scale = fit * zoom
+            val scale = fit * transform.zoom
             val w = bitmap.width * scale
             val h = bitmap.height * scale
-            val left = (size.width - w) / 2f + offset.x
-            val top = (size.height - h) / 2f + offset.y
+            val left = (size.width - w) / 2f + transform.offset.x
+            val top = (size.height - h) / 2f + transform.offset.y
             drawImage(
                 image = image,
                 srcOffset = IntOffset.Zero,
@@ -218,12 +221,13 @@ private fun CropViewport(
 
 private fun clampPan(
     pan: Offset,
-    bitmap: android.graphics.Bitmap,
+    bmpW: Int,
+    bmpH: Int,
     scale: Float,
     viewportPx: Float,
 ): Offset {
-    val maxX = ((bitmap.width * scale - viewportPx) / 2f).coerceAtLeast(0f)
-    val maxY = ((bitmap.height * scale - viewportPx) / 2f).coerceAtLeast(0f)
+    val maxX = ((bmpW * scale - viewportPx) / 2f).coerceAtLeast(0f)
+    val maxY = ((bmpH * scale - viewportPx) / 2f).coerceAtLeast(0f)
     return Offset(pan.x.coerceIn(-maxX, maxX), pan.y.coerceIn(-maxY, maxY))
 }
 
