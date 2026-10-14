@@ -84,6 +84,8 @@ services:
       ACME_EMAIL: ${ACME_EMAIL:?缺 ACME_EMAIL（Let's Encrypt 通知邮箱），用 scripts/init_server_env.sh 生成 .env}
     volumes:
       - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
+
+      - ./web:/srv/web:ro
       - caddydata:/data
       - caddyconfig:/config
     depends_on:

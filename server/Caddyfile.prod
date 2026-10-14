@@ -5,10 +5,19 @@
 {$DOMAIN} {
 	encode gzip
 
-	reverse_proxy arisu:8080
-
 	request_body {
 		max_size 12MB
+	}
+
+	handle /api/* {
+		reverse_proxy arisu:8080
+	}
+	handle /uploads/* {
+		reverse_proxy arisu:8080
+	}
+	handle {
+		root * /srv/web
+		file_server
 	}
 
 	header {
