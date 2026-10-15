@@ -268,7 +268,47 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
                 postId = entry.arguments?.getString("postId").orEmpty(),
                 onBack = { navController.popBackStack() },
                 onOpenUser = { navController.navigate(Routes.userProfile(it)) { launchSingleTop = true } },
+                onEditPost = { navController.navigate(Routes.editPost(it)) { launchSingleTop = true } },
             )
+        }
+
+        composable(
+            route = Routes.EDIT_POST,
+            arguments = listOf(navArgument("postId") { type = NavType.StringType }),
+        ) { entry ->
+            val postId = entry.arguments?.getString("postId").orEmpty()
+            var editPost by remember { mutableStateOf(Shrine.peekPost(postId)) }
+            var editLoadFailed by remember { mutableStateOf(false) }
+            var editReload by remember { mutableStateOf(0) }
+            LaunchedEffect(postId, editReload) {
+
+                if (editPost != null) return@LaunchedEffect
+                editLoadFailed = false
+                editPost = try {
+                    Shrine.post(postId)
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    editLoadFailed = true
+                    null
+                }
+            }
+            val loaded = editPost
+            if (loaded != null) {
+                NewPostScreen(
+                    initialBoard = loaded.board,
+                    editPost = loaded,
+                    onBack = { navController.popBackStack() },
+
+                    onPublished = { navController.popBackStack() },
+                )
+            } else if (editLoadFailed) {
+                dev.arisu.shrine.core.components.ShrineEmptyState(
+                    note = "加载失败，点击重试",
+                    onClick = { editReload++ },
+                )
+            } else {
+                dev.arisu.shrine.core.components.ShrineLoadingState()
+            }
         }
 
         composable(

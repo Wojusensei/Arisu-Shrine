@@ -140,6 +140,7 @@ fun PostDetailScreen(
     onBack: () -> Unit,
     onOpenUser: (String) -> Unit,
     modifier: Modifier = Modifier,
+    onEditPost: (String) -> Unit = {},
 ) {
     val clipboard = LocalClipboardManager.current
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
@@ -157,22 +158,12 @@ fun PostDetailScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
 
     var menu by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf(false) }
-
-    var editTitle by rememberSaveable { mutableStateOf("") }
-    var editIntro by rememberSaveable { mutableStateOf("") }
-    var editCover by rememberSaveable { mutableStateOf("") }
-    var editCoverBusy by remember { mutableStateOf(false) }
-    var editBody by rememberSaveable { mutableStateOf("") }
-    var editBoard by rememberSaveable { mutableStateOf(dev.arisu.shrine.data.model.Board.MAIN) }
     var deletingPost by remember { mutableStateOf(false) }
     var deletingComment by remember { mutableStateOf<Comment?>(null) }
 
     var toggling by remember { mutableStateOf(false) }
 
     var likedBusy by remember { mutableStateOf<Set<String>>(emptySet()) }
-
-    var editSaving by remember { mutableStateOf(false) }
     var reporting by remember { mutableStateOf(false) }
     var reportTargetComment by remember { mutableStateOf<dev.arisu.shrine.data.model.Comment?>(null) }
     var showCollections by remember { mutableStateOf(false) }
@@ -260,14 +251,7 @@ fun PostDetailScreen(
                                 leadingIcon = { MenuIcon(Icons.Rounded.Edit) },
                                 onClick = {
                                     menu = false
-                                    post?.let {
-                                        editTitle = it.title
-                                        editIntro = it.intro
-                                        editCover = it.coverUrl ?: ""
-                                        editBody = it.body
-                                        editBoard = it.board
-                                    }
-                                    editing = true
+                                    onEditPost(postId)
                                 },
                             )
                         }
@@ -592,102 +576,6 @@ fun PostDetailScreen(
             }
             }
         }
-        }
-
-        if (editing) {
-            AlertDialog(
-                onDismissRequest = { editing = false },
-                title = { Text("编辑帖子") },
-                text = {
-                    Column {
-                        ArisuTextField(
-                            value = editTitle,
-                            onValueChange = { if (it.length <= 60) editTitle = it },
-                            placeholder = "标题（最多 60 字）",
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        ArisuTextField(
-                            value = editIntro,
-                            onValueChange = { if (it.length <= 60) editIntro = it },
-                            placeholder = "介绍语（选填 · 展示在列表封面）",
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        EditCoverRow(
-                            coverUrl = editCover,
-                            busy = editCoverBusy,
-                            onPicked = { uri ->
-                                editCoverBusy = true
-                                scope.launch {
-                                    try {
-                                        editCover = Shrine.uploadImageFromUri(context, uri)
-                                    } catch (e: Exception) {
-
-                                        notice = e.toApiMessage()
-                                    }
-                                    editCoverBusy = false
-                                }
-                            },
-                            onRemove = { editCover = "" },
-                        )
-                        Spacer(Modifier.height(10.dp))
-                        ArisuTextField(
-                            value = editBody,
-                            onValueChange = { if (it.length <= 32000) editBody = it },
-                            placeholder = "正文（支持 Markdown）",
-                            singleLine = false,
-                            minLines = 6,
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        Text(
-                            text = "发送到板块",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            dev.arisu.shrine.data.model.Board.entries.forEach { b ->
-                                val selected = b == editBoard
-                                Text(
-                                    text = b.label,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontWeight = FontWeight.SemiBold,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(
-                                            if (selected) MaterialTheme.colorScheme.primary
-                                            else dev.arisu.shrine.core.design.NeuInset
-                                        )
-                                        .clickable { editBoard = b }
-                                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                                )
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(
-                        onClick = {
-                            if (editSaving) return@TextButton
-                            editSaving = true
-                            scope.launch {
-                                try {
-                                    Shrine.updatePost(postId, editTitle.trim(), editIntro.trim(), editBody.trim(), editBoard, cover = editCover)
-                                    editing = false
-                                    refresh()
-                                } catch (e: Exception) {
-                                    errorMsg = e.toApiMessage()
-                                }
-                                editSaving = false
-                            }
-                        },
-                        enabled = editTitle.isNotBlank() && editBody.isNotBlank() && !editSaving,
-                    ) { Text("保存") }
-                },
-                dismissButton = {
-                    TextButton(onClick = { editing = false }) { Text("取消") }
-                },
-            )
         }
 
         if (deletingPost) {
@@ -1565,79 +1453,5 @@ private fun SheetButton(text: String, enabled: Boolean, onClick: () -> Unit, mod
             color = if (enabled) MaterialTheme.colorScheme.onPrimary
             else MaterialTheme.colorScheme.onSurfaceVariant,
         )
-    }
-}
-
-@Composable
-private fun EditCoverRow(
-    coverUrl: String,
-    busy: Boolean,
-    onPicked: (android.net.Uri) -> Unit,
-    onRemove: () -> Unit,
-) {
-    val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
-        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
-    ) { uri -> if (uri != null) onPicked(uri) }
-
-    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-        if (coverUrl.isNotEmpty()) {
-            coil3.compose.AsyncImage(
-                model = coverUrl,
-                contentDescription = null,
-                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                modifier = Modifier
-                    .size(width = 84.dp, height = 56.dp)
-                    .clip(RoundedCornerShape(10.dp)),
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(
-                text = "更换",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .clickable(enabled = !busy) {
-                        launcher.launch(androidx.activity.result.PickVisualMediaRequest(
-                            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    }
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-            )
-            Text(
-                text = "移除",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .clickable(enabled = !busy) { onRemove() }
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-            )
-        } else {
-            Box(
-                Modifier
-                    .size(width = 84.dp, height = 56.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(dev.arisu.shrine.core.design.NeuInset)
-                    .clickable(enabled = !busy) {
-                        launcher.launch(androidx.activity.result.PickVisualMediaRequest(
-                            androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    },
-                contentAlignment = androidx.compose.ui.Alignment.Center,
-            ) {
-                if (busy) {
-                    dev.arisu.shrine.core.components.YinYangOrb(size = 16.dp)
-                } else {
-                    Icon(
-                        imageVector = androidx.compose.material.icons.Icons.Rounded.AddPhotoAlternate,
-                        contentDescription = "选择封面图",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-            Spacer(Modifier.width(10.dp))
-            Text(
-                text = "设置封面（选填）",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }

@@ -26,6 +26,8 @@ object Routes {
     const val POST_DETAIL = "post/{postId}"
     const val NEW_POST = "newPost"
 
+    const val EDIT_POST = "editPost/{postId}"
+
     const val SHRINE = "shrine"
     const val EMA_DETAIL = "ema/{emaId}"
     const val NEW_EMA = "newEma"
@@ -54,6 +56,7 @@ object Routes {
     const val SEARCH = "search"
 
     fun postDetail(postId: String) = "post/$postId"
+    fun editPost(postId: String) = "editPost/$postId"
     fun emaDetail(emaId: Int) = "ema/$emaId"
     fun changelogDetail(version: String) = "changelog/$version"
     fun followList(mode: String) = "follow/$mode"

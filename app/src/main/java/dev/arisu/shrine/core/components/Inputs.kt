@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -126,6 +127,90 @@ fun ArisuTextField(
     enabled: Boolean = true,
     containerColor: Color = NeuInset,
 ) {
+    ArisuFieldShell(
+        isEmpty = value.isEmpty(),
+        placeholder = placeholder,
+        leadingIcon = leadingIcon,
+        trailing = trailing,
+        singleLine = singleLine,
+        textStyle = textStyle,
+        containerColor = containerColor,
+        modifier = modifier,
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            singleLine = singleLine,
+            minLines = minLines,
+            maxLines = maxLines,
+            textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            keyboardOptions = keyboardOptions,
+            visualTransformation = visualTransformation,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+}
+
+@Composable
+fun ArisuTextField(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String = "",
+    leadingIcon: ImageVector? = null,
+    trailing: @Composable (() -> Unit)? = null,
+    singleLine: Boolean = true,
+    minLines: Int = 1,
+    maxLines: Int = if (singleLine) 1 else Int.MAX_VALUE,
+    textStyle: TextStyle = MaterialTheme.typography.bodyMedium,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    enabled: Boolean = true,
+    containerColor: Color = NeuInset,
+    fieldModifier: Modifier = Modifier,
+) {
+    ArisuFieldShell(
+        isEmpty = value.text.isEmpty(),
+        placeholder = placeholder,
+        leadingIcon = leadingIcon,
+        trailing = trailing,
+        singleLine = singleLine,
+        textStyle = textStyle,
+        containerColor = containerColor,
+        modifier = modifier,
+    ) {
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            singleLine = singleLine,
+            minLines = minLines,
+            maxLines = maxLines,
+            textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            keyboardOptions = keyboardOptions,
+            visualTransformation = visualTransformation,
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(fieldModifier),
+        )
+    }
+}
+
+@Composable
+private fun ArisuFieldShell(
+    isEmpty: Boolean,
+    placeholder: String,
+    leadingIcon: ImageVector?,
+    trailing: @Composable (() -> Unit)?,
+    singleLine: Boolean,
+    textStyle: TextStyle,
+    containerColor: Color,
+    modifier: Modifier,
+    field: @Composable () -> Unit,
+) {
     Row(
         modifier
             .fillMaxWidth()
@@ -143,26 +228,14 @@ fun ArisuTextField(
             Spacer(Modifier.width(10.dp))
         }
         Box(Modifier.weight(1f)) {
-            if (value.isEmpty()) {
+            if (isEmpty) {
                 Text(
                     text = placeholder,
                     style = textStyle,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 )
             }
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                enabled = enabled,
-                singleLine = singleLine,
-                minLines = minLines,
-                maxLines = maxLines,
-                textStyle = textStyle.copy(color = MaterialTheme.colorScheme.onSurface),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                keyboardOptions = keyboardOptions,
-                visualTransformation = visualTransformation,
-                modifier = Modifier.fillMaxWidth(),
-            )
+            field()
         }
         if (trailing != null) {
             Spacer(Modifier.width(8.dp))

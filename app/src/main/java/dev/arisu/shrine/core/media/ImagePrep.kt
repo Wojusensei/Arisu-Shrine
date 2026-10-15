@@ -159,6 +159,30 @@ private val downloadClient by lazy {
 
 fun needsLegacyGalleryPermission(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
 
+suspend fun downloadImageToFile(url: String, dir: File): File = withContext(Dispatchers.IO) {
+    dir.mkdirs()
+    val ext = url.substringBefore('?').substringAfterLast('.', "").lowercase()
+        .takeIf { it in setOf("jpg", "jpeg", "png", "gif", "webp") } ?: "jpg"
+    val file = File(dir, "remote_${System.currentTimeMillis()}.$ext")
+    runCatching {
+        val request = okhttp3.Request.Builder().url(url).build()
+        downloadClient.newCall(request).execute().use { resp ->
+            if (!resp.isSuccessful) throw ApiError("图片下载失败，请稍后再试")
+            val stream = resp.body?.byteStream() ?: throw ApiError("图片下载失败，请稍后再试")
+            stream.use { input -> file.outputStream().use { output -> input.copyTo(output) } }
+        }
+    }.onFailure {
+        file.delete()
+
+        throw if (it is ApiError) it else ApiError("图片下载失败，请稍后再试")
+    }
+    if (file.length() == 0L) {
+        file.delete()
+        throw ApiError("图片下载失败，请稍后再试")
+    }
+    file
+}
+
 suspend fun saveImageToGallery(context: Context, url: String): Boolean = withContext(Dispatchers.IO) {
     val bytes = runCatching {
         val request = okhttp3.Request.Builder().url(url).build()

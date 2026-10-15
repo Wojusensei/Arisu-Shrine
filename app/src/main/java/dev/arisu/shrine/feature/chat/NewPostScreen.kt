@@ -58,9 +58,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import dev.arisu.shrine.core.components.ArisuTextField
@@ -74,8 +79,13 @@ import dev.arisu.shrine.core.components.accentRaised
 import dev.arisu.shrine.core.components.neuInset
 import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.markdown.MARKDOWN_STICKER_ALT
+import dev.arisu.shrine.core.markdown.MdMark
+import dev.arisu.shrine.core.markdown.insertMark
+import dev.arisu.shrine.core.markdown.withText
+import dev.arisu.shrine.core.media.downloadImageToFile
 import dev.arisu.shrine.core.media.stagePickedImage
 import dev.arisu.shrine.data.model.Board
+import dev.arisu.shrine.data.model.Post
 import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
 import dev.arisu.shrine.feature.editor.COVER_ASPECT
@@ -96,33 +106,47 @@ fun NewPostScreen(
     onBack: () -> Unit,
     onPublished: (String) -> Unit,
     modifier: Modifier = Modifier,
+    editPost: Post? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var board by rememberSaveable { mutableStateOf(initialBoard) }
+    var board by rememberSaveable(editPost) { mutableStateOf(editPost?.board ?: initialBoard) }
 
-    var title by rememberSaveable { mutableStateOf("") }
-    var intro by rememberSaveable { mutableStateOf("") }
-    var body by rememberSaveable { mutableStateOf("") }
+    var title by rememberSaveable(editPost) { mutableStateOf(editPost?.title.orEmpty()) }
+    var intro by rememberSaveable(editPost) { mutableStateOf(editPost?.intro.orEmpty()) }
+
+    var body by rememberSaveable(editPost, stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(editPost?.body.orEmpty()))
+    }
     var showImageSheet by remember { mutableStateOf(false) }
     var showStickers by remember { mutableStateOf(false) }
     var showMention by remember { mutableStateOf(false) }
     var publishing by remember { mutableStateOf(false) }
-    var coverUrl by rememberSaveable { mutableStateOf<String?>(null) }
+    var coverUrl by rememberSaveable(editPost) { mutableStateOf(editPost?.coverUrl?.takeIf { it.isNotBlank() }) }
     var error by remember { mutableStateOf<String?>(null) }
+    val bodyField = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
 
     val staged = remember { mutableStateListOf<StagedImage>() }
     var coverFile by remember { mutableStateOf<File?>(null) }
     var coverProgress by remember { mutableStateOf(-1f) }
+
+    var coverFetching by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<EditTarget?>(null) }
     val uploading = staged.any { it.url == null && it.error == null } || coverProgress in 0f..1f
 
-    val canPublish = title.isNotBlank() && body.isNotBlank() && !publishing && !uploading
+    val canPublish = title.isNotBlank() && body.text.isNotBlank() && !publishing && !uploading
     var confirmDiscard by remember { mutableStateOf(false) }
 
-    val hasDraft = title.isNotBlank() || body.isNotBlank() || staged.isNotEmpty() ||
-        coverUrl != null || coverFile != null
+    val hasDraft = if (editPost != null) {
+        title != editPost.title || intro != editPost.intro || body.text != editPost.body ||
+            board != editPost.board || (coverUrl ?: "") != (editPost.coverUrl ?: "") ||
+            staged.isNotEmpty()
+    } else {
+        title.isNotBlank() || body.text.isNotBlank() || staged.isNotEmpty() ||
+            coverUrl != null || coverFile != null
+    }
     androidx.activity.compose.BackHandler(enabled = hasDraft && !publishing) { confirmDiscard = true }
 
     fun upload(item: StagedImage) {
@@ -133,8 +157,12 @@ fun NewPostScreen(
                 val url = Shrine.uploadImage(item.file) { item.progress = it }
                 val snippet = "![图片]($url)"
                 val old = item.markdown
-                body = if (old != null && body.contains(old)) body.replace(old, snippet)
-                else appendSnippet(body, snippet)
+
+                body = if (old != null && body.text.contains(old)) {
+                    body.withText(body.text.replace(old, snippet))
+                } else {
+                    body.withText(appendSnippet(body.text, snippet))
+                }
                 item.markdown = snippet
                 item.url = url
             } catch (e: Exception) {
@@ -161,7 +189,7 @@ fun NewPostScreen(
     }
 
     fun removeStaged(item: StagedImage) {
-        item.markdown?.let { body = body.replace(it, "").trimEnd() }
+        item.markdown?.let { body = body.withText(body.text.replace(it, "").trimEnd()) }
         item.file.delete()
         staged -= item
     }
@@ -172,12 +200,14 @@ fun NewPostScreen(
 
     fun uploadCover(file: File) {
         scope.launch {
+            val previous = coverUrl
             coverProgress = 0f
             try {
                 coverUrl = Shrine.uploadImage(file) { coverProgress = it }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-                coverUrl = null
+
+                coverUrl = previous
                 error = e.toApiMessage()
             }
             coverProgress = -1f
@@ -205,6 +235,25 @@ fun NewPostScreen(
         ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) stageCover(uri) }
 
+    fun refineCover() {
+        coverFile?.let { editing = EditTarget.Cover(it); return }
+        val remote = coverUrl
+        if (remote.isNullOrBlank() || coverFetching) return
+        coverFetching = true
+        scope.launch {
+            try {
+                val file = withContext(Dispatchers.IO) {
+                    downloadImageToFile(remote, File(context.cacheDir, "upload"))
+                }
+                editing = EditTarget.Cover(file)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                error = e.toApiMessage()
+            }
+            coverFetching = false
+        }
+    }
+
     var pendingCameraUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     var pendingCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -223,12 +272,19 @@ fun NewPostScreen(
 
     fun publish() {
         if (publishing) return
-        if (title.isBlank() || body.isBlank()) return
+        if (title.isBlank() || body.text.isBlank()) return
         publishing = true
         error = null
         scope.launch {
             try {
-                val post = Shrine.createPost(board, title.trim(), body.trim(), intro.trim(), cover = coverUrl ?: "")
+                val post = if (editPost != null) {
+                    Shrine.updatePost(
+                        editPost.id, title.trim(), intro.trim(), body.text.trim(), board,
+                        cover = coverUrl ?: "",
+                    )
+                } else {
+                    Shrine.createPost(board, title.trim(), body.text.trim(), intro.trim(), cover = coverUrl ?: "")
+                }
 
                 staged.forEach { it.file.delete() }
                 staged.clear()
@@ -265,7 +321,7 @@ fun NewPostScreen(
                         editingTarget.file.delete()
                         coverFile?.takeIf { it.absolutePath != edited.absolutePath }?.delete()
                         coverFile = edited
-                        coverUrl = null
+
                         uploadCover(edited)
                     }
 
@@ -286,8 +342,8 @@ fun NewPostScreen(
     if (confirmDiscard) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmDiscard = false },
-            title = { Text("放弃撰写？") },
-            text = { Text("尚未发布的内容不会被保存。") },
+            title = { Text(if (editPost != null) "放弃修改？" else "放弃撰写？") },
+            text = { Text(if (editPost != null) "尚未保存的修改不会被保留。" else "尚未发布的内容不会被保存。") },
             confirmButton = {
                 androidx.compose.material3.TextButton(
                     onClick = {
@@ -300,7 +356,9 @@ fun NewPostScreen(
                 ) { Text("放弃") }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { confirmDiscard = false }) { Text("继续撰写") }
+                androidx.compose.material3.TextButton(onClick = { confirmDiscard = false }) {
+                    Text(if (editPost != null) "继续编辑" else "继续撰写")
+                }
             },
         )
     }
@@ -312,7 +370,7 @@ fun NewPostScreen(
             .imePadding()
     ) {
         ArisuTopBar(
-            title = "撰写帖子",
+            title = if (editPost != null) "编辑帖子" else "撰写帖子",
             subtitle = "当前板块：${board.label}",
 
             onBack = { if (hasDraft && !publishing) confirmDiscard = true else onBack() },
@@ -320,7 +378,11 @@ fun NewPostScreen(
                 if (publishing) {
                     YinYangOrb(size = 16.dp, modifier = Modifier.padding(end = 14.dp))
                 } else {
-                    PublishButton(enabled = canPublish, onClick = { publish() })
+                    PublishButton(
+                        text = if (editPost != null) "保存" else "发布",
+                        enabled = canPublish,
+                        onClick = { publish() },
+                    )
                 }
             },
         )
@@ -355,10 +417,11 @@ fun NewPostScreen(
             CoverPicker(
                 coverUrl = coverUrl,
                 progress = coverProgress,
+                fetching = coverFetching,
                 onPick = {
                     coverLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 },
-                onEdit = coverFile?.let { file -> { editing = EditTarget.Cover(file) } },
+                onEdit = if (coverFile != null || coverUrl != null) ({ refineCover() }) else null,
                 onRemove = {
                     coverFile?.delete()
                     coverFile = null
@@ -378,7 +441,12 @@ fun NewPostScreen(
             )
 
             MarkdownToolbar(
-                onInsert = { snippet -> body = appendSnippet(body, snippet) },
+                onInsert = { mark ->
+
+                    body = insertMark(body, mark)
+                    runCatching { bodyField.requestFocus() }
+                    keyboard?.show()
+                },
                 onPickImage = { showImageSheet = true },
             )
 
@@ -422,13 +490,19 @@ fun NewPostScreen(
                     value = body,
                     onValueChange = { new ->
 
-                        if (new.length == body.length + 1 && new.endsWith("@")) showMention = true
+                        val caret = new.selection.start
+                        if (new.text.length == body.text.length + 1 && new.selection.collapsed &&
+                            new.text.getOrNull(caret - 1) == '@'
+                        ) {
+                            showMention = true
+                        }
 
-                        if (new.length <= 32000) body = new
+                        if (new.text.length <= 32000) body = new
                     },
                     placeholder = "写点什么……\n\n可用 **加粗**、*斜体*、`行内代码`，也可插入列表、引用与图片。",
                     singleLine = false,
                     minLines = 12,
+                    fieldModifier = Modifier.focusRequester(bodyField),
                 )
             }
 
@@ -442,14 +516,15 @@ fun NewPostScreen(
                 label = { it.label },
             )
 
-            Spacer(Modifier.height(12.dp))
-
-            Text(
-                text = "发布后的帖子将自动获得编号，如 arisu_000001",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 3.dp),
-            )
+            if (editPost == null) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    text = "发布后的帖子将自动获得编号，如 arisu_000001",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 3.dp),
+                )
+            }
         }
 
         if (showImageSheet) {
@@ -523,9 +598,9 @@ fun NewPostScreen(
 
         if (showStickers) {
             EmojiSheet(
-                onSelect = { emoji -> body = appendSnippet(body, emoji) },
+                onSelect = { emoji -> body = insertMark(body, MdMark(emoji)) },
                 onSticker = { sticker ->
-                    body = appendSnippet(body, "![$MARKDOWN_STICKER_ALT](${sticker.url})")
+                    body = insertMark(body, MdMark("![$MARKDOWN_STICKER_ALT](${sticker.url})"))
                 },
                 onDismiss = { showStickers = false },
             )
@@ -536,7 +611,7 @@ fun NewPostScreen(
                 visible = true,
                 onDismiss = { showMention = false },
                 onPick = { u ->
-                    body = body.dropLast(1) + "@" + u.id + " "
+                    body = applyMention(body, u.id)
                     showMention = false
                 },
             )
@@ -676,11 +751,12 @@ private fun CoverPicker(
     coverUrl: String?,
 
     progress: Float,
+    fetching: Boolean,
     onPick: () -> Unit,
     onEdit: (() -> Unit)?,
     onRemove: () -> Unit,
 ) {
-    val busy = progress in 0f..1f
+    val busy = progress in 0f..1f || fetching
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(width = 128.dp, height = 80.dp)) {
             if (coverUrl != null) {
@@ -719,17 +795,19 @@ private fun CoverPicker(
                     contentAlignment = Alignment.Center,
                 ) {
                     CircularProgressIndicator(
-                        progress = { progress },
+                        progress = { if (progress in 0f..1f) progress else 0f },
                         strokeWidth = 3.dp,
                         color = Color.White,
                         trackColor = Color.White.copy(alpha = 0.25f),
                         modifier = Modifier.size(38.dp),
                     )
-                    Text(
-                        text = "${(progress * 100).roundToInt()}%",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Color.White,
-                    )
+                    if (progress in 0f..1f) {
+                        Text(
+                            text = "${(progress * 100).roundToInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                        )
+                    }
                 }
             }
         }
@@ -737,7 +815,8 @@ private fun CoverPicker(
         Column {
             Text(
                 text = when {
-                    busy -> "正在寄送封面……"
+                    progress in 0f..1f -> "正在寄送封面……"
+                    busy -> "封面已就绪"
                     coverUrl != null -> "封面已就绪"
                     else -> "从相册选择一张封面图"
                 },
@@ -752,7 +831,7 @@ private fun CoverPicker(
                     background = NeuInset,
                     modifier = Modifier.clickable(enabled = !busy) { onPick() },
                 )
-                if (coverUrl != null && onEdit != null) {
+                if (onEdit != null) {
                     Spacer(Modifier.width(8.dp))
                     SoftPill(
                         text = "编辑封面",
@@ -782,7 +861,7 @@ private fun createCameraFile(context: Context): Pair<Uri, File> {
 }
 
 @Composable
-private fun PublishButton(enabled: Boolean, onClick: () -> Unit) {
+private fun PublishButton(text: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .then(
@@ -796,7 +875,7 @@ private fun PublishButton(enabled: Boolean, onClick: () -> Unit) {
             .padding(horizontal = 15.dp, vertical = 7.dp),
     ) {
         Text(
-            text = "发布",
+            text = text,
             style = MaterialTheme.typography.labelLarge,
             color = if (enabled) Color.White
             else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
@@ -808,22 +887,25 @@ private data class MdTool(
     val icon: ImageVector,
     val label: String,
 
-    val snippet: String?,
+    val mark: MdMark?,
 )
 
 private val MdTools = listOf(
-    MdTool(Icons.Rounded.FormatBold, "加粗", "**粗体**"),
-    MdTool(Icons.Rounded.FormatItalic, "斜体", "*斜体*"),
-    MdTool(dev.arisu.shrine.core.components.ShrineIcons.Title, "标题", "## 小标题"),
-    MdTool(Icons.Rounded.FormatListBulleted, "列表", "- 列表项"),
-    MdTool(Icons.Rounded.Code, "代码块", "```\n代码\n```"),
+    MdTool(Icons.Rounded.FormatBold, "加粗", MdMark("**粗体**", select = "粗体")),
+    MdTool(Icons.Rounded.FormatItalic, "斜体", MdMark("*斜体*", select = "斜体")),
+    MdTool(
+        dev.arisu.shrine.core.components.ShrineIcons.Title, "标题",
+        MdMark("## 小标题", select = "小标题", block = true),
+    ),
+    MdTool(Icons.Rounded.FormatListBulleted, "列表", MdMark("- 列表项", select = "列表项", block = true)),
+    MdTool(Icons.Rounded.Code, "代码块", MdMark("```\n代码\n```", select = "代码", block = true)),
     MdTool(Icons.Rounded.Image, "图片", null),
-    MdTool(Icons.Rounded.Link, "链接", "[链接文字](https://)"),
+    MdTool(Icons.Rounded.Link, "链接", MdMark("[链接文字](https://)", select = "链接文字")),
 )
 
 @Composable
 private fun MarkdownToolbar(
-    onInsert: (String) -> Unit,
+    onInsert: (MdMark) -> Unit,
     onPickImage: () -> Unit,
 ) {
 
@@ -851,8 +933,8 @@ private fun MarkdownToolbar(
                         interactionSource = interaction,
                         indication = null,
                     ) {
-                        val snippet = tool.snippet
-                        if (snippet != null) onInsert(snippet) else onPickImage()
+                        val mark = tool.mark
+                        if (mark != null) onInsert(mark) else onPickImage()
                     }
                     .padding(horizontal = 5.dp, vertical = 5.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -914,3 +996,12 @@ private fun ImageSourceRow(
 
 private fun appendSnippet(body: String, snippet: String): String =
     if (body.isBlank()) snippet else body.trimEnd('\n') + "\n" + snippet
+
+private fun applyMention(value: TextFieldValue, userId: String): TextFieldValue {
+    val text = value.text
+    val caret = value.selection.max.coerceIn(0, text.length)
+    val at = if (caret in 1..text.length && text[caret - 1] == '@') caret - 1 else caret
+    val insert = "@$userId "
+    val end = if (at < text.length && text[at] == '@') at + 1 else at
+    return TextFieldValue(text.replaceRange(at, end, insert), TextRange(at + insert.length))
+}

@@ -44,10 +44,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import dev.arisu.shrine.core.components.ArisuTextField
 import dev.arisu.shrine.core.components.ArisuTopBar
@@ -58,6 +62,8 @@ import dev.arisu.shrine.core.components.accentRaised
 import dev.arisu.shrine.core.components.neuInset
 import dev.arisu.shrine.core.components.softCard
 import dev.arisu.shrine.core.design.NeuInset
+import dev.arisu.shrine.core.markdown.MdMark
+import dev.arisu.shrine.core.markdown.insertMark
 import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
 import androidx.compose.runtime.rememberCoroutineScope
@@ -68,14 +74,16 @@ private data class MarkdownAction(
     val icon: ImageVector,
     val label: String,
     val format: String,
+
+    val block: Boolean = false,
 )
 
 private val MarkdownActions = listOf(
     MarkdownAction(Icons.Rounded.FormatBold, "加粗", "**%s**"),
     MarkdownAction(Icons.Rounded.FormatItalic, "斜体", "*%s*"),
-    MarkdownAction(Icons.Rounded.FormatSize, "标题", "## %s"),
-    MarkdownAction(Icons.AutoMirrored.Rounded.FormatListBulleted, "列表", "- %s"),
-    MarkdownAction(Icons.Rounded.Code, "代码块", "```\n%s\n```"),
+    MarkdownAction(Icons.Rounded.FormatSize, "标题", "## %s", block = true),
+    MarkdownAction(Icons.AutoMirrored.Rounded.FormatListBulleted, "列表", "- %s", block = true),
+    MarkdownAction(Icons.Rounded.Code, "代码块", "```\n%s\n```", block = true),
     MarkdownAction(Icons.Rounded.Link, "链接", "[%s](https://)"),
 )
 
@@ -88,29 +96,34 @@ fun NewEmaScreen(
 ) {
 
     var title by rememberSaveable(editEma) { mutableStateOf(editEma?.title ?: "") }
-    var body by rememberSaveable(editEma) { mutableStateOf(editEma?.body ?: "") }
+
+    var body by rememberSaveable(editEma, stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(editEma?.body ?: ""))
+    }
     val tags = remember(editEma) { mutableStateListOf<EmaTag>().apply { editEma?.tags?.let { addAll(it) } } }
     var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val bodyField = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
 
-    val canSubmit = title.isNotBlank() && body.isNotBlank() && !submitting
+    val canSubmit = title.isNotBlank() && body.text.isNotBlank() && !submitting
 
     val hasDraft = if (editEma != null) {
-        title != editEma.title || body != editEma.body || tags.toList() != editEma.tags
+        title != editEma.title || body.text != editEma.body || tags.toList() != editEma.tags
     } else {
-        title.isNotBlank() || body.isNotBlank() || tags.isNotEmpty()
+        title.isNotBlank() || body.text.isNotBlank() || tags.isNotEmpty()
     }
     var confirmDiscard by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler(enabled = hasDraft && !submitting) { confirmDiscard = true }
 
     fun wrap(action: MarkdownAction) {
-        val marker = action.format
-        body = if (body.isNotEmpty() && marker.contains("%s")) {
-            body + "\n" + marker.replace("%s", "")
-        } else {
-            marker.replace("%s", "")
-        }
+        val snippet = action.format.replace("%s", "")
+        val caret = action.format.indexOf("%s").takeIf { it >= 0 }
+
+        body = insertMark(body, MdMark(snippet, caret = caret, block = action.block))
+        runCatching { bodyField.requestFocus() }
+        keyboard?.show()
     }
 
     if (confirmDiscard) {
@@ -142,9 +155,9 @@ fun NewEmaScreen(
                     scope.launch {
                         try {
                             val ema = if (editEma != null) {
-                                Shrine.updateEma(editEma.id, title.trim(), body.trim(), tags.toList())
+                                Shrine.updateEma(editEma.id, title.trim(), body.text.trim(), tags.toList())
                             } else {
-                                Shrine.createEma(title.trim(), body.trim(), tags.toList())
+                                Shrine.createEma(title.trim(), body.text.trim(), tags.toList())
                             }
                             onCreated(ema.id)
                         } catch (e: Exception) {
@@ -205,8 +218,9 @@ fun NewEmaScreen(
                     BodyField(
                         value = body,
 
-                        onValueChange = { if (it.length <= 16000) body = it },
+                        onValueChange = { if (it.text.length <= 16000) body = it },
                         placeholder = "支持 Markdown：标题、加粗、列表、代码块、图片与链接…",
+                        fieldModifier = Modifier.focusRequester(bodyField),
                     )
                 }
             }
@@ -334,9 +348,10 @@ private fun MarkdownToolbar(onAction: (MarkdownAction) -> Unit) {
 
 @Composable
 private fun BodyField(
-    value: String,
-    onValueChange: (String) -> Unit,
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
     placeholder: String,
+    fieldModifier: Modifier = Modifier,
 ) {
     BasicTextField(
         value = value,
@@ -347,10 +362,11 @@ private fun BodyField(
             .fillMaxWidth()
             .heightIn(min = 180.dp)
             .neuInset(shape = RoundedCornerShape(12.dp), color = NeuInset)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .then(fieldModifier),
         decorationBox = { inner ->
             Box {
-                if (value.isEmpty()) {
+                if (value.text.isEmpty()) {
                     Text(
                         text = placeholder,
                         style = MaterialTheme.typography.bodyMedium,

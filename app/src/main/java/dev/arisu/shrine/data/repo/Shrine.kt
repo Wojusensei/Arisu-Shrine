@@ -532,14 +532,20 @@ object Shrine {
 
             .also { _justPublished.value = true }
 
-    suspend fun updatePost(id: String, title: String?, intro: String?, body: String?, board: Board? = null, cover: String? = null): Post =
-        apiCall {
+    suspend fun updatePost(id: String, title: String?, intro: String?, body: String?, board: Board? = null, cover: String? = null): Post {
+        val post = apiCall {
             Api.service.updatePost(
                 postKey(id),
 
                 PostPatchReq(title, body, intro, board?.wire, cover),
             )
         }.toPost()
+
+        withContext(Dispatchers.IO) {
+            CacheStore.put(scopedKey(cacheKey("post", id)), Post.serializer(), post)
+        }
+        return post
+    }
 
     suspend fun deletePost(id: String, reason: String? = null) {
         apiCall { Api.service.deletePost(postKey(id), DeleteReasonReq(reason ?: "")) }
