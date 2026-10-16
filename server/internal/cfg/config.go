@@ -14,7 +14,9 @@ type Config struct {
 	DevMode bool   `mapstructure:"dev_mode"`
 
 	TrustedProxies []string `mapstructure:"trusted_proxies"`
-	DB      struct {
+
+	ClientIPHeader string `mapstructure:"client_ip_header"`
+	DB             struct {
 		DSN string `mapstructure:"dsn"`
 	} `mapstructure:"db"`
 	Redis struct {
@@ -47,6 +49,8 @@ type Config struct {
 		StaffApplyCooldown time.Duration `mapstructure:"staff_apply_cooldown"`
 		DeactivateCooldown time.Duration `mapstructure:"deactivate_cooldown"`
 		HotAuthorUpThresh  int           `mapstructure:"hot_author_up_threshold"`
+
+		FloodPerMin int `mapstructure:"flood_per_min"`
 	} `mapstructure:"limits"`
 }
 
@@ -60,6 +64,10 @@ func Load(path string) (*Config, error) {
 	v.AutomaticEnv()
 
 	if err := v.BindEnv("jwt.secret"); err != nil {
+		return nil, err
+	}
+
+	if err := v.BindEnv("client_ip_header"); err != nil {
 		return nil, err
 	}
 	setDefaults(v)
@@ -95,6 +103,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("limits.staff_apply_cooldown", 7*24*time.Hour)
 	v.SetDefault("limits.deactivate_cooldown", 24*time.Hour)
 	v.SetDefault("limits.hot_author_up_threshold", 20)
+
+	v.SetDefault("limits.flood_per_min", 300)
+	v.SetDefault("client_ip_header", "")
 }
 
 func (c *Config) SMTPConfigured() bool {

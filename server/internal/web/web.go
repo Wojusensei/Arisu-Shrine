@@ -76,7 +76,9 @@ func (w *Web) Router() *gin.Engine {
 	})
 	r.MaxMultipartMemory = 12 << 20
 
-	r.GET("/api/health", func(c *gin.Context) {
+	api := r.Group("/api", w.floodGuard())
+
+	api.GET("/health", func(c *gin.Context) {
 		hctx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
 		defer cancel()
 		dbOK := w.St.Pool.Ping(hctx) == nil
@@ -90,8 +92,6 @@ func (w *Web) Router() *gin.Engine {
 
 	r.GET("/uploads/*filepath", serveUploads(w))
 	r.HEAD("/uploads/*filepath", serveUploads(w))
-
-	api := r.Group("/api")
 
 	auth := api.Group("/auth")
 	auth.POST("/code", w.sendCode)
@@ -242,7 +242,7 @@ func (w *Web) accessLog() gin.HandlerFunc {
 		w.Log.Info("req",
 			zap.String("m", c.Request.Method), zap.String("p", c.Request.URL.Path),
 			zap.Int("s", c.Writer.Status()), zap.Duration("d", time.Since(start)),
-			zap.String("ip", c.ClientIP()),
+			zap.String("ip", w.clientIP(c)),
 			zap.String("ua", c.Request.UserAgent()),
 			zap.Int64("cl", c.Request.ContentLength))
 	}

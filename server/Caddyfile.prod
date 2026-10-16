@@ -26,4 +26,9 @@
 		Referrer-Policy "strict-origin-when-cross-origin"
 		-Server
 	}
+
+	log {
+		output stdout
+		format json
+	}
 }

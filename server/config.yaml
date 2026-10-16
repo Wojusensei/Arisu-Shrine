@@ -5,6 +5,8 @@ base_url: "http://127.0.0.1:8080"
 
 trusted_proxies: []
 
+client_ip_header: ""
+
 db:
   dsn: "postgres://arisu:arisu@127.0.0.1:5432/arisu?sslmode=disable"
 
@@ -40,3 +42,4 @@ limits:
   staff_apply_cooldown: 168h
   deactivate_cooldown: 24h
   hot_author_up_threshold: 20
+  flood_per_min: 300

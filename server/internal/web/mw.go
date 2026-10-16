@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -188,9 +189,45 @@ func (w *Web) requireOver(c *gin.Context, authorRole string) bool {
 	return true
 }
 
+func (w *Web) clientIP(c *gin.Context) string {
+	if h := w.Cfg.ClientIPHeader; h != "" {
+		if v := strings.TrimSpace(c.GetHeader(h)); net.ParseIP(v) != nil {
+			return v
+		}
+	}
+	return c.ClientIP()
+}
+
+func (w *Web) floodGuard() gin.HandlerFunc {
+	limit := int64(w.Cfg.Limits.FloodPerMin)
+	return func(c *gin.Context) {
+
+		if limit <= 0 {
+			c.Next()
+			return
+		}
+		key := "rl:flood:" + w.clientIP(c) + ":" + time.Now().Format("200601021504")
+		n, err := w.RDB.Incr(c.Request.Context(), key).Result()
+		if err != nil {
+			w.Log.Warn("洪泛闸门 Redis 写入失败，放行", zap.Error(err))
+			c.Next()
+			return
+		}
+		if n == 1 {
+			w.RDB.Expire(c.Request.Context(), key, 2*time.Minute)
+		}
+		if n > limit {
+			w.err(c, http.StatusTooManyRequests, "请求过于频繁，请稍后再试")
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
 func (w *Web) refreshRateLimit() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		key := "rl:refresh:" + c.ClientIP() + ":" + time.Now().Format("200601021504")
+		key := "rl:refresh:" + w.clientIP(c) + ":" + time.Now().Format("200601021504")
 		n, err := w.RDB.Incr(c.Request.Context(), key).Result()
 		if err != nil {
 			w.Log.Warn("refresh 限流 Redis 写入失败，放行", zap.Error(err))
@@ -223,7 +260,7 @@ func (w *Web) loginLocked(c *gin.Context, email string) bool {
 	if err != nil && !errors.Is(err, redis.Nil) {
 		w.Log.Warn("登录锁 Redis 读取失败，账号防爆破降级", zap.Error(err))
 	}
-	ipn, err := w.RDB.Get(c.Request.Context(), "login:fail:ip:"+c.ClientIP()+":"+day).Int()
+	ipn, err := w.RDB.Get(c.Request.Context(), "login:fail:ip:"+w.clientIP(c)+":"+day).Int()
 	if err != nil && !errors.Is(err, redis.Nil) {
 		w.Log.Warn("登录锁 Redis 读取失败，IP 防爆破降级", zap.Error(err))
 	}
@@ -249,7 +286,7 @@ func (w *Web) loginFailRecord(c *gin.Context, email string) {
 	day := time.Now().Format("20060102")
 	for _, k := range []string{
 		"login:fail:acct:" + email + ":" + day,
-		"login:fail:ip:" + c.ClientIP() + ":" + day,
+		"login:fail:ip:" + w.clientIP(c) + ":" + day,
 	} {
 		if err := w.RDB.Incr(c.Request.Context(), k).Err(); err != nil {
 			w.Log.Warn("登录失败计数写入失败", zap.Error(err))

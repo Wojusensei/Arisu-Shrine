@@ -34,7 +34,7 @@ func (w *Web) sendCode(c *gin.Context) {
 		return
 	}
 	code, err := svc.SendVerificationCode(c.Request.Context(), w.RDB, w.Mailer, w.Log,
-		purpose, email, c.ClientIP(), w.Cfg.Limits.CodePerEmailPerDay, w.Cfg.Limits.CodePerIPPerDay)
+		purpose, email, w.clientIP(c), w.Cfg.Limits.CodePerEmailPerDay, w.Cfg.Limits.CodePerIPPerDay)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, svc.ErrCooldown) || errors.Is(err, svc.ErrTooMany) {
@@ -522,7 +522,7 @@ func (w *Web) emailChangeRequest(c *gin.Context) {
 	}
 
 	code, err := svc.SendVerificationCode(c.Request.Context(), w.RDB, w.Mailer, w.Log,
-		"email_change", newEmail, c.ClientIP(), w.Cfg.Limits.CodePerEmailPerDay, w.Cfg.Limits.CodePerIPPerDay)
+		"email_change", newEmail, w.clientIP(c), w.Cfg.Limits.CodePerEmailPerDay, w.Cfg.Limits.CodePerIPPerDay)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, svc.ErrCooldown) || errors.Is(err, svc.ErrTooMany) {
