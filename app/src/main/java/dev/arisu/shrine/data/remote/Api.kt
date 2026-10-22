@@ -92,7 +92,9 @@ object Api {
         }
     }
 
-    var onSessionRefreshed: (suspend (access: String, refresh: String) -> Unit)? = null
+    var onSessionRefreshed: (suspend (oldRefresh: String, access: String, refresh: String) -> Unit)? = null
+
+    var onRotationAbandoned: (suspend (oldRefresh: String, access: String, refresh: String) -> Unit)? = null
 
     var onSessionDead: (() -> Unit)? = null
 
@@ -124,11 +126,15 @@ object Api {
                 }
                 val result = json.decodeFromString(AuthResultDto.serializer(), resp.body!!.string())
 
-                if (sessionGen != gen) return null
+                if (sessionGen != gen) {
+
+                    onRotationAbandoned?.invoke(refresh, result.accessToken, result.refreshToken)
+                    return null
+                }
                 currentAccess = result.accessToken
                 if (result.refreshToken.isNotEmpty()) {
                     currentRefresh = result.refreshToken
-                    onSessionRefreshed?.invoke(result.accessToken, result.refreshToken)
+                    onSessionRefreshed?.invoke(refresh, result.accessToken, result.refreshToken)
                 }
                 result
             }

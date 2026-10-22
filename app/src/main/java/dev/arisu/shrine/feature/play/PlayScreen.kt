@@ -133,7 +133,6 @@ fun PlayScreen(
     val luck = (luckState as? LuckState.Drawn)?.luck
     var stats by remember { mutableStateOf(memo?.stats ?: Shrine.peekOnlineStats()) }
     var drawing by remember { mutableStateOf(false) }
-    var failed by remember { mutableStateOf(false) }
 
     var drawFailed by remember { mutableStateOf(false) }
     var leader by remember { mutableStateOf(memo?.leader ?: Shrine.peekOmikujiLeaderboard()) }
@@ -162,10 +161,11 @@ fun PlayScreen(
         lifecycleOwner.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
             while (true) {
                 try {
-                    stats = Shrine.onlineStats()
-                    failed = false
-                } catch (e: Exception) {
-                    failed = true
+
+                    val fresh = Shrine.onlineStats()
+                    if (fresh != stats) stats = fresh
+                } catch (_: Exception) {
+
                 }
                 delay(30_000L)
             }
@@ -211,7 +211,6 @@ fun PlayScreen(
             onRefresh = {
                 try {
                     stats = Shrine.onlineStats()
-                    failed = false
                     refreshLeader()
                 } catch (_: Exception) {
                 }
@@ -417,7 +416,7 @@ fun PlayScreen(
             SectionLabel(text = "社员统计")
             val st = stats
 
-            fun num(v: Int?) = if (failed || v == null) "--" else v.toString()
+            fun num(v: Int?) = if (v == null) "--" else v.toString()
             NeuSurface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(24.dp),

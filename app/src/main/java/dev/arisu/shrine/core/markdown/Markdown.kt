@@ -929,6 +929,8 @@ private fun StickerInlineImage(
 
 private val rasterUrlRe = Regex("""\.(png|jpe?g|webp|gif|bmp|avif)([?#].*)?$""", RegexOption.IGNORE_CASE)
 
+private const val RASTER_DECODE_MAX = 2048
+
 private const val CENTER_OPEN = "\u0001center\u0001"
 private const val CENTER_CLOSE = "\u0001center-end\u0001"
 
@@ -1055,11 +1057,18 @@ private fun NaturalImage(
             }
         }
         if (model != null) {
-            coil3.compose.AsyncImage(
-                model = coil3.request.ImageRequest.Builder(context)
+            val request = androidx.compose.runtime.remember(model, url) {
+                coil3.request.ImageRequest.Builder(context)
                     .data(model)
-                    .size(coil3.size.Size.ORIGINAL)
-                    .build(),
+                    .apply {
+
+                        if (rasterUrlRe.containsMatchIn(url)) size(RASTER_DECODE_MAX, RASTER_DECODE_MAX)
+                        else size(coil3.size.Size.ORIGINAL)
+                    }
+                    .build()
+            }
+            coil3.compose.AsyncImage(
+                model = request,
                 contentDescription = alt.ifBlank { "图片" },
                 contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                 onSuccess = { st -> decoded = st.result.image.width to st.result.image.height },

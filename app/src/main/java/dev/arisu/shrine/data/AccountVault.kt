@@ -58,6 +58,16 @@ class AccountVault(private val context: Context) {
         persist(snapshot().filterNot { it.userId == userId })
     }
 
+    suspend fun refreshTokens(oldRefresh: String, access: String, refresh: String) = mutex.withLock {
+        if (oldRefresh.isEmpty() || refresh.isEmpty()) return@withLock
+        val list = snapshot()
+        val i = list.indexOfFirst { it.refresh == oldRefresh }
+        if (i < 0) return@withLock
+        val next = list.toMutableList()
+        next[i] = next[i].copy(access = access, refresh = refresh, savedAt = System.currentTimeMillis())
+        persist(next)
+    }
+
     private suspend fun persist(list: List<VaultAccount>) {
 
         context.dataStore.edit {

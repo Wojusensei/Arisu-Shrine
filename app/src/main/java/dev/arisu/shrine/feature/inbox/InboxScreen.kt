@@ -69,6 +69,7 @@ import dev.arisu.shrine.core.components.ShrineStaleBanner
 import dev.arisu.shrine.core.components.ShrineIcons
 import dev.arisu.shrine.core.components.ShrineListEnd
 import dev.arisu.shrine.core.components.ShrineNoticeBar
+import dev.arisu.shrine.core.components.PrefetchOnApproach
 import dev.arisu.shrine.core.components.SoftPill
 import dev.arisu.shrine.core.components.neuInset
 import dev.arisu.shrine.core.components.smoothScrollToTop
@@ -258,6 +259,8 @@ fun InboxScreen(
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                     ) {
                 val inboxListState = rememberLazyListState()
+
+                PrefetchOnApproach(inboxListState, notices.size) { loadMore() }
                 SectionCard(Modifier.fillMaxSize()) {
                 LazyColumn(modifier = Modifier.fillMaxSize(), state = inboxListState) {
                     itemsIndexed(
@@ -343,11 +346,6 @@ fun InboxScreen(
                                     .fillMaxWidth(),
                                 textAlign = TextAlign.Center,
                             )
-                        }
-                    } else {
-
-                        item(key = "load-more") {
-                            LaunchedEffect(notices.size) { loadMore() }
                         }
                     }
                 }

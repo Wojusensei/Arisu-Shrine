@@ -68,8 +68,11 @@ type PostListQuery struct {
 	Offset   int
 }
 
-func postsWhere(board, sort string, authorID int64) string {
+func postsWhere(board, sort string, authorID int64, viewerFiltered bool) string {
 	where := ` WHERE p.deleted_at IS NULL`
+	if viewerFiltered {
+		where += blockFilter("p.author_id")
+	}
 	if board != "" {
 		where += ` AND p.board='` + sanitizeEnum(board, []string{"main", "gensokyo", "dev"}) + `'`
 	}
@@ -86,7 +89,7 @@ func (s *Store) PostsPage(ctx context.Context, q PostListQuery) (*model.PostPage
 	if q.Limit <= 0 || q.Limit > 50 {
 		q.Limit = 20
 	}
-	where := postsWhere(q.Board, q.Sort, q.AuthorID)
+	where := postsWhere(q.Board, q.Sort, q.AuthorID, true)
 	order := ` ORDER BY p.pinned DESC, p.created_at DESC`
 	if q.Sort == "hot" {
 		order = ` ORDER BY p.pinned DESC, (p.up_count*2 + p.comment_count + CASE WHEN p.essence THEN 10 ELSE 0 END)
@@ -108,13 +111,13 @@ func (s *Store) PostsPage(ctx context.Context, q PostListQuery) (*model.PostPage
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	page.Total, err = s.countPosts(ctx, q.Board, q.Sort, q.AuthorID)
+	page.Total, err = s.countPosts(ctx, q.Board, q.Sort, q.AuthorID, q.ViewerID)
 	return page, err
 }
 
-func (s *Store) countPosts(ctx context.Context, board, sort string, authorID int64) (int64, error) {
+func (s *Store) countPosts(ctx context.Context, board, sort string, authorID, viewerID int64) (int64, error) {
 	var total int64
-	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM posts p`+postsWhere(board, sort, authorID)).Scan(&total)
+	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM posts p`+postsWhere(board, sort, authorID, true), viewerID).Scan(&total)
 	return total, err
 }
 
@@ -141,9 +144,9 @@ func (s *Store) PostsByRelation(ctx context.Context, viewerID int64, relation st
 	default:
 		join = ``
 	}
-	where := postsWhere("", "new", 0)
+	where := postsWhere("", "new", 0, true)
 	if relation == "posts" {
-		where = ` WHERE p.deleted_at IS NULL AND p.author_id=` + fmt.Sprint(ownerID)
+		where = ` WHERE p.deleted_at IS NULL AND p.author_id=` + fmt.Sprint(ownerID) + blockFilter("p.author_id")
 	}
 
 	if relation == "favorited" && collectionID > 0 {
@@ -168,7 +171,7 @@ func (s *Store) PostsByRelation(ctx context.Context, viewerID int64, relation st
 	}
 
 	var total int64
-	err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM posts p`+join+where).Scan(&total)
+	err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM posts p`+join+where, viewerID).Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -176,7 +179,8 @@ func (s *Store) PostsByRelation(ctx context.Context, viewerID int64, relation st
 }
 
 func (s *Store) PostByID(ctx context.Context, viewerID, id int64) (*model.Post, error) {
-	return scanPost(s.Pool.QueryRow(ctx, postSelect+` WHERE p.id=$2 AND p.deleted_at IS NULL`, viewerID, id))
+	return scanPost(s.Pool.QueryRow(ctx,
+		postSelect+` WHERE p.id=$2 AND p.deleted_at IS NULL`+blockFilter("p.author_id"), viewerID, id))
 }
 
 type PostCreate struct {
@@ -601,7 +605,8 @@ func scanComment(row pgx.Row) (*model.Comment, error) {
 func (s *Store) CommentsOf(ctx context.Context, viewerID, postID int64) ([]model.Comment, error) {
 
 	rows, err := s.Pool.Query(ctx, commentSelect+
-		` JOIN posts p ON p.id=c.post_id AND p.deleted_at IS NULL WHERE c.post_id=$2 AND c.deleted_at IS NULL ORDER BY c.created_at LIMIT 500`,
+		` JOIN posts p ON p.id=c.post_id AND p.deleted_at IS NULL WHERE c.post_id=$2 AND c.deleted_at IS NULL`+
+		blockFilter("c.author_id")+` ORDER BY c.created_at LIMIT 500`,
 		viewerID, postID)
 	if err != nil {
 		return nil, err
@@ -685,6 +690,7 @@ func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comm
 				UserID: postAuthor, Kind: "reply", Category: "reply",
 				Content:     fmt.Sprintf("%s 评论了您的帖子《%s》：%s", actor, postTitle, preview),
 				TargetRoute: model.FormatPostNo2(c.PostID),
+				ActorID:     c.AuthorID,
 			}); err != nil {
 				return err
 			}
@@ -713,7 +719,7 @@ func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comm
 			}
 		}
 
-		return notifyTrackers(tx, ctx, c.PostID, postTitle, actor, preview, c.AuthorID)
+		return notifyTrackers(tx, ctx, c.PostID, postTitle, actor, preview, c.AuthorID, c.AuthorID)
 	})
 	if err != nil {
 		return nil, err

@@ -118,6 +118,7 @@ func (w *Web) Router() *gin.Engine {
 		guarded.GET("/me/followers", w.myFollowers)
 		guarded.GET("/me/room", w.myRoom)
 		guarded.GET("/me/posts", w.myPosts)
+		guarded.GET("/me/blocks", w.myBlocks)
 		guarded.GET("/me/sessions", w.listSessions)
 		guarded.DELETE("/me/sessions/:id", w.kickSession)
 		guarded.POST("/me/heartbeat", w.heartbeat)
@@ -126,6 +127,8 @@ func (w *Web) Router() *gin.Engine {
 		guarded.GET("/users/:id/tiles", w.userTiles)
 		guarded.GET("/users/:id/posts", w.userPosts)
 		guarded.POST("/users/:id/follow", w.follow)
+		guarded.POST("/users/:id/block", w.blockUser)
+		guarded.DELETE("/users/:id/block", w.unblockUser)
 		guarded.DELETE("/users/:id/follow", w.unfollow)
 		guarded.POST("/users/:id/report", w.reportUser)
 		guarded.POST("/users/:id/warn", w.warnUser)
@@ -204,6 +207,18 @@ func (w *Web) Router() *gin.Engine {
 func serveUploads(w *Web) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Header("X-Content-Type-Options", "nosniff")
+
+		if strings.HasSuffix(strings.ToLower(c.Request.URL.Path), ".apk") {
+			c.Header("Cache-Control", "public, max-age=86400")
+		} else {
+			c.Header("Cache-Control", "public, max-age=31536000, immutable")
+		}
+
+		if width := thumbWidthOf(c.Query("w")); width > 0 {
+			if w.serveThumb(c, width) {
+				return
+			}
+		}
 
 		if strings.HasSuffix(strings.ToLower(c.Request.URL.Path), ".apk") {
 			c.Header("Content-Type", "application/vnd.android.package-archive")

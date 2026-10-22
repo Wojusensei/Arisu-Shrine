@@ -48,11 +48,11 @@ type EmaListQuery struct {
 	Offset int
 }
 
-func (s *Store) EmasPage(ctx context.Context, q EmaListQuery) (*model.EmaPage, error) {
+func (s *Store) EmasPage(ctx context.Context, viewerID int64, q EmaListQuery) (*model.EmaPage, error) {
 	if q.Limit <= 0 || q.Limit > 50 {
 		q.Limit = 20
 	}
-	where := ` WHERE e.deleted_at IS NULL`
+	where := ` WHERE e.deleted_at IS NULL` + blockFilter("e.author_id")
 	if q.Tag != "" && q.Tag != "all" {
 		q.Tags = append(q.Tags, sanitizeEnum(q.Tag, emaTags))
 	}
@@ -84,7 +84,7 @@ func (s *Store) EmasPage(ctx context.Context, q EmaListQuery) (*model.EmaPage, e
 	if q.Sort == "old" {
 		order = ` ORDER BY e.created_at`
 	}
-	rows, err := s.Pool.Query(ctx, emaSelect+where+order+fmt.Sprintf(` LIMIT %d OFFSET %d`, q.Limit, q.Offset))
+	rows, err := s.Pool.Query(ctx, emaSelect+where+order+fmt.Sprintf(` LIMIT %d OFFSET %d`, q.Limit, q.Offset), viewerID)
 	if err != nil {
 		return nil, err
 	}
@@ -100,12 +100,13 @@ func (s *Store) EmasPage(ctx context.Context, q EmaListQuery) (*model.EmaPage, e
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM emas e`+where).Scan(&page.Total)
+	err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM emas e`+where, viewerID).Scan(&page.Total)
 	return page, err
 }
 
-func (s *Store) EmaByID(ctx context.Context, id int64) (*model.Ema, error) {
-	return scanEma(s.Pool.QueryRow(ctx, emaSelect+` WHERE e.id=$1 AND e.deleted_at IS NULL`, id))
+func (s *Store) EmaByID(ctx context.Context, viewerID, id int64) (*model.Ema, error) {
+	return scanEma(s.Pool.QueryRow(ctx,
+		emaSelect+` WHERE e.id=$2 AND e.deleted_at IS NULL`+blockFilter("e.author_id"), viewerID, id))
 }
 
 type EmaCreate struct {
@@ -129,7 +130,7 @@ func (s *Store) CreateEma(ctx context.Context, c EmaCreate) (*model.Ema, error) 
 	if err != nil {
 		return nil, err
 	}
-	return s.EmaByID(ctx, id)
+	return s.EmaByID(ctx, c.AuthorID, id)
 }
 
 func sanitizeTags(tags []string) []string {
@@ -214,12 +215,12 @@ func (s *Store) DeleteEma(ctx context.Context, id, operatorID int64, mod bool, r
 	})
 }
 
-func (s *Store) EmaReplies(ctx context.Context, emaID int64) ([]model.EmaReply, error) {
+func (s *Store) EmaReplies(ctx context.Context, viewerID, emaID int64) ([]model.EmaReply, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT r.id, r.content, r.created_at,
 		u.id, u.nickname, u.role,
 		CASE WHEN u.active_avatar_enabled AND u.active_avatar_url<>'' THEN u.active_avatar_url ELSE u.fixed_avatar_url END
 		FROM ema_replies r JOIN users u ON u.id=r.author_id
-		WHERE r.ema_id=$1 AND r.deleted_at IS NULL ORDER BY r.created_at`, emaID)
+		WHERE r.ema_id=$2 AND r.deleted_at IS NULL`+blockFilter("r.author_id")+` ORDER BY r.created_at`, viewerID, emaID)
 	if err != nil {
 		return nil, err
 	}
@@ -270,6 +271,7 @@ func (s *Store) AddEmaReply(ctx context.Context, emaID, authorID int64, content 
 				UserID: emaAuthor, Kind: "reply", Category: "reply",
 				Content:     fmt.Sprintf("%s 回复了您的绘马《%s》：%s", nicknameOf(tx, ctx, authorID), title, PreviewOf(content)),
 				TargetRoute: "ema/" + strconv.FormatInt(emaID, 10),
+				ActorID:     authorID,
 			})
 		}
 		return nil
@@ -277,7 +279,7 @@ func (s *Store) AddEmaReply(ctx context.Context, emaID, authorID int64, content 
 	if err != nil {
 		return nil, err
 	}
-	replies, err := s.EmaReplies(ctx, emaID)
+	replies, err := s.EmaReplies(ctx, authorID, emaID)
 	if err != nil {
 		return nil, err
 	}

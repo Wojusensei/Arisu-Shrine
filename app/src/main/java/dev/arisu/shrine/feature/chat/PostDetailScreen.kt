@@ -1166,7 +1166,8 @@ private fun CommentItem(
                 comment.imageUrl?.let { url ->
                     Spacer(Modifier.height(6.dp))
                     coil3.compose.AsyncImage(
-                        model = url,
+
+                        model = dev.arisu.shrine.core.net.thumbUrl(url, 400),
                         contentDescription = "评论附图",
                         contentScale = androidx.compose.ui.layout.ContentScale.Fit,
                         modifier = Modifier

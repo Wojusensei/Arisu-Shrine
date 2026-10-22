@@ -29,6 +29,13 @@
 
 	log {
 		output stdout
-		format json
+		format filter {
+			wrap json
+			fields {
+				request>headers>Authorization delete
+				request>headers>X-Refresh-Token delete
+				request>headers>Cookie delete
+			}
+		}
 	}
 }

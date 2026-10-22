@@ -34,11 +34,14 @@ func (w *Web) userDetail(c *gin.Context) {
 	following, _ := w.St.IsFollowing(c.Request.Context(), v.ID, id)
 	followsMe, _ := w.St.IsFollowing(c.Request.Context(), id, v.ID)
 
+	blocked, _ := w.St.Blocks(c.Request.Context(), v.ID, id)
+
 	muted := v.ID == id || model.IsAdmin(v.Role)
 	c.JSON(http.StatusOK, gin.H{
 		"user":       pub,
 		"following":  following,
 		"follows_me": followsMe,
+		"blocked":    blocked,
 		"muted":      muted && u.MutedUntilActive() != nil,
 	})
 }
@@ -47,6 +50,11 @@ func (w *Web) userTiles(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
 		w.bad(c, "参数错误")
+		return
+	}
+
+	if blocked, _ := w.St.Blocks(c.Request.Context(), w.viewer(c).ID, id); blocked {
+		c.JSON(http.StatusOK, gin.H{"tiles": []model.Tile{}})
 		return
 	}
 	tiles, err := w.St.Tiles(c.Request.Context(), id)
@@ -113,6 +121,15 @@ func (w *Web) follow(c *gin.Context) {
 		w.notFound(c)
 		return
 	}
+
+	if blocked, _ := w.St.Blocks(c.Request.Context(), id, v.ID); blocked {
+		c.JSON(http.StatusOK, gin.H{"following": true})
+		return
+	}
+	if blocked, _ := w.St.Blocks(c.Request.Context(), v.ID, id); blocked {
+		c.JSON(http.StatusOK, gin.H{"following": false})
+		return
+	}
 	if err := w.St.Follow(c.Request.Context(), v.ID, id); err != nil {
 		w.err(c, 500, "操作失败")
 		return
@@ -173,7 +190,7 @@ func (w *Web) myRoom(c *gin.Context) {
 
 	var minutes, posts, comments int
 	_ = w.St.Pool.QueryRow(ctx, `SELECT COALESCE(sum(minutes),0), COALESCE(sum(posts),0), COALESCE(sum(comments),0)
-		FROM activity_days WHERE user_id=$1 AND day=` + store.OmikujiTodayExpr + ``, v.ID).Scan(&minutes, &posts, &comments)
+		FROM activity_days WHERE user_id=$1 AND day=`+store.OmikujiTodayExpr+``, v.ID).Scan(&minutes, &posts, &comments)
 	today = gin.H{"minutes": minutes, "posts": posts, "comments": comments}
 	c.JSON(http.StatusOK, gin.H{
 		"me":           me,

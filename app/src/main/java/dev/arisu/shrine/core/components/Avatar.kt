@@ -73,7 +73,8 @@ fun ArisuAvatar(
                 label = "avatarFade",
             ).value
             AsyncImage(
-                model = url,
+
+                model = dev.arisu.shrine.core.net.thumbUrl(url, 400),
                 contentDescription = name,
                 contentScale = ContentScale.Crop,
                 onSuccess = {

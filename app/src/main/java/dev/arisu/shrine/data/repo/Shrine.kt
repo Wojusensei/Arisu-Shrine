@@ -73,6 +73,7 @@ import dev.arisu.shrine.data.remote.toApiMessage
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -129,13 +130,59 @@ object Shrine {
 
         CacheStore.preload()
 
-        Api.onSessionRefreshed = { access, refresh ->
+        Api.onSessionRefreshed = { oldRefresh, access, refresh ->
             session.saveTokens(access, refresh)
+
+            runCatching { vault.refreshTokens(oldRefresh, access, refresh) }
+        }
+        Api.onRotationAbandoned = { oldRefresh, access, refresh ->
+            runCatching { vault.refreshTokens(oldRefresh, access, refresh) }
         }
 
-        Api.onSessionDead = { scope.launch { toLoggedOut() } }
+        Api.onSessionDead = {
+            sessionDeadFired = true
+            scope.launch { toLoggedOut() }
+        }
         scope.launch { bootstrap() }
         scope.launch { heartbeatLoop() }
+    }
+
+    @Volatile private var sessionDeadFired = false
+
+    private var warmJob: Job? = null
+    private var warmedUserId: String? = null
+
+    @Volatile private var warming = false
+
+    private fun warmCaches() {
+        val uid = _me.value?.id ?: return
+        if (_sessionState.value !is SessionState.LoggedIn) return
+        if (warmedUserId == uid && warmJob?.isActive == true) return
+        warmedUserId = uid
+        warmJob?.cancel()
+        warmJob = scope.launch {
+            warming = true
+            try {
+                suspend fun step(block: suspend () -> Unit) {
+                    runCatching { block() }
+                    delay(120)
+                }
+                step { postsOf(Board.GENSOKYO, PostSort.LATEST, page = 1) }
+                step { postsOf(Board.DEV, PostSort.LATEST, page = 1) }
+                step { emas(emptyList(), emptyList(), "new", page = 1) }
+                step { staffGroups() }
+                step { releases() }
+                step { omikujiToday() }
+                step { omikujiLeaderboard() }
+                step { onlineStats() }
+                step { myRoom() }
+                step { postsByAuthor(uid, "tracked") }
+                step { postsByAuthor(uid, "liked") }
+                step { postsByAuthor(uid, "favorited") }
+            } finally {
+                warming = false
+            }
+        }
     }
 
     private val _staleNotice = MutableStateFlow<String?>(null)
@@ -171,7 +218,8 @@ object Shrine {
         } catch (e: Exception) {
             if (e is ApiError || e !is IOException) throw e
             val snap = withContext(Dispatchers.IO) { CacheStore.get(fullKey, serializer) } ?: throw e
-            _staleNotice.value = "网络不佳，展示的是 ${cacheAgo(snap.cachedAt)}的数据，刷新后更新"
+
+            if (!warming) _staleNotice.value = "网络不佳，展示的是 ${cacheAgo(snap.cachedAt)}的数据，刷新后更新"
             snap.value
         }
     }
@@ -273,16 +321,28 @@ object Shrine {
                 throw ApiError("no access")
             }
         } catch (e: Exception) {
+
+            sessionDeadFired = false
             val refreshed = refreshTokens()
             if (refreshed) {
-                try {
-                    applyMe(apiCall { Api.service.me() })
-                } catch (_: Exception) {
-                    toLoggedOut()
+
+                runCatching { applyMe(apiCall { Api.service.me() }) }
+                if (_sessionState.value !is SessionState.LoggedIn) {
+                    val cached = withContext(Dispatchers.IO) {
+                        val uid = session.currentUserId()
+                        if (uid.isEmpty()) null else CacheStore.get("me|$uid", User.serializer())?.value
+                    }
+                    if (cached != null) {
+                        _me.value = cached
+                        _sessionState.value = SessionState.LoggedIn(cached)
+                    } else {
+                        toLoggedOut()
+                    }
                 }
             } else {
 
-                val cached = if (e is ApiError) null else withContext(Dispatchers.IO) {
+                val rejected = sessionDeadFired
+                val cached = if (e is ApiError && rejected) null else withContext(Dispatchers.IO) {
                     val uid = session.currentUserId()
                     if (uid.isEmpty()) null else CacheStore.get("me|$uid", User.serializer())?.value
                 }
@@ -302,6 +362,9 @@ object Shrine {
         _me.value = user
         _sessionState.value = SessionState.LoggedIn(user)
 
+        sessionDeadFired = false
+        warmCaches()
+
         withContext(Dispatchers.IO) {
             session.saveUserId(user.id)
             CacheStore.put("me|${user.id}", User.serializer(), user)
@@ -313,12 +376,18 @@ object Shrine {
         _me.value = null
         _unreadCount.value = 0
         _staleNotice.value = null
+
+        warmJob?.cancel()
+        warmedUserId = null
         _sessionState.value = SessionState.LoggedOut
     }
 
     private suspend fun installSession(base: String, access: String, refresh: String) {
         session.saveTokens(access, refresh)
         Api.updateSession(base, access, refresh)
+
+        warmJob?.cancel()
+        warmedUserId = null
     }
 
     private suspend fun refreshTokens(): Boolean {
@@ -451,6 +520,9 @@ object Shrine {
         val oldBase = Api.currentBaseUrl.ifEmpty { _baseUrl.value }
         if (meNow != null) saveCurrentToVault()
 
+        val oldAccess = session.currentAccess()
+        val oldRefreshSelf = session.currentRefresh()
+
         session.saveBaseUrl(target.baseUrl)
         installSession(target.baseUrl, target.access, target.refresh)
         clearLocalCache()
@@ -463,6 +535,16 @@ object Shrine {
             null
         }
         if (user == null) {
+
+            if (meNow != null && oldRefreshSelf.isNotEmpty()) {
+                session.saveBaseUrl(oldBase)
+                installSession(oldBase, oldAccess, oldRefreshSelf)
+                _baseUrl.value = oldBase
+                _me.value = meNow
+                _sessionState.value = SessionState.LoggedIn(meNow)
+                runCatching { refreshUnread() }
+                return false
+            }
 
             session.clearSession()
             session.saveBaseUrl(oldBase)
@@ -795,6 +877,7 @@ object Shrine {
         val following: Boolean,
         val followsMe: Boolean,
         val muted: Boolean,
+        val blocked: Boolean = false,
     )
 
     suspend fun user(id: String): UserDetail =
@@ -804,8 +887,21 @@ object Shrine {
                 following = dto.following,
                 followsMe = dto.followsMe,
             )
-            UserDetail(user, dto.following, dto.followsMe, dto.muted)
+            UserDetail(user, dto.following, dto.followsMe, dto.muted, dto.blocked)
         }
+
+    suspend fun blockUser(id: String) {
+        apiCall { Api.service.blockUser(userKey(id)) }
+        clearLocalCache()
+    }
+
+    suspend fun unblockUser(id: String) {
+        apiCall { Api.service.unblockUser(userKey(id)) }
+        clearLocalCache()
+    }
+
+    suspend fun blockedUsers(): List<User> =
+        apiCall { Api.service.myBlocks() }.items.map { it.toUserBrief() }
 
     suspend fun toggleFollow(id: String): Boolean {
         val r = apiCall { Api.service.follow(userKey(id)) }

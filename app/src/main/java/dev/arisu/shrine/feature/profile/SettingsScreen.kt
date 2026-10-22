@@ -17,6 +17,7 @@ import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.ManageAccounts
+import androidx.compose.material.icons.rounded.PersonOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -63,6 +64,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenSessions: () -> Unit = {},
     onOpenAccountManage: () -> Unit = {},
+    onOpenBlocked: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val me by Shrine.me.collectAsState()
@@ -189,6 +191,12 @@ fun SettingsScreen(
                     subtitle = "查看与下线正在登录该账号的设备",
                     icon = Icons.Rounded.Devices,
                     onClick = onOpenSessions,
+                )
+                SettingNavRow(
+                    title = "拉黑名单",
+                    subtitle = "查看与解除您拉黑的社员",
+                    icon = Icons.Rounded.PersonOff,
+                    onClick = onOpenBlocked,
                 )
                 SettingNavRow(
                     title = "切换账号",

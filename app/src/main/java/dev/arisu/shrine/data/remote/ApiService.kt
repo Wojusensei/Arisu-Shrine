@@ -97,6 +97,15 @@ interface ApiService {
     @DELETE("api/users/{id}/follow")
     suspend fun unfollow(@retrofit2.http.Path("id") id: Long): FollowingRes
 
+    @POST("api/users/{id}/block")
+    suspend fun blockUser(@retrofit2.http.Path("id") id: Long): BlockRes
+
+    @DELETE("api/users/{id}/block")
+    suspend fun unblockUser(@retrofit2.http.Path("id") id: Long): BlockRes
+
+    @GET("api/me/blocks")
+    suspend fun myBlocks(): BlockedListRes
+
     @POST("api/users/{id}/report")
     suspend fun reportUser(@retrofit2.http.Path("id") id: Long, @Body req: ReportReq): OkRes
 

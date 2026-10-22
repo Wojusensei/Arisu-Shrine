@@ -15,10 +15,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
@@ -267,97 +270,101 @@ fun EmaDetailScreen(
                 val ema0 = ema
                 if (ema0 != null) {
                     Box(Modifier.weight(1f).fillMaxWidth()) {
-                        val emaScroll = rememberScrollState()
-                        Column(
-                            Modifier
-                                .fillMaxSize()
-                                .verticalScroll(emaScroll)
-                                .padding(horizontal = 16.dp)
+
+                        val emaList = rememberLazyListState()
+                        LazyColumn(
+                            state = emaList,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(horizontal = 16.dp),
                         ) {
-                            Spacer(Modifier.height(14.dp))
-
+                            item(key = "header") {
                             Column {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = "#${ema0.id}",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                    Spacer(Modifier.weight(1f))
-                                    StatePill(ema0.state)
-                                }
-                                Spacer(Modifier.height(9.dp))
-                                Text(
-                                    text = ema0.title,
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = MaterialTheme.colorScheme.onSurface,
-                                )
-                                if (ema0.tags.isNotEmpty()) {
-                                    Spacer(Modifier.height(12.dp))
-                                    Row(
-                                        Modifier.horizontalScroll(rememberScrollState()),
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    ) {
-                                        ema0.tags.forEach { tag ->
-                                            TagChip(tag)
-                                        }
-                                    }
-                                }
-                                Spacer(Modifier.height(13.dp))
-                                HairlineDivider()
-                                Spacer(Modifier.height(13.dp))
-                                EmaAuthorRow(
-                                    ema = ema0,
-                                    onOpenUser = onOpenUser,
-                                )
-                            }
+                                Spacer(Modifier.height(14.dp))
 
-                            Spacer(Modifier.height(13.dp))
-                            MarkdownText(ema0.body, onImageClick = { previewUrl = it })
-
-                            Spacer(Modifier.height(6.dp))
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(Modifier.weight(1f)) {
-                                    SectionLabel(text = "回复 ${replies.size}")
-                                }
-                                if (canModerate) {
-                                    Box {
+                                Column {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            text = "改变状态",
+                                            text = "#${ema0.id}",
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .clickable { stateMenuOpen = true }
-                                                .padding(horizontal = 10.dp, vertical = 5.dp),
+                                            fontWeight = FontWeight.SemiBold,
                                         )
-                                        if (stateMenuOpen) {
-                                            EmaStateMenu(
-                                                onDismiss = { stateMenuOpen = false },
-                                                onChangeState = { state ->
-                                                    stateMenuOpen = false
-                                                    scope.launch {
-                                                        try {
-                                                            Shrine.updateEmaState(emaId, state)
-                                                            ema = Shrine.ema(emaId)
-                                                        } catch (e: Exception) {
-                                                            notice = e.toApiMessage()
-                                                        }
-                                                    }
-                                                },
+                                        Spacer(Modifier.weight(1f))
+                                        StatePill(ema0.state)
+                                    }
+                                    Spacer(Modifier.height(9.dp))
+                                    Text(
+                                        text = ema0.title,
+                                        style = MaterialTheme.typography.titleLarge,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    if (ema0.tags.isNotEmpty()) {
+                                        Spacer(Modifier.height(12.dp))
+                                        Row(
+                                            Modifier.horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            ema0.tags.forEach { tag ->
+                                                TagChip(tag)
+                                            }
+                                        }
+                                    }
+                                    Spacer(Modifier.height(13.dp))
+                                    HairlineDivider()
+                                    Spacer(Modifier.height(13.dp))
+                                    EmaAuthorRow(
+                                        ema = ema0,
+                                        onOpenUser = onOpenUser,
+                                    )
+                                }
+
+                                Spacer(Modifier.height(13.dp))
+                                MarkdownText(ema0.body, onImageClick = { previewUrl = it })
+
+                                Spacer(Modifier.height(6.dp))
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(Modifier.weight(1f)) {
+                                        SectionLabel(text = "回复 ${replies.size}")
+                                    }
+                                    if (canModerate) {
+                                        Box {
+                                            Text(
+                                                text = "改变状态",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .clickable { stateMenuOpen = true }
+                                                    .padding(horizontal = 10.dp, vertical = 5.dp),
                                             )
+                                            if (stateMenuOpen) {
+                                                EmaStateMenu(
+                                                    onDismiss = { stateMenuOpen = false },
+                                                    onChangeState = { state ->
+                                                        stateMenuOpen = false
+                                                        scope.launch {
+                                                            try {
+                                                                Shrine.updateEmaState(emaId, state)
+                                                                ema = Shrine.ema(emaId)
+                                                            } catch (e: Exception) {
+                                                                notice = e.toApiMessage()
+                                                            }
+                                                        }
+                                                    },
+                                                )
+                                            }
                                         }
                                     }
                                 }
+                            }
                             }
 
                             if (replies.isEmpty()) {
-                                ShrineEmptyState(note = "没有回复")
+                                item(key = "empty") { ShrineEmptyState(note = "没有回复") }
                             } else {
-                                Column {
-                                    replies.forEachIndexed { index, item ->
+                                itemsIndexed(replies, key = { _, item -> item.id }) { index, item ->
+                                    Column {
                                         if (index > 0) {
                                             HairlineDivider()
                                         }
@@ -372,15 +379,15 @@ fun EmaDetailScreen(
                                         )
                                     }
                                 }
-                                ShrineListEnd(text = "已经到底了")
+                                item(key = "end") { ShrineListEnd(text = "已经到底了") }
                             }
 
-                            Spacer(Modifier.height(120.dp))
+                            item(key = "tail") { Spacer(Modifier.height(120.dp)) }
                         }
 
                         ScrollTopOrb(
-                            scrollState = emaScroll,
-                            onClick = { scope.launch { emaScroll.smoothScrollToTop() } },
+                            listState = emaList,
+                            onClick = { scope.launch { emaList.smoothScrollToTop() } },
                             modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 96.dp),
                         )
 

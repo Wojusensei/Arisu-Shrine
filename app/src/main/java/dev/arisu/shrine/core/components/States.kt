@@ -454,13 +454,18 @@ fun ShrinePullRefreshBox(
         ) {
             content()
         }
-        val frac = pullAlpha(offset.value, trigger, isRefreshing)
-        if (frac > 0.01f) {
+
+        val indicatorVisible by remember {
+            androidx.compose.runtime.derivedStateOf {
+                isRefreshing || pullAlpha(offset.value, trigger, isRefreshing) > 0.01f
+            }
+        }
+        if (indicatorVisible) {
             Row(
                 Modifier
                     .align(Alignment.TopCenter)
                     .graphicsLayer {
-                        alpha = frac
+                        alpha = pullAlpha(offset.value, trigger, isRefreshing)
                         translationY = offset.value * 0.45f
                     }
                     .padding(top = 14.dp),

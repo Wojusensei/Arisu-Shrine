@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,7 +39,8 @@ fun HeatmapCard(
     header: @Composable ColumnScope.() -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val columns = tiles.weekColumns()
+
+    val columns = remember(tiles) { tiles.weekColumns() }
     val scroll = rememberScrollState()
 
     LaunchedEffect(scroll, columns.size) {

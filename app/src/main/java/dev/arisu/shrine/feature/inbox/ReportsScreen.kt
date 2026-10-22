@@ -2,7 +2,6 @@ package dev.arisu.shrine.feature.inbox
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,6 +12,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -39,6 +39,7 @@ import dev.arisu.shrine.core.components.ArisuTextField
 import dev.arisu.shrine.core.components.ArisuTopBar
 import dev.arisu.shrine.core.components.HairlineDivider
 import dev.arisu.shrine.core.components.NeuSurface
+import dev.arisu.shrine.core.components.PrefetchOnApproach
 import dev.arisu.shrine.core.components.RoleTag
 import dev.arisu.shrine.core.components.ShrineEmptyState
 import dev.arisu.shrine.core.components.ShrineLoadingState
@@ -162,6 +163,8 @@ fun ReportsScreen(
         )
 
         val list = reports
+        val reportListState = rememberLazyListState()
+        PrefetchOnApproach(reportListState, list?.size ?: 0) { loadMore() }
         when {
             list == null && failed -> ShrineEmptyState(
                 note = "加载失败，点击重试",
@@ -171,6 +174,7 @@ fun ReportsScreen(
             list.isEmpty() -> ShrineEmptyState(note = "没有待处理的举报")
             else -> LazyColumn(
                 Modifier.fillMaxSize(),
+                state = reportListState,
                 contentPadding = PaddingValues(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
@@ -293,10 +297,6 @@ fun ReportsScreen(
                         )
                         else -> ShrineListEnd(text = "上滑加载更多")
                     }
-                }
-                item(key = "sentinel") {
-                    LaunchedEffect(list.size) { loadMore() }
-                    Box(Modifier.fillMaxWidth().padding(0.dp))
                 }
             }
         }

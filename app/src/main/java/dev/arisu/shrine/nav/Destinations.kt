@@ -48,6 +48,7 @@ object Routes {
     const val SETTINGS = "settings"
     const val ACCOUNT_MANAGE = "accountManage"
     const val SESSIONS = "sessions"
+    const val BLOCKED = "blocked"
     const val COLLECTIONS = "collections"
     const val FOLLOW_LIST = "follow/{mode}"
     const val USER_PROFILE = "user/{userId}?tab={tab}"

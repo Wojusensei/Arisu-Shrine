@@ -51,3 +51,9 @@ internal val imageClient: OkHttpClient by lazy {
         .addInterceptor(imageRetryInterceptor)
         .build()
 }
+
+fun thumbUrl(url: String?, width: Int): String? {
+    if (url.isNullOrEmpty() || !url.startsWith("http") || !url.contains("/uploads/")) return url
+    if (url.contains("?w=") || url.contains("&w=")) return url
+    return url + (if (url.contains('?')) "&" else "?") + "w=" + width
+}

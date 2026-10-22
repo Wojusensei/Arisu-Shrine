@@ -60,6 +60,7 @@ import dev.arisu.shrine.feature.inbox.NoticeDetailScreen
 import dev.arisu.shrine.feature.inbox.ReportsScreen
 import dev.arisu.shrine.feature.play.PlayScreen
 import dev.arisu.shrine.feature.profile.AccountManageScreen
+import dev.arisu.shrine.feature.profile.BlockedUsersScreen
 import dev.arisu.shrine.feature.profile.CollectionsScreen
 import dev.arisu.shrine.feature.profile.EditProfileScreen
 import dev.arisu.shrine.feature.profile.FollowListScreen
@@ -122,9 +123,11 @@ private fun ShrineApp(loggedIn: Boolean) {
     val appScope = androidx.compose.runtime.rememberCoroutineScope()
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+
+    val loggedInNow by androidx.compose.runtime.rememberUpdatedState(loggedIn)
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && loggedInNow) {
 
                 appScope.launch { Shrine.refreshUnread() }
             }
@@ -424,7 +427,11 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
                 onBack = { navController.popBackStack() },
                 onOpenSessions = { navController.navigate(Routes.SESSIONS) { launchSingleTop = true } },
                 onOpenAccountManage = { navController.navigate(Routes.ACCOUNT_MANAGE) { launchSingleTop = true } },
+                onOpenBlocked = { navController.navigate(Routes.BLOCKED) { launchSingleTop = true } },
             )
+        }
+        composable(Routes.BLOCKED) {
+            BlockedUsersScreen(onBack = { navController.popBackStack() })
         }
         composable(Routes.ACCOUNT_MANAGE) {
             AccountManageScreen(

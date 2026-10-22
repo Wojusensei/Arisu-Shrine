@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -36,6 +35,7 @@ import dev.arisu.shrine.core.components.ArisuTopBar
 import dev.arisu.shrine.core.components.BoardMemory
 import dev.arisu.shrine.core.components.FadeInOut
 import dev.arisu.shrine.core.components.PostCard
+import dev.arisu.shrine.core.components.PrefetchOnApproach
 import dev.arisu.shrine.core.components.ScrollTopBus
 import dev.arisu.shrine.core.components.ScrollTopOrb
 import dev.arisu.shrine.core.components.ShrineEmptyState
@@ -237,6 +237,8 @@ fun ChatBoardScreen(
                                 onClick = { onNewPost(board) },
                             )
                         } else {
+
+                            PrefetchOnApproach(chatListState, s.items.size) { loadMore() }
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
                                 state = chatListState,
@@ -261,12 +263,7 @@ fun ChatBoardScreen(
                                         else -> ShrineListEnd(text = "上滑加载更多")
                                     }
                                 }
-                                item(key = "sentinel") {
-
-                                    LaunchedEffect(s.items.size) { loadMore() }
-                                    Box(Modifier.fillMaxWidth().padding(0.dp))
-                                }
-            }
+                            }
 
                             }
                         }

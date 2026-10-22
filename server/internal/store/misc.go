@@ -55,7 +55,8 @@ func (s *Store) SearchPosts(ctx context.Context, viewerID int64, q string, useRe
 			return out, nil
 		}
 	}
-	rows, err := s.Pool.Query(ctx, postSelect+` WHERE`+cond+` AND p.deleted_at IS NULL ORDER BY p.created_at DESC LIMIT `+fmt.Sprint(limit), args...)
+	rows, err := s.Pool.Query(ctx, postSelect+` WHERE`+cond+` AND p.deleted_at IS NULL`+
+		blockFilter("p.author_id")+` ORDER BY p.created_at DESC LIMIT `+fmt.Sprint(limit), args...)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +82,7 @@ func parsePostNo(q string) (int64, bool) {
 	return n, true
 }
 
-func (s *Store) SearchUsers(ctx context.Context, q string, limit int) ([]model.UserBrief, error) {
+func (s *Store) SearchUsers(ctx context.Context, viewerID int64, q string, limit int) ([]model.UserBrief, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 20
 	}
@@ -101,7 +102,8 @@ func (s *Store) SearchUsers(ctx context.Context, q string, limit int) ([]model.U
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT `+userBriefCols+` FROM users u
 		WHERE nickname ILIKE '%' || $1 || '%' AND anonymized=FALSE
-		ORDER BY id LIMIT `+fmt.Sprint(limit), escapeLike(q))
+		AND NOT EXISTS (SELECT 1 FROM blocks b WHERE b.blocker_id=$2 AND b.blocked_id=u.id)
+		ORDER BY id LIMIT `+fmt.Sprint(limit), escapeLike(q), viewerID)
 	if err != nil {
 		return nil, err
 	}

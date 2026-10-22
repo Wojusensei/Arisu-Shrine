@@ -258,6 +258,7 @@ data class UserDetailDto(
     val following: Boolean = false,
     @SerialName("follows_me") val followsMe: Boolean = false,
     val muted: Boolean = false,
+    val blocked: Boolean = false,
 )
 
 @Serializable
@@ -431,3 +432,9 @@ data class UnreadRes(val unread: Long = 0)
 
 @Serializable
 data class ErrorRes(val error: String = "")
+
+@Serializable
+data class BlockRes(val ok: Boolean = true, val blocked: Boolean = false)
+
+@Serializable
+data class BlockedListRes(val items: List<UserBriefDto> = emptyList())

@@ -10,6 +10,7 @@ import (
 	"arisu/server/internal/store"
 	"arisu/server/internal/svc"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 type authCodeReq struct {
@@ -79,6 +80,9 @@ func (w *Web) register(c *gin.Context) {
 	case nickname == "" || len([]rune(nickname)) > 20:
 		w.bad(c, "昵称需为 1~20 个字符")
 		return
+	case nicknameReserved(nickname):
+		w.bad(c, "该昵称已被使用，请换一个")
+		return
 	}
 	if err := svc.VerifyCode(c.Request.Context(), w.RDB, "register", email, strings.TrimSpace(req.Code)); err != nil {
 		w.bad(c, err.Error())
@@ -91,6 +95,10 @@ func (w *Web) register(c *gin.Context) {
 	}
 	u, err := w.St.CreateUser(c.Request.Context(), email, hash, nickname)
 	if err != nil {
+		if errors.Is(err, store.ErrNicknameTaken) {
+			w.bad(c, "该昵称已被使用，请换一个")
+			return
+		}
 		if errors.Is(err, store.ErrConflict) {
 			w.bad(c, "该邮箱已注册，请直接登录")
 			return
@@ -224,6 +232,12 @@ func (w *Web) refresh(c *gin.Context) {
 	userID, err := w.St.RotateRefreshToken(c.Request.Context(), req.RefreshToken, refresh,
 		deviceNameFromHeader(c), int64(w.Cfg.JWT.RefreshTTL.Seconds()))
 	if err != nil {
+
+		if !errors.Is(err, store.ErrNotFound) {
+			w.Log.Error("refresh 轮换失败", zap.Error(err))
+			w.err(c, http.StatusServiceUnavailable, "服务暂时不可用，请稍后再试")
+			return
+		}
 		w.err(c, http.StatusUnauthorized, "登录已过期，请重新登录")
 		return
 	}
@@ -372,6 +386,10 @@ func (w *Web) patchMe(c *gin.Context) {
 			w.bad(c, "昵称需为 1~20 个字符")
 			return
 		}
+		if nicknameReserved(nick) {
+			w.bad(c, "该昵称已被使用，请换一个")
+			return
+		}
 		req.Nickname = &nick
 	}
 	if req.Signature != nil && len([]rune(*req.Signature)) > 50 {
@@ -437,6 +455,10 @@ func (w *Web) patchMe(c *gin.Context) {
 		ShowFields:          req.ShowFields, NotifyScope: req.NotifyScope,
 	})
 	if err != nil {
+		if errors.Is(err, store.ErrNicknameTaken) {
+			w.bad(c, "该昵称已被使用，请换一个")
+			return
+		}
 		w.err(c, 500, "保存失败")
 		return
 	}

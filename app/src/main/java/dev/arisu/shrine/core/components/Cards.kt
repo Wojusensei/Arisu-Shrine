@@ -51,6 +51,7 @@ import dev.arisu.shrine.core.design.NeuAvatarGrey
 import dev.arisu.shrine.core.design.NeuBaseHigh
 import dev.arisu.shrine.core.design.NeuInset
 import coil3.compose.AsyncImage
+import dev.arisu.shrine.core.net.thumbUrl
 import dev.arisu.shrine.data.model.Ema
 import dev.arisu.shrine.data.model.EmaTag
 import dev.arisu.shrine.data.model.Post
@@ -184,7 +185,8 @@ fun PostCard(
 @Composable
 private fun PostCover(post: Post, modifier: Modifier = Modifier) {
     val cover = post.coverUrl
-    val model = cover ?: post.authorAvatar
+
+    val model = thumbUrl(cover, 800) ?: thumbUrl(post.authorAvatar, 400)
     Box(
         modifier.background(NeuAvatarBg),
         contentAlignment = Alignment.Center,

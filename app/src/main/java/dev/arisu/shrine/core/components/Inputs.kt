@@ -312,7 +312,7 @@ fun ArisuPrimaryButton(
             YinYangOrb(
                 size = 18.dp,
                 primary = ink,
-                base = ink.copy(alpha = 0.32f),
+                base = if (enabled) Color.Black.copy(alpha = 0.30f) else ink.copy(alpha = 0.32f),
                 ring = Color.Transparent,
                 rotating = true,
             )

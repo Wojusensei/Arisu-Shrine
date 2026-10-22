@@ -55,7 +55,8 @@ func (w *Web) reportEma(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
-func (w *Web) listEmas(c *gin.Context) {	page, size := clampPage(c)
+func (w *Web) listEmas(c *gin.Context) {
+	page, size := clampPage(c)
 	q := store.EmaListQuery{
 		Tag:    c.Query("tag"),
 		State:  c.Query("state"),
@@ -74,7 +75,7 @@ func (w *Web) listEmas(c *gin.Context) {	page, size := clampPage(c)
 			q.States = append(q.States, st)
 		}
 	}
-	pp, err := w.St.EmasPage(c.Request.Context(), q)
+	pp, err := w.St.EmasPage(c.Request.Context(), w.viewer(c).ID, q)
 	if err != nil {
 		w.err(c, 500, "加载失败，点击重试")
 		return
@@ -136,7 +137,7 @@ func (w *Web) getEma(c *gin.Context) {
 		w.bad(c, "参数错误")
 		return
 	}
-	e, err := w.St.EmaByID(c.Request.Context(), id)
+	e, err := w.St.EmaByID(c.Request.Context(), w.viewer(c).ID, id)
 	if errors.Is(err, store.ErrNotFound) {
 		w.notFound(c)
 		return
@@ -159,7 +160,7 @@ func (w *Web) updateEma(c *gin.Context) {
 		w.bad(c, "参数错误")
 		return
 	}
-	e, err := w.St.EmaByID(c.Request.Context(), id)
+	e, err := w.St.EmaByID(c.Request.Context(), w.viewer(c).ID, id)
 	if errors.Is(err, store.ErrNotFound) {
 		w.notFound(c)
 		return
@@ -205,7 +206,7 @@ func (w *Web) updateEma(c *gin.Context) {
 		w.err(c, 500, "保存失败")
 		return
 	}
-	ne, _ := w.St.EmaByID(c.Request.Context(), id)
+	ne, _ := w.St.EmaByID(c.Request.Context(), w.viewer(c).ID, id)
 	c.JSON(http.StatusOK, ne)
 }
 
@@ -216,7 +217,7 @@ func (w *Web) deleteEma(c *gin.Context) {
 		w.bad(c, "参数错误")
 		return
 	}
-	e, err := w.St.EmaByID(c.Request.Context(), id)
+	e, err := w.St.EmaByID(c.Request.Context(), w.viewer(c).ID, id)
 	if errors.Is(err, store.ErrNotFound) {
 		w.notFound(c)
 		return
@@ -335,7 +336,7 @@ func (w *Web) setEmaState(c *gin.Context) {
 		w.bad(c, "参数错误")
 		return
 	}
-	e, err := w.St.EmaByID(c.Request.Context(), id)
+	e, err := w.St.EmaByID(c.Request.Context(), w.viewer(c).ID, id)
 	if err != nil {
 		w.notFound(c)
 		return
@@ -374,7 +375,7 @@ func (w *Web) listEmaReplies(c *gin.Context) {
 		w.bad(c, "参数错误")
 		return
 	}
-	list, err := w.St.EmaReplies(c.Request.Context(), id)
+	list, err := w.St.EmaReplies(c.Request.Context(), w.viewer(c).ID, id)
 	if err != nil {
 		w.err(c, 500, "加载失败，点击重试")
 		return

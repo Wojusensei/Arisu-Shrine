@@ -83,6 +83,7 @@ import dev.arisu.shrine.core.components.BoardMemory
 import dev.arisu.shrine.core.components.ScrollTopBus
 import dev.arisu.shrine.core.components.ShrinePullRefreshBox
 import dev.arisu.shrine.core.components.ShrineStaleBanner
+import dev.arisu.shrine.core.components.PrefetchOnApproach
 import dev.arisu.shrine.core.components.ShrineLoadingState
 import dev.arisu.shrine.core.components.ShrineListEnd
 import dev.arisu.shrine.core.components.SoftPill
@@ -404,6 +405,8 @@ private fun EmaSection(
                         if (s.items.isEmpty()) {
                             ShrineEmptyState(note = "没有绘马")
                         } else {
+
+                            PrefetchOnApproach(emaListState, s.items.size) { loadMore() }
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
                                 state = emaListState,
@@ -427,11 +430,6 @@ private fun EmaSection(
                                         )
                                         else -> ShrineListEnd(text = "上滑加载更多")
                                     }
-                                }
-                                item(key = "sentinel") {
-
-                                    LaunchedEffect(s.items.size) { loadMore() }
-                                    Box(Modifier.fillMaxWidth().padding(0.dp))
                                 }
                             }
                         }

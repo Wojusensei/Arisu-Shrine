@@ -15,12 +15,12 @@ import (
 var postBoards = []string{"main", "gensokyo", "dev"}
 
 type postBodyReq struct {
-	Board  string `json:"board"`
-	Title  string `json:"title"`
-	Body   string `json:"body"`
-	Intro  string `json:"intro"`
+	Board  string  `json:"board"`
+	Title  string  `json:"title"`
+	Body   string  `json:"body"`
+	Intro  string  `json:"intro"`
 	Cover  *string `json:"cover"`
-	Reason string `json:"reason"`
+	Reason string  `json:"reason"`
 }
 
 func (w *Web) listPosts(c *gin.Context) {
@@ -209,7 +209,7 @@ func (w *Web) updatePost(c *gin.Context) {
 		return
 	}
 	if np, err := w.St.PostByID(c.Request.Context(), v.ID, id); err == nil {
-		store.NotifyTrackersEvent(c.Request.Context(), w.St.Pool, id, np.Title, "有新的编辑")
+		store.NotifyTrackersEvent(c.Request.Context(), w.St.Pool, id, np.Title, "有新的编辑", np.Author.ID)
 		w.notifyMentions(c, v, req.Body,
 			mentionPostContent(v.User.Nickname, np.Title), mentionRoute(id))
 		c.JSON(http.StatusOK, np)
@@ -254,7 +254,7 @@ func (w *Web) deletePost(c *gin.Context) {
 			w.err(c, 500, "删除失败")
 			return
 		}
-		store.NotifyTrackersEvent(c.Request.Context(), w.St.Pool, id, p.Title, "已被管理删除： "+req.Reason)
+		store.NotifyTrackersEvent(c.Request.Context(), w.St.Pool, id, p.Title, "已被管理删除： "+req.Reason, p.Author.ID)
 		c.JSON(http.StatusOK, gin.H{"ok": true})
 		return
 	}
@@ -262,7 +262,7 @@ func (w *Web) deletePost(c *gin.Context) {
 		w.err(c, 500, "删除失败")
 		return
 	}
-	store.NotifyTrackersEvent(c.Request.Context(), w.St.Pool, id, p.Title, "已被作者删除")
+	store.NotifyTrackersEvent(c.Request.Context(), w.St.Pool, id, p.Title, "已被作者删除", p.Author.ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 

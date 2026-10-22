@@ -25,6 +25,24 @@ object CacheStore {
 
     private val mirror = ConcurrentHashMap<String, String>()
 
+    private class Memo(val raw: String, val value: Any?, val cachedAt: Long)
+
+    private val memoLock = Any()
+    private val memo = object : LinkedHashMap<String, Memo>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Memo>?): Boolean =
+            size > MEMO_MAX
+    }
+
+    private fun memoGet(name: String, raw: String): Memo? = synchronized(memoLock) {
+        memo[name]?.takeIf { it.raw == raw }
+    }
+
+    private fun memoPut(name: String, m: Memo) = synchronized(memoLock) { memo[name] = m }
+
+    private fun memoRemove(name: String) = synchronized(memoLock) { memo.remove(name) }
+
+    private fun memoClear() = synchronized(memoLock) { memo.clear() }
+
     fun init(context: Context) {
         dir = File(context.cacheDir, "shrine-cache").apply { mkdirs() }
     }
@@ -47,20 +65,22 @@ object CacheStore {
             val payload = json.encodeToString(
                 Entry.serializer(serializer), Entry(cachedAt = now(), value = value)
             )
-            mirror[sha(key)] = payload
+            val name = sha(key)
+            mirror[name] = payload
+            memoPut(name, Memo(payload, value, now()))
             fileFor(key).writeText(payload)
             pruneIfNeeded()
         }
     }
 
     fun <T> get(key: String, serializer: KSerializer<T>): Snapshot<T>? =
-        decode<T>(mirror[sha(key)] ?: readFile(key), serializer)
+        decodeMemo(sha(key), mirror[sha(key)] ?: readFile(key), serializer)
 
     fun <T> peek(key: String, serializer: KSerializer<T>): T? =
-        decode<T>(mirror[sha(key)], serializer)?.value
+        decodeMemo(sha(key), mirror[sha(key)], serializer)?.value
 
     fun <T> peekSnapshot(key: String, serializer: KSerializer<T>): Snapshot<T>? =
-        decode<T>(mirror[sha(key)], serializer)
+        decodeMemo(sha(key), mirror[sha(key)], serializer)
 
     private fun readFile(key: String): String? {
         if (!::dir.isInitialized) return null
@@ -68,16 +88,23 @@ object CacheStore {
         return if (f.exists()) runCatching { f.readText() }.getOrNull() else null
     }
 
-    private fun <T> decode(raw: String?, serializer: KSerializer<T>): Snapshot<T>? {
+    private fun <T> decodeMemo(name: String, raw: String?, serializer: KSerializer<T>): Snapshot<T>? {
         if (raw == null) return null
+        memoGet(name, raw)?.let { m ->
+            @Suppress("UNCHECKED_CAST")
+            return Snapshot(m.cachedAt, m.value as T)
+        }
+
         return runCatching {
             val e = json.decodeFromString(Entry.serializer(serializer), raw)
+            memoPut(name, Memo(raw, e.value, e.cachedAt))
             Snapshot(e.cachedAt, e.value)
         }.getOrNull()
     }
 
     fun clear() {
         mirror.clear()
+        memoClear()
         if (!::dir.isInitialized) return
         runCatching { dir.listFiles()?.forEach { it.delete() } }
     }
@@ -91,6 +118,7 @@ object CacheStore {
             .take(files.size - MAX_FILES)
             .forEach {
                 mirror.remove(it.nameWithoutExtension)
+                memoRemove(it.nameWithoutExtension)
                 it.delete()
             }
     }
@@ -102,4 +130,6 @@ object CacheStore {
     private fun now(): Long = System.currentTimeMillis() / 1000
 
     private const val MAX_FILES = 400
+
+    private const val MEMO_MAX = 64
 }

@@ -229,7 +229,7 @@ func (w *Web) search(c *gin.Context) {
 		w.err(c, 500, "搜索失败，点击重试")
 		return
 	}
-	users, err := w.St.SearchUsers(c.Request.Context(), q, 20)
+	users, err := w.St.SearchUsers(c.Request.Context(), v.ID, q, 20)
 	if err != nil {
 		w.err(c, 500, "搜索失败，点击重试")
 		return

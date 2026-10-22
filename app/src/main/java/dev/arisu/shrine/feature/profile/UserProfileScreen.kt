@@ -125,6 +125,9 @@ fun UserProfileScreen(
     var rolePanelOpen by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     var reportOpen by remember { mutableStateOf(false) }
+
+    var blocked by remember { mutableStateOf(false) }
+    var blockConfirm by remember { mutableStateOf(false) }
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
 
     var muteDuration by remember { mutableStateOf(MuteDurations.first()) }
@@ -135,6 +138,7 @@ fun UserProfileScreen(
         try {
             val detail = Shrine.user(userId)
             user = detail.user
+            blocked = detail.blocked
             tiles = Shrine.tiles(userId)
             failed = false
         } catch (e: Exception) {
@@ -225,6 +229,27 @@ fun UserProfileScreen(
                             )
                         }
                         DropdownMenuItem(
+                            text = { Text(if (blocked) "解除拉黑" else "拉黑") },
+                            onClick = {
+                                moreMenuOpen = false
+                                if (blocked) {
+                                    scope.launch {
+                                        try {
+                                            Shrine.unblockUser(userId)
+                                            blocked = false
+                                            load()
+                                            notice = "已解除拉黑"
+                                        } catch (e: Exception) {
+                                            if (e is kotlinx.coroutines.CancellationException) throw e
+                                            notice = e.toApiMessage()
+                                        }
+                                    }
+                                } else {
+                                    blockConfirm = true
+                                }
+                            },
+                        )
+                        DropdownMenuItem(
                             text = { Text("复制主页链接") },
                             onClick = {
                                 moreMenuOpen = false
@@ -265,6 +290,7 @@ fun UserProfileScreen(
             CoverSection(
                 user = userState,
                 isSelf = userId == me?.id,
+                blocked = blocked,
                 onReload = { scope.launch { load() } },
                 followMenuOpen = followMenuOpen,
                 onFollowMenuChange = { followMenuOpen = it },
@@ -289,7 +315,9 @@ fun UserProfileScreen(
 
             Spacer(Modifier.height(12.dp))
 
-            PostsSection(userId = userId, total = userState.postCount, initialTab = initialPostTab, isSelf = userId == me?.id, onOpenPost = onOpenPost)
+            androidx.compose.runtime.key(blocked) {
+                PostsSection(userId = userId, total = userState.postCount, initialTab = initialPostTab, isSelf = userId == me?.id, onOpenPost = onOpenPost)
+            }
 
             if (userState.customMarkdown.isNotBlank() || userState.customCss.isNotBlank()) {
                 Spacer(Modifier.height(12.dp))
@@ -314,6 +342,22 @@ fun UserProfileScreen(
             modifier = Modifier
                 .align(Alignment.CenterHorizontally)
                 .padding(bottom = 24.dp),
+        )
+    }
+
+    if (blockConfirm) {
+        dev.arisu.shrine.core.components.ArisuConfirmDialog(
+            title = "拉黑",
+            body = "拉黑后您将看不到对方的内容与通知，对方也无法关注或打扰您。",
+            confirmText = "拉黑",
+            onConfirm = {
+                Shrine.blockUser(userId)
+                blocked = true
+                blockConfirm = false
+                load()
+                notice = "已拉黑"
+            },
+            onDismiss = { blockConfirm = false },
         )
     }
 
@@ -467,6 +511,7 @@ fun UserProfileScreen(
 private fun CoverSection(
     user: User,
     isSelf: Boolean,
+    blocked: Boolean,
     onReload: () -> Unit,
     followMenuOpen: Boolean,
     onFollowMenuChange: (Boolean) -> Unit,
@@ -525,7 +570,7 @@ private fun CoverSection(
                 )
             }
 
-            if (!isSelf) {
+            if (!isSelf && !blocked) {
                 Spacer(Modifier.height(12.dp))
                 Box {
 

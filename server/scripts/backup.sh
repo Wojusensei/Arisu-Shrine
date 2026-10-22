@@ -3,6 +3,8 @@
 set -eu
 cd "$(dirname "$0")/.."
 
+umask 077
+
 C="docker compose -f docker-compose.prod.yml"
 STAMP=$(date +%Y%m%d-%H%M%S)
 KEEP=$(grep -E '^BACKUP_KEEP_DAYS=' .env 2>/dev/null | cut -d= -f2 || true)

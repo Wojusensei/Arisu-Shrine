@@ -1,11 +1,11 @@
 package store
 
 import (
-	"strings"
 	"context"
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"time"
 
 	"arisu/server/internal/model"
@@ -20,34 +20,58 @@ type NoticeInput struct {
 	Content     string
 	TargetRoute string
 	DedupeKey   string
+
+	ActorID int64
+}
+
+type rowQuerier interface {
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
+
+func blockedFrom(ctx context.Context, q rowQuerier, target, actor int64) bool {
+	if actor == 0 || target == actor {
+		return false
+	}
+	var one int
+	if err := q.QueryRow(ctx,
+		`SELECT 1 FROM blocks WHERE blocker_id=$1 AND blocked_id=$2`, target, actor).Scan(&one); err != nil {
+		return false
+	}
+	return true
 }
 
 func createNoticeDirect(ctx context.Context, pool *pgxpool.Pool, n NoticeInput) error {
+	if blockedFrom(ctx, pool, n.UserID, n.ActorID) {
+		return nil
+	}
 	if n.DedupeKey != "" {
 
-		_, err := pool.Exec(ctx, `INSERT INTO notices(user_id, kind, category, content, target_route, dedupe_key)
-			VALUES($1,$2,$3,$4,$5,$6)
+		_, err := pool.Exec(ctx, `INSERT INTO notices(user_id, kind, category, content, target_route, dedupe_key, actor_id)
+			VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,0))
 			ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO UPDATE SET content=EXCLUDED.content, created_at=now(), read_at=NULL`,
-			n.UserID, n.Kind, n.Category, n.Content, n.TargetRoute, n.DedupeKey)
+			n.UserID, n.Kind, n.Category, n.Content, n.TargetRoute, n.DedupeKey, n.ActorID)
 		return err
 	}
-	_, err := pool.Exec(ctx, `INSERT INTO notices(user_id, kind, category, content, target_route, dedupe_key)
-		VALUES($1,$2,$3,$4,$5,NULL)`,
-		n.UserID, n.Kind, n.Category, n.Content, n.TargetRoute)
+	_, err := pool.Exec(ctx, `INSERT INTO notices(user_id, kind, category, content, target_route, dedupe_key, actor_id)
+		VALUES($1,$2,$3,$4,$5,NULL,NULLIF($6,0))`,
+		n.UserID, n.Kind, n.Category, n.Content, n.TargetRoute, n.ActorID)
 	return err
 }
 
 func createNotice(tx pgx.Tx, ctx context.Context, n NoticeInput) error {
+	if blockedFrom(ctx, tx, n.UserID, n.ActorID) {
+		return nil
+	}
 	if n.DedupeKey != "" {
 
-		_, err := tx.Exec(ctx, `INSERT INTO notices(user_id, kind, category, content, target_route, dedupe_key)
-			VALUES($1,$2,$3,$4,$5,$6)
+		_, err := tx.Exec(ctx, `INSERT INTO notices(user_id, kind, category, content, target_route, dedupe_key, actor_id)
+			VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,0))
 			ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO UPDATE SET content=EXCLUDED.content, created_at=now(), read_at=NULL`,
-			n.UserID, n.Kind, n.Category, n.Content, n.TargetRoute, n.DedupeKey)
+			n.UserID, n.Kind, n.Category, n.Content, n.TargetRoute, n.DedupeKey, n.ActorID)
 		return err
 	}
-	_, err := tx.Exec(ctx, `INSERT INTO notices(user_id, kind, category, content, target_route)
-		VALUES($1,$2,$3,$4,$5)`, n.UserID, n.Kind, n.Category, n.Content, n.TargetRoute)
+	_, err := tx.Exec(ctx, `INSERT INTO notices(user_id, kind, category, content, target_route, actor_id)
+		VALUES($1,$2,$3,$4,$5,NULLIF($6,0))`, n.UserID, n.Kind, n.Category, n.Content, n.TargetRoute, n.ActorID)
 	return err
 }
 
@@ -63,7 +87,7 @@ func nicknameOf(tx pgx.Tx, ctx context.Context, userID int64) string {
 	return nickname
 }
 
-func notifyTrackers(tx pgx.Tx, ctx context.Context, postID int64, title string, actor string, preview string, skipID int64) error {
+func notifyTrackers(tx pgx.Tx, ctx context.Context, postID int64, title, actor, preview string, skipID, actorID int64) error {
 	rows, err := tx.Query(ctx, `SELECT user_id FROM post_tracks WHERE post_id=$1`, postID)
 	if err != nil {
 		return err
@@ -89,6 +113,7 @@ func notifyTrackers(tx pgx.Tx, ctx context.Context, postID int64, title string, 
 			UserID: id, Kind: "tracking", Category: "reply",
 			Content:     fmt.Sprintf("%s 在您追踪的帖子《%s》发表了新评论：%s", actor, title, preview),
 			TargetRoute: model.FormatPostNo2(postID),
+			ActorID:     actorID,
 		}); err != nil {
 			return err
 		}
@@ -96,7 +121,7 @@ func notifyTrackers(tx pgx.Tx, ctx context.Context, postID int64, title string, 
 	return nil
 }
 
-func NotifyTrackersEvent(ctx context.Context, pool *pgxpool.Pool, postID int64, title, event string) {
+func NotifyTrackersEvent(ctx context.Context, pool *pgxpool.Pool, postID int64, title, event string, authorID int64) {
 	rows, err := pool.Query(ctx, `SELECT user_id FROM post_tracks WHERE post_id=$1`, postID)
 	if err != nil {
 		return
@@ -117,6 +142,7 @@ func NotifyTrackersEvent(ctx context.Context, pool *pgxpool.Pool, postID int64, 
 			UserID: id, Kind: "tracking", Category: "reply",
 			Content:     fmt.Sprintf("您追踪的帖子《%s》%s", title, event),
 			TargetRoute: model.FormatPostNo2(postID),
+			ActorID:     authorID,
 			DedupeKey:   fmt.Sprintf("tracked:%d:%s:%s", postID, event, day),
 		})
 	}
@@ -124,7 +150,8 @@ func NotifyTrackersEvent(ctx context.Context, pool *pgxpool.Pool, postID int64, 
 
 func notifyFollowersOfNewPost(tx pgx.Tx, ctx context.Context, authorID int64, postID int64, title string) error {
 	rows, err := tx.Query(ctx, `SELECT f.follower_id, u.notify_scope
-		FROM follows f JOIN users u ON u.id=f.follower_id WHERE f.followee_id=$1`, authorID)
+		FROM follows f JOIN users u ON u.id=f.follower_id WHERE f.followee_id=$1
+		AND NOT EXISTS (SELECT 1 FROM blocks b WHERE b.blocker_id=f.follower_id AND b.blocked_id=$1)`, authorID)
 	if err != nil {
 		return err
 	}
@@ -167,7 +194,8 @@ func notifyFollowersOfNewPost(tx pgx.Tx, ctx context.Context, authorID int64, po
 func (s *Store) NotifyFollowersProfileChange(ctx context.Context, userID int64, what string) error {
 	return s.ExecTx(ctx, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `SELECT f.follower_id, u.notify_scope
-			FROM follows f JOIN users u ON u.id=f.follower_id WHERE f.followee_id=$1`, userID)
+			FROM follows f JOIN users u ON u.id=f.follower_id WHERE f.followee_id=$1
+			AND NOT EXISTS (SELECT 1 FROM blocks b WHERE b.blocker_id=f.follower_id AND b.blocked_id=$1)`, userID)
 		if err != nil {
 			return err
 		}
@@ -208,6 +236,7 @@ func (s *Store) NotifyFollowersProfileChange(ctx context.Context, userID int64, 
 				UserID: f.id, Kind: "follow", Category: "system",
 				Content:     msg,
 				TargetRoute: fmt.Sprintf("user/%d", userID),
+				ActorID:     userID,
 				DedupeKey:   fmt.Sprintf("profile:%d:%s:%s", userID, what, time.Now().Format("20060102")),
 			}); err != nil {
 				return err
@@ -217,8 +246,9 @@ func (s *Store) NotifyFollowersProfileChange(ctx context.Context, userID int64, 
 	})
 }
 
-func (s *Store) NotifyStaff(ctx context.Context, n NoticeInput) error {	rows, err := s.Pool.Query(ctx,
-	`SELECT id FROM users WHERE role IN ('houshi','guuji','kannushi')
+func (s *Store) NotifyStaff(ctx context.Context, n NoticeInput) error {
+	rows, err := s.Pool.Query(ctx,
+		`SELECT id FROM users WHERE role IN ('houshi','guuji','kannushi')
 	 AND banned=FALSE AND anonymized=FALSE AND deactivated_at IS NULL AND password_hash<>''`)
 	if err != nil {
 		return err
@@ -252,7 +282,8 @@ func (s *Store) NotifyMentions(ctx context.Context, actorID int64, ids []int64, 
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT id FROM users
 		WHERE id = ANY($1) AND id <> $2 AND anonymized=FALSE AND banned=FALSE
-		AND deactivated_at IS NULL AND password_hash<>''`, ids, actorID)
+		AND deactivated_at IS NULL AND password_hash<>''
+		AND NOT EXISTS (SELECT 1 FROM blocks b WHERE b.blocker_id=users.id AND b.blocked_id=$2)`, ids, actorID)
 	if err != nil {
 		return err
 	}
@@ -279,6 +310,7 @@ func (s *Store) NotifyMentions(ctx context.Context, actorID int64, ids []int64, 
 				Content:     content,
 				TargetRoute: route,
 				DedupeKey:   fmt.Sprintf("mention:%s:%d:%s", route, id, day),
+				ActorID:     actorID,
 			}); err != nil {
 				return err
 			}
@@ -291,7 +323,7 @@ func (s *Store) Notices(ctx context.Context, userID int64, category, only string
 	if limit <= 0 || limit > 50 {
 		limit = 30
 	}
-	where := ` WHERE user_id=$1`
+	where := ` WHERE user_id=$1` + actorBlockFilter()
 	args := []any{userID}
 	if category != "" && category != "all" {
 		if category == "reply" || category == "system" || category == "report" {
@@ -305,7 +337,7 @@ func (s *Store) Notices(ctx context.Context, userID int64, category, only string
 		where += ` AND starred_at IS NOT NULL`
 	}
 	var unread int64
-	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM notices WHERE user_id=$1 AND read_at IS NULL`, userID).Scan(&unread); err != nil {
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM notices WHERE user_id=$1 AND read_at IS NULL`+actorBlockFilter(), userID).Scan(&unread); err != nil {
 		return nil, err
 	}
 	var total int64
@@ -336,7 +368,7 @@ func (s *Store) Notice(ctx context.Context, userID, noticeID int64) (*model.Noti
 	var n model.Notice
 	var created time.Time
 	err := s.Pool.QueryRow(ctx, `SELECT id, kind, category, content, target_route, read_at IS NOT NULL, starred_at IS NOT NULL, created_at
-		FROM notices WHERE id=$1 AND user_id=$2`, noticeID, userID).
+		FROM notices WHERE user_id=$1 AND id=$2`+actorBlockFilter(), userID, noticeID).
 		Scan(&n.ID, &n.Kind, &n.Category, &n.Content, &n.TargetRoute, &n.Read, &n.Starred, &created)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound

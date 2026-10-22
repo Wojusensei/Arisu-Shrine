@@ -11,11 +11,13 @@ import (
 
 	"arisu/server/internal/model"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var ErrNotFound = errors.New("not found")
 var ErrConflict = errors.New("conflict")
+var ErrNicknameTaken = errors.New("nickname taken")
 var ErrBadRequest = errors.New("bad request")
 var ErrTooMany = errors.New("too many")
 
@@ -181,6 +183,10 @@ func (s *Store) CreateUser(ctx context.Context, email, passwordHash, nickname st
 		RETURNING `+userCols, email, passwordHash, nickname, model.RoleKannushi, model.RoleMember)
 	u, err := scanUser(row)
 	if err != nil {
+
+		if uniqueViolation(err) == "uniq_users_nickname" {
+			return nil, ErrNicknameTaken
+		}
 		if isUniqueErr(err) {
 			return nil, ErrConflict
 		}
@@ -199,6 +205,14 @@ func isUniqueErr(err error) bool {
 		return pgErr.SQLState() == "23505"
 	}
 	return false
+}
+
+func uniqueViolation(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return pgErr.ConstraintName
+	}
+	return ""
 }
 
 type ProfileUpdate struct {
@@ -271,7 +285,11 @@ func (s *Store) UpdateProfile(ctx context.Context, userID int64, p ProfileUpdate
 	}
 	args = append(args, userID)
 	q := `UPDATE users SET ` + strings.Join(sets, ", ") + ` WHERE id=$` + fmt.Sprint(i) + ` RETURNING ` + userCols
-	return scanUser(s.Pool.QueryRow(ctx, q, args...))
+	u, err := scanUser(s.Pool.QueryRow(ctx, q, args...))
+	if uniqueViolation(err) == "uniq_users_nickname" {
+		return nil, ErrNicknameTaken
+	}
+	return u, err
 }
 
 func (s *Store) UpdateEmail(ctx context.Context, userID int64, email string) error {
@@ -348,9 +366,9 @@ func (s *Store) Unfollow(ctx context.Context, followerID, followeeID int64) erro
 func (s *Store) FollowList(ctx context.Context, userID int64, followers bool) ([]model.UserBrief, error) {
 	var q string
 	if followers {
-		q = `SELECT ` + qcols("u") + ` FROM users u JOIN follows f ON f.follower_id=u.id WHERE f.followee_id=$1 ORDER BY f.created_at DESC LIMIT 200`
+		q = `SELECT ` + qcols("u") + ` FROM users u JOIN follows f ON f.follower_id=u.id WHERE f.followee_id=$1` + blockFilter("u.id") + ` ORDER BY f.created_at DESC LIMIT 200`
 	} else {
-		q = `SELECT ` + qcols("u") + ` FROM users u JOIN follows f ON f.followee_id=u.id WHERE f.follower_id=$1 ORDER BY f.created_at DESC LIMIT 200`
+		q = `SELECT ` + qcols("u") + ` FROM users u JOIN follows f ON f.followee_id=u.id WHERE f.follower_id=$1` + blockFilter("u.id") + ` ORDER BY f.created_at DESC LIMIT 200`
 	}
 	rows, err := s.Pool.Query(ctx, q, userID)
 	if err != nil {

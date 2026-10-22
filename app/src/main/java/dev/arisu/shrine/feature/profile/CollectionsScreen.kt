@@ -399,7 +399,8 @@ private fun CollectionCover(seed: Int, size: Dp = 52.dp, url: String? = null) {
 
         if (url != null) {
             coil3.compose.AsyncImage(
-                model = url,
+
+                model = dev.arisu.shrine.core.net.thumbUrl(url, 400),
                 contentDescription = null,
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                 modifier = Modifier
