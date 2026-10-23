@@ -149,6 +149,11 @@ fun NewPostScreen(
     }
     androidx.activity.compose.BackHandler(enabled = hasDraft && !publishing) { confirmDiscard = true }
 
+    fun stripMark(md: String) {
+        val cleaned = body.text.replace(md, "").replace(Regex("\\n{3,}"), "\n\n")
+        body = body.withText(cleaned.trimEnd())
+    }
+
     fun upload(item: StagedImage) {
         scope.launch {
             item.error = null
@@ -161,12 +166,15 @@ fun NewPostScreen(
                 body = if (old != null && body.text.contains(old)) {
                     body.withText(body.text.replace(old, snippet))
                 } else {
-                    body.withText(appendSnippet(body.text, snippet))
+                    insertMark(body, MdMark("$snippet\n", block = true))
                 }
                 item.markdown = snippet
                 item.url = url
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
+
+                item.markdown?.let { stripMark(it) }
+                item.markdown = null
                 item.error = e.toApiMessage()
             }
         }
@@ -184,12 +192,16 @@ fun NewPostScreen(
                 error = e.toApiMessage()
                 return@launch
             }
+
+            val placeholder = "![图片](上传中-${item.id})"
+            item.markdown = placeholder
+            body = insertMark(body, MdMark("$placeholder\n", block = true))
             upload(item)
         }
     }
 
     fun removeStaged(item: StagedImage) {
-        item.markdown?.let { body = body.withText(body.text.replace(it, "").trimEnd()) }
+        item.markdown?.let { stripMark(it) }
         item.file.delete()
         staged -= item
     }
@@ -272,18 +284,20 @@ fun NewPostScreen(
 
     fun publish() {
         if (publishing) return
-        if (title.isBlank() || body.text.isBlank()) return
+
+        val finalBody = body.text.replace(Regex("""!\[图片]\(上传中-\d+\)"""), "").trim()
+        if (title.isBlank() || finalBody.isBlank()) return
         publishing = true
         error = null
         scope.launch {
             try {
                 val post = if (editPost != null) {
                     Shrine.updatePost(
-                        editPost.id, title.trim(), intro.trim(), body.text.trim(), board,
+                        editPost.id, title.trim(), intro.trim(), finalBody, board,
                         cover = coverUrl ?: "",
                     )
                 } else {
-                    Shrine.createPost(board, title.trim(), body.text.trim(), intro.trim(), cover = coverUrl ?: "")
+                    Shrine.createPost(board, title.trim(), finalBody, intro.trim(), cover = coverUrl ?: "")
                 }
 
                 staged.forEach { it.file.delete() }
@@ -993,9 +1007,6 @@ private fun ImageSourceRow(
         }
     }
 }
-
-private fun appendSnippet(body: String, snippet: String): String =
-    if (body.isBlank()) snippet else body.trimEnd('\n') + "\n" + snippet
 
 private fun applyMention(value: TextFieldValue, userId: String): TextFieldValue {
     val text = value.text

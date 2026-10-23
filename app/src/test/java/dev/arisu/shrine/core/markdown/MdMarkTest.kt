@@ -120,4 +120,26 @@ class MdMarkTest {
         assertEquals("短", after.text)
         assertEquals(TextRange(1), after.selection)
     }
+
+    private val imageMark = MdMark("![图片](https://x/a.png)\n", block = true)
+
+    @Test
+    fun imageBlockInsertsAtCaretOnOwnLine() {
+        val after = insertMark(value("前半后半", 2), imageMark)
+        assertEquals("前半\n![图片](https://x/a.png)\n后半", after.text)
+
+        assertEquals(TextRange("前半\n".length + imageMark.text.length), after.selection)
+    }
+
+    @Test
+    fun imageBlockAtEmptyBody() {
+        val after = insertMark(value("", 0), imageMark)
+        assertEquals("![图片](https://x/a.png)\n", after.text)
+    }
+
+    @Test
+    fun imageBlockAtLineStartKeepsOneLine() {
+        val after = insertMark(value("下一段", 0), imageMark)
+        assertEquals("![图片](https://x/a.png)\n下一段", after.text)
+    }
 }
