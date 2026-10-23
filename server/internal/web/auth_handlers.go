@@ -346,7 +346,7 @@ func (w *Web) kickSession(c *gin.Context) {
 func (w *Web) getMe(c *gin.Context) {
 	v := w.viewer(c)
 	me := v.User.ToMe()
-	_ = w.St.FillUserCounts(c.Request.Context(), &me.User)
+	_ = w.St.FillUserCounts(c.Request.Context(), &me.User, v.ID)
 	c.JSON(http.StatusOK, me)
 }
 
@@ -472,7 +472,7 @@ func (w *Web) patchMe(c *gin.Context) {
 		}
 	}
 	me := u.ToMe()
-	_ = w.St.FillUserCounts(c.Request.Context(), &me.User)
+	_ = w.St.FillUserCounts(c.Request.Context(), &me.User, v.ID)
 	c.JSON(http.StatusOK, me)
 }
 
@@ -604,7 +604,7 @@ func (w *Web) emailChange(c *gin.Context) {
 		_ = w.St.RevokeRefreshTokens(c.Request.Context(), v.ID)
 	}
 	me := u.ToMe()
-	_ = w.St.FillUserCounts(c.Request.Context(), &me.User)
+	_ = w.St.FillUserCounts(c.Request.Context(), &me.User, v.ID)
 	c.JSON(http.StatusOK, me)
 }
 

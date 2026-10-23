@@ -30,7 +30,7 @@ func (w *Web) userDetail(c *gin.Context) {
 		return
 	}
 	pub := u.ToPublic()
-	_ = w.St.FillUserCounts(c.Request.Context(), pub)
+	_ = w.St.FillUserCounts(c.Request.Context(), pub, v.ID)
 	following, _ := w.St.IsFollowing(c.Request.Context(), v.ID, id)
 	followsMe, _ := w.St.IsFollowing(c.Request.Context(), id, v.ID)
 
@@ -140,6 +140,7 @@ func (w *Web) follow(c *gin.Context) {
 		Content:     w.viewer(c).User.Nickname + " 关注了您",
 		TargetRoute: fmt.Sprintf("user/%d", v.ID),
 		DedupeKey:   fmt.Sprintf("follow:%d:%d", id, v.ID),
+		ActorID:     v.ID,
 	})
 	c.JSON(http.StatusOK, gin.H{"following": true})
 }
@@ -182,7 +183,7 @@ func (w *Web) myRoom(c *gin.Context) {
 	v := w.viewer(c)
 	ctx := c.Request.Context()
 	me := v.User.ToMe()
-	_ = w.St.FillUserCounts(ctx, &me.User)
+	_ = w.St.FillUserCounts(ctx, &me.User, v.ID)
 	tiles, _ := w.St.Tiles(ctx, v.ID)
 	st, _ := w.St.OnlineStats(ctx)
 	achievements, _ := w.St.Achievements(ctx, v.ID)

@@ -248,6 +248,28 @@ func (w *Web) refreshRateLimit() gin.HandlerFunc {
 
 const refreshPerMinLimit = 60
 
+func (w *Web) uploadsGuard() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		key := "rl:uploads:" + w.clientIP(c) + ":" + time.Now().Format("200601021504")
+		n, err := w.RDB.Incr(c.Request.Context(), key).Result()
+		if err != nil {
+			w.Log.Warn("uploads 限流 Redis 写入失败，放行", zap.Error(err))
+			c.Next()
+			return
+		}
+		if n == 1 {
+			w.RDB.Expire(c.Request.Context(), key, 2*time.Minute)
+		}
+		if n > uploadsPerMinLimit {
+			c.AbortWithStatus(http.StatusTooManyRequests)
+			return
+		}
+		c.Next()
+	}
+}
+
+const uploadsPerMinLimit = 1200
+
 const (
 	loginFailAcctMax  = 8
 	loginFailIPMax    = 40

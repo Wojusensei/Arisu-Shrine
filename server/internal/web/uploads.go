@@ -38,6 +38,19 @@ func thumbTooLarge(cfg image.Config) bool {
 	return cfg.Width > thumbMaxPixels/cfg.Height
 }
 
+var thumbSlots = make(chan struct{}, 2)
+
+func acquireThumbSlot() bool {
+	select {
+	case thumbSlots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func releaseThumbSlot() { <-thumbSlots }
+
 func (w *Web) serveThumb(c *gin.Context, width int) bool {
 	rel := strings.TrimPrefix(c.Request.URL.Path, "/uploads/")
 	rel = strings.TrimPrefix(path.Clean("/"+rel), "/")
@@ -69,7 +82,11 @@ func (w *Web) serveThumb(c *gin.Context, width int) bool {
 
 	body, err := os.ReadFile(dst)
 	if err != nil {
+		if !acquireThumbSlot() {
+			return false
+		}
 		body, err = buildThumb(src, width, ext)
+		releaseThumbSlot()
 		if err != nil {
 
 			w.Log.Warn("缩略图生成失败，回退原图", zap.String("src", rel), zap.Error(err))

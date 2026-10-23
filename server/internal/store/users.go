@@ -331,12 +331,14 @@ func (s *Store) AnonymizeExpiredDeactivations(ctx context.Context, cooldownSecon
 	return tag.RowsAffected(), nil
 }
 
-func (s *Store) FillUserCounts(ctx context.Context, m *model.User) error {
+func (s *Store) FillUserCounts(ctx context.Context, m *model.User, viewerID int64) error {
 	return s.Pool.QueryRow(ctx, `SELECT
-			(SELECT count(*) FROM follows WHERE follower_id=$1),
-			(SELECT count(*) FROM follows WHERE followee_id=$1),
+			(SELECT count(*) FROM follows f WHERE f.follower_id=$1
+				AND NOT EXISTS (SELECT 1 FROM blocks bl WHERE bl.blocker_id=$2 AND bl.blocked_id=f.followee_id)),
+			(SELECT count(*) FROM follows f WHERE f.followee_id=$1
+				AND NOT EXISTS (SELECT 1 FROM blocks bl WHERE bl.blocker_id=$2 AND bl.blocked_id=f.follower_id)),
 			(SELECT count(*) FROM posts WHERE author_id=$1 AND deleted_at IS NULL)`,
-		m.ID).Scan(&m.FollowingCount, &m.FollowerCount, &m.PostCount)
+		m.ID, viewerID).Scan(&m.FollowingCount, &m.FollowerCount, &m.PostCount)
 }
 
 func (s *Store) IsFollowing(ctx context.Context, followerID, followeeID int64) (bool, error) {

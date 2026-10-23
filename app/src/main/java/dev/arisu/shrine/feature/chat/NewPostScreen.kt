@@ -160,6 +160,10 @@ fun NewPostScreen(
             item.progress = 0f
             try {
                 val url = Shrine.uploadImage(item.file) { item.progress = it }
+                if (item.removed) {
+                    item.url = url
+                    return@launch
+                }
                 val snippet = "![图片]($url)"
                 val old = item.markdown
 
@@ -201,6 +205,7 @@ fun NewPostScreen(
     }
 
     fun removeStaged(item: StagedImage) {
+        item.removed = true
         item.markdown?.let { stripMark(it) }
         item.file.delete()
         staged -= item
@@ -639,6 +644,8 @@ private class StagedImage(val id: Long, var file: File) {
 
     var markdown by mutableStateOf<String?>(null)
     var error by mutableStateOf<String?>(null)
+
+    var removed by mutableStateOf(false)
 }
 
 private sealed interface EditTarget {

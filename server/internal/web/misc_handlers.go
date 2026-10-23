@@ -278,7 +278,7 @@ func (w *Web) omikujiHistory(c *gin.Context) {
 }
 
 func (w *Web) omikujiLeaderboard(c *gin.Context) {
-	list, err := w.St.OmikujiLeaderboard(c.Request.Context(), 10)
+	list, err := w.St.OmikujiLeaderboard(c.Request.Context(), w.viewer(c).ID, 10)
 	if err != nil {
 		w.err(c, 500, "加载失败，点击重试")
 		return

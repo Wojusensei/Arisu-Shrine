@@ -90,8 +90,8 @@ func (w *Web) Router() *gin.Engine {
 		c.JSON(status, gin.H{"ok": status == http.StatusOK, "db": dbOK, "redis": redisOK, "time": time.Now().Unix()})
 	})
 
-	r.GET("/uploads/*filepath", serveUploads(w))
-	r.HEAD("/uploads/*filepath", serveUploads(w))
+	r.GET("/uploads/*filepath", w.uploadsGuard(), serveUploads(w))
+	r.HEAD("/uploads/*filepath", w.uploadsGuard(), serveUploads(w))
 
 	auth := api.Group("/auth")
 	auth.POST("/code", w.sendCode)

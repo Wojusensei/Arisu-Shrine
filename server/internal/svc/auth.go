@@ -153,7 +153,11 @@ func VerifyCode(ctx context.Context, rdb redis.UniversalClient, purpose, email, 
 		}
 		return ErrBadCode
 	}
-	return rdb.Del(ctx, key).Err()
+
+	if err := rdb.Del(ctx, key).Err(); err != nil {
+		return nil
+	}
+	return nil
 }
 
 func genCode() string {

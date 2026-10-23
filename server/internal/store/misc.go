@@ -35,7 +35,7 @@ func (s *Store) SearchPosts(ctx context.Context, viewerID int64, q string, useRe
 	}
 
 	if id, ok := parsePostNo(q); ok {
-		rows, err := s.Pool.Query(ctx, postSelect+` WHERE p.id=$2 AND p.deleted_at IS NULL`, viewerID, id)
+		rows, err := s.Pool.Query(ctx, postSelect+` WHERE p.id=$2 AND p.deleted_at IS NULL`+blockFilter("p.author_id"), viewerID, id)
 		if err != nil {
 			return nil, err
 		}
@@ -90,14 +90,19 @@ func (s *Store) SearchUsers(ctx context.Context, viewerID int64, q string, limit
 	if strings.HasPrefix(strings.ToLower(q), "user_") {
 		n, err := strconv.ParseInt(strings.TrimPrefix(strings.ToLower(q), "user_"), 10, 64)
 		if err == nil && n > 0 {
-			u, err := s.UserByID(ctx, n)
-			if err == nil {
-				return []model.UserBrief{u.ToBrief()}, nil
-			}
-			if errors.Is(err, ErrNotFound) {
+			var id int64
+			var nick, role, avatar string
+			err := s.Pool.QueryRow(ctx, `SELECT `+userBriefCols+` FROM users u
+				WHERE u.id=$1 AND u.anonymized=FALSE
+				AND NOT EXISTS (SELECT 1 FROM blocks b WHERE b.blocker_id=$2 AND b.blocked_id=u.id)`,
+				n, viewerID).Scan(&id, &nick, &role, &avatar)
+			if errors.Is(err, pgx.ErrNoRows) {
 				return nil, nil
 			}
-			return nil, err
+			if err != nil {
+				return nil, err
+			}
+			return []model.UserBrief{scanBrief(id, nick, role, avatar)}, nil
 		}
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT `+userBriefCols+` FROM users u
@@ -194,7 +199,7 @@ type OmikujiLeaderRow struct {
 	Rank     int    `json:"rank"`
 }
 
-func (s *Store) OmikujiLeaderboard(ctx context.Context, topRanks int) ([]OmikujiLeaderRow, error) {
+func (s *Store) OmikujiLeaderboard(ctx context.Context, viewerID int64, topRanks int) ([]OmikujiLeaderRow, error) {
 	rows, err := s.Pool.Query(ctx, `
 		SELECT u.nickname, u.role,
 		       CASE WHEN u.active_avatar_enabled AND u.active_avatar_url <> '' THEN u.active_avatar_url ELSE u.fixed_avatar_url END,
@@ -202,8 +207,9 @@ func (s *Store) OmikujiLeaderboard(ctx context.Context, topRanks int) ([]Omikuji
 		FROM omikuji_draws d
 		JOIN users u ON u.id = d.user_id
 		WHERE d.day = `+OmikujiTodayExpr+` AND u.anonymized = FALSE AND u.deactivated_at IS NULL
+		AND NOT EXISTS (SELECT 1 FROM blocks bl WHERE bl.blocker_id=$1 AND bl.blocked_id=u.id)
 		ORDER BY d.luck DESC, d.drawn_at ASC
-		LIMIT 200`)
+		LIMIT 200`, viewerID)
 	if err != nil {
 		return nil, err
 	}

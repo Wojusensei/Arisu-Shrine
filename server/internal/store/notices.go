@@ -48,7 +48,7 @@ func createNoticeDirect(ctx context.Context, pool *pgxpool.Pool, n NoticeInput) 
 
 		_, err := pool.Exec(ctx, `INSERT INTO notices(user_id, kind, category, content, target_route, dedupe_key, actor_id)
 			VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,0))
-			ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO UPDATE SET content=EXCLUDED.content, created_at=now(), read_at=NULL`,
+			ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO UPDATE SET content=EXCLUDED.content, created_at=now(), read_at=NULL, actor_id=EXCLUDED.actor_id`,
 			n.UserID, n.Kind, n.Category, n.Content, n.TargetRoute, n.DedupeKey, n.ActorID)
 		return err
 	}
@@ -66,7 +66,7 @@ func createNotice(tx pgx.Tx, ctx context.Context, n NoticeInput) error {
 
 		_, err := tx.Exec(ctx, `INSERT INTO notices(user_id, kind, category, content, target_route, dedupe_key, actor_id)
 			VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,0))
-			ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO UPDATE SET content=EXCLUDED.content, created_at=now(), read_at=NULL`,
+			ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO UPDATE SET content=EXCLUDED.content, created_at=now(), read_at=NULL, actor_id=EXCLUDED.actor_id`,
 			n.UserID, n.Kind, n.Category, n.Content, n.TargetRoute, n.DedupeKey, n.ActorID)
 		return err
 	}
@@ -184,6 +184,7 @@ func notifyFollowersOfNewPost(tx pgx.Tx, ctx context.Context, authorID int64, po
 			UserID: f.id, Kind: "follow", Category: "system",
 			Content:     fmt.Sprintf("您关注的 %s 发布了新帖子《%s》", author, title),
 			TargetRoute: model.FormatPostNo2(postID),
+			ActorID:     authorID,
 		}); err != nil {
 			return err
 		}

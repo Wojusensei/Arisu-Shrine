@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"arisu/server/internal/model"
 	"arisu/server/internal/store"
 	"github.com/gin-gonic/gin"
 )
@@ -27,6 +28,11 @@ func (w *Web) myStickers(c *gin.Context) {
 func (w *Web) userStickers(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
+		return
+	}
+
+	if blocked, _ := w.St.Blocks(c.Request.Context(), w.viewer(c).ID, id); blocked {
+		c.JSON(http.StatusOK, gin.H{"limit": store.StickerLimit, "total": 0, "items": []model.Sticker{}})
 		return
 	}
 	items, err := w.St.Stickers(c.Request.Context(), id)

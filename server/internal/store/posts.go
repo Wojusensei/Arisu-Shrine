@@ -336,6 +336,7 @@ func (s *Store) ToggleUp(ctx context.Context, postID, userID int64, hotThreshold
 				Content:     fmt.Sprintf("%s 顶了您的帖子《%s》", nicknameOf(tx, ctx, userID), title),
 				TargetRoute: model.FormatPostNo2(postID),
 				DedupeKey:   fmt.Sprintf("up:%d:%d", postID, userID),
+				ActorID:     userID,
 			}); err != nil {
 				return err
 			}
@@ -700,6 +701,7 @@ func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comm
 				UserID: *c.ReplyToUserID, Kind: "reply", Category: "reply",
 				Content:     fmt.Sprintf("%s 在《%s》中回复了您：%s", actor, postTitle, preview),
 				TargetRoute: model.FormatPostNo2(c.PostID),
+				ActorID:     c.AuthorID,
 			}); err != nil {
 				return err
 			}
@@ -713,6 +715,7 @@ func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comm
 					UserID: parentAuthor, Kind: "reply", Category: "reply",
 					Content:     fmt.Sprintf("%s 在《%s》中回复了您：%s", actor, postTitle, preview),
 					TargetRoute: model.FormatPostNo2(c.PostID),
+					ActorID:     c.AuthorID,
 				}); err != nil {
 					return err
 				}
