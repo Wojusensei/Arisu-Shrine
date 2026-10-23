@@ -150,6 +150,8 @@ data class Post(
     val favorited: Boolean = false,
     val essence: Boolean = false,
     val pinned: Boolean = false,
+
+    val mentionNames: Map<String, String> = emptyMap(),
 )
 
 @Serializable
@@ -171,6 +173,8 @@ data class Comment(
 
     val replyToNickname: String? = null,
     val mine: Boolean = false,
+
+    val mentionNames: Map<String, String> = emptyMap(),
 )
 
 @Serializable

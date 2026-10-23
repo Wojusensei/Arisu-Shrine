@@ -82,6 +82,7 @@ data class PostDto(
     @SerialName("created_at") val createdAt: Long = 0,
     @SerialName("updated_at") val updatedAt: Long = 0,
     val edited: Boolean = false,
+    val mentions: List<UserBriefDto>? = null,
 )
 
 @Serializable
@@ -105,6 +106,7 @@ data class CommentDto(
     val liked: Boolean = false,
     val mine: Boolean = false,
     @SerialName("created_at") val createdAt: Long = 0,
+    val mentions: List<UserBriefDto>? = null,
 )
 
 @Serializable

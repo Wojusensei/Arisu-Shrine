@@ -38,6 +38,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -193,11 +196,26 @@ private fun PostCover(post: Post, modifier: Modifier = Modifier) {
     ) {
         if (model != null) {
 
+            var loaded by androidx.compose.runtime.remember(model) { androidx.compose.runtime.mutableStateOf(false) }
+            var instant by androidx.compose.runtime.remember(model) { androidx.compose.runtime.mutableStateOf(false) }
+            val imgAlpha = if (instant) 1f
+            else androidx.compose.animation.core.animateFloatAsState(
+                targetValue = if (loaded) 1f else 0f,
+                animationSpec = androidx.compose.animation.core.tween(220),
+                label = "coverFade",
+            ).value
+
             AsyncImage(
                 model = model,
                 contentDescription = cover?.let { "帖子封面" } ?: post.authorName,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize(),
+                onSuccess = {
+                    if (it.result.dataSource == coil3.decode.DataSource.MEMORY_CACHE) instant = true
+                    else loaded = true
+                },
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer { alpha = imgAlpha },
             )
         } else {
             Icon(

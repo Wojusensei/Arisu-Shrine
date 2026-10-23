@@ -1114,7 +1114,7 @@ private fun ChangelogSection(onOpenChangelog: (String) -> Unit) {
                         item { ShrineEmptyState(note = "没有日志") }
                     } else {
 
-                        items(st.items, key = { it.version + "-" + it.channel }) { release ->
+                        items(st.items, key = { it.version + "-" + it.channel }, contentType = { "release" }) { release ->
                             ReleaseNoteCard(
                                 release = release,
                                 onClick = { onOpenChangelog(release.version) },

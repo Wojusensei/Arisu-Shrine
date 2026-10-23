@@ -653,6 +653,8 @@ func (w *Web) heartbeat(c *gin.Context) {
 		w.err(c, 500, "上报失败")
 		return
 	}
+
+	unread, _ := w.St.UnreadNoticeCount(c.Request.Context(), v.ID)
 	st, _ := w.St.OnlineStats(c.Request.Context())
-	c.JSON(http.StatusOK, gin.H{"ok": true, "online_now": st.OnlineNow, "server_time": time.Now().Unix()})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "online_now": st.OnlineNow, "server_time": time.Now().Unix(), "unread": unread})
 }

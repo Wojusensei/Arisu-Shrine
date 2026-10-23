@@ -120,16 +120,14 @@ private fun ShrineApp(loggedIn: Boolean) {
     val normalizedRoute = currentRoute?.substringBefore('?')
     val currentTab = ArisuTab.entries.firstOrNull { it.route == normalizedRoute }
     val unread by Shrine.unread.collectAsState()
-    val appScope = androidx.compose.runtime.rememberCoroutineScope()
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
-
-    val loggedInNow by androidx.compose.runtime.rememberUpdatedState(loggedIn)
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && loggedInNow) {
-
-                appScope.launch { Shrine.refreshUnread() }
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_RESUME -> Shrine.onAppForeground()
+                androidx.lifecycle.Lifecycle.Event.ON_PAUSE -> Shrine.onAppBackground()
+                else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)

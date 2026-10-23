@@ -89,6 +89,8 @@ type Post struct {
 	UpdatedAt    int64     `json:"updated_at"`
 	Edited       bool      `json:"edited"`
 	Deleted      bool      `json:"deleted"`
+
+	Mentions []UserBrief `json:"mentions,omitempty"`
 }
 
 type Comment struct {
@@ -104,6 +106,8 @@ type Comment struct {
 	Liked     bool   `json:"liked"`
 	Mine      bool   `json:"mine"`
 	CreatedAt int64  `json:"created_at"`
+
+	Mentions []UserBrief `json:"mentions,omitempty"`
 }
 
 type Ema struct {

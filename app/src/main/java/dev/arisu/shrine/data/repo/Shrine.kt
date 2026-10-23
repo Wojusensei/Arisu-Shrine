@@ -75,6 +75,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -82,6 +83,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -145,6 +147,14 @@ object Shrine {
         }
         scope.launch { bootstrap() }
         scope.launch { heartbeatLoop() }
+
+        scope.launch {
+            sessionState.collect {
+                if (it is SessionState.LoggedIn) heartbeatPoke.trySend(Unit)
+            }
+        }
+
+        scope.launch { warmConnection() }
     }
 
     @Volatile private var sessionDeadFired = false
@@ -397,16 +407,38 @@ object Shrine {
         return true
     }
 
+    @Volatile private var appForeground = true
+    private val heartbeatPoke = Channel<Unit>(capacity = 1)
+
+    fun onAppForeground() {
+        appForeground = true
+        heartbeatPoke.trySend(Unit)
+    }
+
+    fun onAppBackground() {
+        appForeground = false
+    }
+
     private suspend fun heartbeatLoop() {
         while (true) {
-            if (_sessionState.value is SessionState.LoggedIn) {
+            if (appForeground && _sessionState.value is SessionState.LoggedIn) {
                 try {
-                    apiCall { Api.service.heartbeat(HeartbeatReq(activeSeconds = 60)) }
+                    val res = apiCall { Api.service.heartbeat(HeartbeatReq(activeSeconds = 60)) }
+
+                    res.unread?.let { _unreadCount.value = it }
                 } catch (_: Exception) {
 
                 }
             }
-            delay(60 * 1000L)
+
+            withTimeoutOrNull(60 * 1000L) { heartbeatPoke.receive() }
+        }
+    }
+
+    private suspend fun warmConnection() {
+        try {
+            Api.service.health().close()
+        } catch (_: Exception) {
         }
     }
 
@@ -1293,6 +1325,7 @@ private fun PostDto.toPost(): Post = Post(
     favorited = favorited,
     essence = essence,
     pinned = pinned,
+    mentionNames = mentions?.associate { it.no to it.nickname } ?: emptyMap(),
 )
 
 private fun CommentDto.toComment(): Comment = Comment(
@@ -1310,6 +1343,7 @@ private fun CommentDto.toComment(): Comment = Comment(
     parentId = parentId?.toString(),
     replyToNickname = replyToUser?.nickname,
     mine = mine,
+    mentionNames = mentions?.associate { it.no to it.nickname } ?: emptyMap(),
 )
 
 private fun dev.arisu.shrine.data.remote.EmaDto.toEma(): Ema = Ema(

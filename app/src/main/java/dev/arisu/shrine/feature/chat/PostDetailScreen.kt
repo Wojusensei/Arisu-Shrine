@@ -439,7 +439,7 @@ fun PostDetailScreen(
                         if (comments.isEmpty()) {
                             item { ShrineEmptyState(note = "没有评论") }
                         } else {
-                            itemsIndexed(commentsShown, key = { _, c -> c.id }) { index, comment ->
+                            itemsIndexed(commentsShown, key = { _, c -> c.id }, contentType = { _, _ -> "comment" }) { index, comment ->
 
                                 val dividerAfter = index == commentsShown.lastIndex ||
                                     commentsShown[index + 1].parentId == null
@@ -943,6 +943,7 @@ private fun PostHead(
             markdown = post.body,
             onImageClick = onImageClick,
             onMentionClick = onOpenUser,
+            mentionNames = post.mentionNames,
         )
     }
 }
@@ -1055,6 +1056,7 @@ private fun commentAnnotated(
     prefixStyle: SpanStyle,
     linkColor: Color,
     onOpenUser: (String) -> Unit,
+    mentionNames: Map<String, String>? = null,
 ): AnnotatedString = buildAnnotatedString {
     if (replyPrefix != null) withStyle(prefixStyle) { append(replyPrefix) }
     var last = 0
@@ -1068,7 +1070,7 @@ private fun commentAnnotated(
                 TextLinkStyles(SpanStyle(color = linkColor, fontWeight = FontWeight.SemiBold)),
             ) { onOpenUser(no) },
         ) {
-            append(m.value)
+            append(mentionNames?.get(no)?.let { "@$it" } ?: m.value)
         }
         last = m.range.last + 1
     }
@@ -1158,6 +1160,7 @@ private fun CommentItem(
                         ),
                         linkColor = mentionColor,
                         onOpenUser = onOpenUser,
+                        mentionNames = comment.mentionNames,
                     ),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface,

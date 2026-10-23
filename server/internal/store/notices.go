@@ -79,6 +79,12 @@ func (s *Store) CreateNotice(ctx context.Context, n NoticeInput) error {
 	return s.ExecTx(ctx, func(tx pgx.Tx) error { return createNotice(tx, ctx, n) })
 }
 
+func (s *Store) UnreadNoticeCount(ctx context.Context, userID int64) (int64, error) {
+	var n int64
+	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM notices WHERE user_id=$1 AND read_at IS NULL`+actorBlockFilter(), userID).Scan(&n)
+	return n, err
+}
+
 func nicknameOf(tx pgx.Tx, ctx context.Context, userID int64) string {
 	var nickname string
 	if err := tx.QueryRow(ctx, `SELECT nickname FROM users WHERE id=$1`, userID).Scan(&nickname); err != nil {

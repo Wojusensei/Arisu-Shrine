@@ -55,6 +55,9 @@ interface ApiService {
     @POST("api/me/heartbeat")
     suspend fun heartbeat(@Body req: HeartbeatReq): HeartbeatRes
 
+    @GET("api/health")
+    suspend fun health(): okhttp3.ResponseBody
+
     @GET("api/me/sessions")
     suspend fun sessions(@retrofit2.http.Header("X-Refresh-Token") refresh: String): SessionListRes
 
@@ -327,7 +330,7 @@ data class SendCodeRes(val ok: Boolean = false, @kotlinx.serialization.SerialNam
 data class AchievementsRes(val items: List<AchievementDto> = emptyList())
 
 @kotlinx.serialization.Serializable
-data class HeartbeatRes(val ok: Boolean = false, @kotlinx.serialization.SerialName("online_now") val onlineNow: Long = 0, @kotlinx.serialization.SerialName("server_time") val serverTime: Long = 0)
+data class HeartbeatRes(val ok: Boolean = false, @kotlinx.serialization.SerialName("online_now") val onlineNow: Long = 0, @kotlinx.serialization.SerialName("server_time") val serverTime: Long = 0, val unread: Int? = null)
 
 @kotlinx.serialization.Serializable
 data class PostListRes(val items: List<PostDto> = emptyList())

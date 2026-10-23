@@ -112,7 +112,11 @@ func (s *Store) PostsPage(ctx context.Context, q PostListQuery) (*model.PostPage
 		return nil, err
 	}
 	page.Total, err = s.countPosts(ctx, q.Board, q.Sort, q.AuthorID, q.ViewerID)
-	return page, err
+	if err != nil {
+		return nil, err
+	}
+	s.FillPostMentions(ctx, page.Items)
+	return page, nil
 }
 
 func (s *Store) countPosts(ctx context.Context, board, sort string, authorID, viewerID int64) (int64, error) {
@@ -175,12 +179,19 @@ func (s *Store) PostsByRelation(ctx context.Context, viewerID int64, relation st
 	if err != nil {
 		return nil, 0, err
 	}
+	s.FillPostMentions(ctx, out)
 	return out, total, nil
 }
 
 func (s *Store) PostByID(ctx context.Context, viewerID, id int64) (*model.Post, error) {
-	return scanPost(s.Pool.QueryRow(ctx,
+	p, err := scanPost(s.Pool.QueryRow(ctx,
 		postSelect+` WHERE p.id=$2 AND p.deleted_at IS NULL`+blockFilter("p.author_id"), viewerID, id))
+	if err != nil {
+		return nil, err
+	}
+	s.fillMentions(ctx, 1, func(int) string { return p.Body },
+		func(_ int, m model.UserBrief) { p.Mentions = append(p.Mentions, m) })
+	return p, nil
 }
 
 type PostCreate struct {
@@ -622,7 +633,11 @@ func (s *Store) CommentsOf(ctx context.Context, viewerID, postID int64) ([]model
 		c.Mine = c.Author.ID == viewerID
 		out = append(out, *c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	s.FillCommentMentions(ctx, out)
+	return out, nil
 }
 
 type CommentCreate struct {
@@ -738,6 +753,8 @@ func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comm
 			return nil, err
 		}
 		cm.Mine = true
+		s.fillMentions(ctx, 1, func(int) string { return cm.Content },
+			func(_ int, m model.UserBrief) { cm.Mentions = append(cm.Mentions, m) })
 		return cm, nil
 	}
 	return nil, ErrNotFound

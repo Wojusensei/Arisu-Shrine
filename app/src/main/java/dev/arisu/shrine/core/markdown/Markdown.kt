@@ -428,9 +428,10 @@ internal fun renderInline(
     codeBg: Color,
     codeColor: Color,
     onMention: ((String) -> Unit)? = null,
+    mentionNames: Map<String, String>? = null,
 ): AnnotatedString {
     val linkColor = MaterialTheme.colorScheme.primary
-    return remember(text, baseColor, codeBg, codeColor, linkColor, onMention) {
+    return remember(text, baseColor, codeBg, codeColor, linkColor, onMention, mentionNames) {
         buildAnnotatedString {
             var last = 0
             for (m in inlineRe.findAll(text)) {
@@ -467,16 +468,23 @@ internal fun renderInline(
 
                     token.startsWith("@") -> {
 
-                        val m = if (onMention != null) mentionIdRe.matchEntire(token) else null
-                        if (m != null && onMention != null) {
+                        val m = if (onMention != null || mentionNames != null) mentionIdRe.matchEntire(token) else null
+                        if (m != null) {
                             val no = "User_" + "%06d".format(m.groupValues[1].toLong())
-                            withLink(
-                                LinkAnnotation.Clickable(
-                                    no,
-                                    TextLinkStyles(SpanStyle(color = linkColor, fontWeight = FontWeight.SemiBold)),
-                                ) { onMention(no) },
-                            ) {
-                                append(token)
+                            val shown = mentionNames?.get(no)?.let { "@$it" } ?: token
+                            if (onMention != null) {
+                                withLink(
+                                    LinkAnnotation.Clickable(
+                                        no,
+                                        TextLinkStyles(SpanStyle(color = linkColor, fontWeight = FontWeight.SemiBold)),
+                                    ) { onMention(no) },
+                                ) {
+                                    append(shown)
+                                }
+                            } else {
+                                withStyle(
+                                    SpanStyle(color = linkColor, fontWeight = FontWeight.SemiBold)
+                                ) { append(shown) }
                             }
                         } else {
                             withStyle(
@@ -524,6 +532,8 @@ fun MarkdownText(
     onMentionClick: ((String) -> Unit)? = null,
 
     naturalImages: Boolean = false,
+
+    mentionNames: Map<String, String>? = null,
 ) {
     val blocks = remember(markdown, naturalImages) { parseMarkdown(markdown, naturalImages) }
     val codeBg = MaterialTheme.colorScheme.surfaceVariant
@@ -558,14 +568,14 @@ fun MarkdownText(
                                     )
                                     Spacer(Modifier.width(8.dp))
                                     Text(
-                                        text = renderInline(block.text, color, codeBg, codeColor, onMentionClick),
+                                        text = renderInline(block.text, color, codeBg, codeColor, onMentionClick, mentionNames),
                                         style = style.copy(fontSize = size, fontWeight = weight, lineHeight = size * 1.35f),
                                         color = color,
                                     )
                                 }
                             } else {
                                 Text(
-                                    text = renderInline(block.text, color, codeBg, codeColor, onMentionClick),
+                                    text = renderInline(block.text, color, codeBg, codeColor, onMentionClick, mentionNames),
                                     style = style.copy(fontSize = size, fontWeight = weight, lineHeight = size * 1.35f),
                                     color = color,
                                 )
@@ -576,7 +586,7 @@ fun MarkdownText(
 
                     is MdBlock.Paragraph -> CenteredBlock(block.centered) {
                         Text(
-                            text = renderInline(block.text, color, codeBg, codeColor, onMentionClick),
+                            text = renderInline(block.text, color, codeBg, codeColor, onMentionClick, mentionNames),
                             style = style,
                             color = color,
                             textAlign = if (block.centered) androidx.compose.ui.text.style.TextAlign.Center
@@ -597,7 +607,7 @@ fun MarkdownText(
                                 )
                                 Spacer(Modifier.width(9.dp))
                                 Text(
-                                    text = renderInline(item, color, codeBg, codeColor, onMentionClick),
+                                    text = renderInline(item, color, codeBg, codeColor, onMentionClick, mentionNames),
                                     style = style,
                                     color = color,
                                 )
@@ -615,7 +625,7 @@ fun MarkdownText(
                                 )
                                 Spacer(Modifier.width(7.dp))
                                 Text(
-                                    text = renderInline(item, color, codeBg, codeColor, onMentionClick),
+                                    text = renderInline(item, color, codeBg, codeColor, onMentionClick, mentionNames),
                                     style = style,
                                     color = color,
                                 )
@@ -666,14 +676,14 @@ fun MarkdownText(
                                 .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.7f))
                         )
                         Text(
-                            text = renderInline(block.text, color, codeBg, codeColor, onMentionClick),
+                            text = renderInline(block.text, color, codeBg, codeColor, onMentionClick, mentionNames),
                             style = style.copy(fontStyle = FontStyle.Italic),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
                         )
                     }
 
-                    is MdBlock.Table -> MarkdownTable(block, style, color, onMentionClick)
+                    is MdBlock.Table -> MarkdownTable(block, style, color, onMentionClick, mentionNames)
 
                     is MdBlock.Tasks -> Column(Modifier.fillMaxWidth()) {
                         block.items.forEach { (done, text) ->
@@ -691,7 +701,7 @@ fun MarkdownText(
                                 Spacer(Modifier.width(9.dp))
                                 Text(
                                     text = renderInline(
-                                        text, color, codeBg, codeColor, onMentionClick,
+                                        text, color, codeBg, codeColor, onMentionClick, mentionNames,
                                     ),
                                     style = style,
                                     color = if (done) InkFaint else color,
@@ -777,6 +787,7 @@ private fun MarkdownTable(
     style: TextStyle,
     color: Color,
     onMentionClick: ((String) -> Unit)? = null,
+    mentionNames: Map<String, String>? = null,
 ) {
     val codeBg = MaterialTheme.colorScheme.surfaceVariant
     val codeColor = MaterialTheme.colorScheme.onSurfaceVariant
@@ -789,7 +800,7 @@ private fun MarkdownTable(
         Row(Modifier.background(MaterialTheme.colorScheme.surfaceVariant)) {
             block.header.forEach { cell ->
                 Text(
-                    text = renderInline(cell, color, codeBg, codeColor, onMentionClick),
+                    text = renderInline(cell, color, codeBg, codeColor, onMentionClick, mentionNames),
                     style = style.copy(fontWeight = FontWeight.SemiBold, fontSize = 13.sp),
                     color = color,
                     modifier = Modifier
@@ -810,7 +821,7 @@ private fun MarkdownTable(
             Row {
                 row.forEach { cell ->
                     Text(
-                        text = renderInline(cell, color, codeBg, codeColor, onMentionClick),
+                        text = renderInline(cell, color, codeBg, codeColor, onMentionClick, mentionNames),
                         style = style.copy(fontSize = 13.sp),
                         color = color,
                         modifier = Modifier

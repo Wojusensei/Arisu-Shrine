@@ -52,6 +52,7 @@ func (s *Store) SearchPosts(ctx context.Context, viewerID int64, q string, useRe
 			return nil, err
 		}
 		if len(out) > 0 {
+			s.FillPostMentions(ctx, out)
 			return out, nil
 		}
 	}
@@ -69,7 +70,11 @@ func (s *Store) SearchPosts(ctx context.Context, viewerID int64, q string, useRe
 		}
 		out = append(out, *p)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	s.FillPostMentions(ctx, out)
+	return out, nil
 }
 
 func parsePostNo(q string) (int64, bool) {
