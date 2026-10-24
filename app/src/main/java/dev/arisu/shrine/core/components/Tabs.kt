@@ -118,6 +118,8 @@ fun <T> SortBar(
                     style = MaterialTheme.typography.labelLarge,
                     color = color,
                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                    maxLines = 1,
+                    softWrap = false,
                     modifier = Modifier.padding(top = 10.dp),
                 )
                 Spacer(Modifier.height(7.dp))

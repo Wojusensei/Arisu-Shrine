@@ -528,10 +528,15 @@ fun StatColumn(
             ),
         )
         Spacer(Modifier.height(2.dp))
-        Text(
+
+        androidx.compose.foundation.text.BasicText(
             text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
+            maxLines = 1,
+            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(
+                minFontSize = 7.sp,
+                maxFontSize = 11.sp,
+            ),
         )
     }
 }

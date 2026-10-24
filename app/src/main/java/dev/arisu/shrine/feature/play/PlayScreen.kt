@@ -706,15 +706,29 @@ private fun StatColumnNum(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
+
+        androidx.compose.foundation.text.BasicText(
             text = value,
-            fontFamily = SerifFamily,
-            fontWeight = FontWeight.Bold,
-            fontSize = 34.sp,
-            color = if (highlight) MaterialTheme.colorScheme.primary else InkTitle,
-            lineHeight = 38.sp,
+            style = androidx.compose.ui.text.TextStyle(
+                fontFamily = SerifFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 34.sp,
+                color = if (highlight) MaterialTheme.colorScheme.primary else InkTitle,
+                lineHeight = 38.sp,
+            ),
+            maxLines = 1,
+            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(
+                minFontSize = 18.sp,
+                maxFontSize = 34.sp,
+            ),
         )
         Spacer(Modifier.height(4.dp))
-        Text(text = unit, style = MaterialTheme.typography.labelSmall, color = InkMuted)
+        Text(
+            text = unit,
+            style = MaterialTheme.typography.labelSmall,
+            color = InkMuted,
+            maxLines = 1,
+            softWrap = false,
+        )
     }
 }
