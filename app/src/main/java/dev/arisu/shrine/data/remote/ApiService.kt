@@ -153,6 +153,9 @@ interface ApiService {
     @POST("api/posts/{id}/up")
     suspend fun toggleUp(@retrofit2.http.Path("id") id: Long): UpRes
 
+    @POST("api/posts/{id}/offer")
+    suspend fun offerPost(@retrofit2.http.Path("id") id: Long, @Body req: OfferReq): OfferRes
+
     @POST("api/posts/{id}/track")
     suspend fun toggleTrack(@retrofit2.http.Path("id") id: Long): TrackRes
 
@@ -330,7 +333,13 @@ data class SendCodeRes(val ok: Boolean = false, @kotlinx.serialization.SerialNam
 data class AchievementsRes(val items: List<AchievementDto> = emptyList())
 
 @kotlinx.serialization.Serializable
-data class HeartbeatRes(val ok: Boolean = false, @kotlinx.serialization.SerialName("online_now") val onlineNow: Long = 0, @kotlinx.serialization.SerialName("server_time") val serverTime: Long = 0, val unread: Int? = null)
+data class HeartbeatRes(val ok: Boolean = false, @kotlinx.serialization.SerialName("online_now") val onlineNow: Long = 0, @kotlinx.serialization.SerialName("server_time") val serverTime: Long = 0, val unread: Int? = null, @kotlinx.serialization.SerialName("balance_tenths") val balanceTenths: Long? = null)
+
+@kotlinx.serialization.Serializable
+data class OfferReq(val amount: Long)
+
+@kotlinx.serialization.Serializable
+data class OfferRes(@kotlinx.serialization.SerialName("balance_tenths") val balanceTenths: Long = 0, @kotlinx.serialization.SerialName("offer_total") val offerTotal: Long = 0)
 
 @kotlinx.serialization.Serializable
 data class PostListRes(val items: List<PostDto> = emptyList())

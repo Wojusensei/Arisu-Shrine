@@ -90,6 +90,8 @@ data class User(
     val onlineHours: Int = 0,
     val postCount: Int = 0,
 
+    val balanceTenths: Long = 0,
+
     val showFields: Map<String, Boolean> = emptyMap(),
 
     val notifyScope: Map<String, Boolean> = emptyMap(),
@@ -97,6 +99,18 @@ data class User(
     val followsMe: Boolean = false,
     val achievements: List<Achievement> = emptyList(),
 )
+
+fun countCn(n: Long): String = if (n < 10000) n.toString() else {
+    val w = n / 10000.0
+    val s = if (w >= 100) "%.0f".format(w) else "%.1f".format(w).removeSuffix(".0")
+    s + "万"
+}
+
+fun Long.yenText(): String {
+    val whole = this / 10
+    val frac = this % 10
+    return if (frac == 0L) whole.toString() else "$whole.$frac"
+}
 
 val User.displayAvatarSeed: Int
     get() = if (activeAvatarEnabled && activeAvatarSeed != null) activeAvatarSeed else fixedAvatarSeed
@@ -145,6 +159,8 @@ data class Post(
     val upCount: Int = 0,
 
     val saveCount: Int = 0,
+
+    val offerCount: Int = 0,
     val upvoted: Boolean = false,
     val tracked: Boolean = false,
     val favorited: Boolean = false,
@@ -249,6 +265,7 @@ data class ReleaseNote(
 enum class NoticeKind(val label: String) {
     REPLY("回复/@"),
     UP("顶帖"),
+    OFFER("奉纳"),
     SYSTEM("系统通知"),
     REPORT("举报动态"),
     APPLICATION("奉纳者申请"),

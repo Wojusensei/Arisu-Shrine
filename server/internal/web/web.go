@@ -144,6 +144,7 @@ func (w *Web) Router() *gin.Engine {
 		guarded.PATCH("/posts/:id", w.updatePost)
 		guarded.DELETE("/posts/:id", w.deletePost)
 		guarded.POST("/posts/:id/up", w.toggleUp)
+		guarded.POST("/posts/:id/offer", w.offerPost)
 		guarded.POST("/posts/:id/track", w.toggleTrack)
 		guarded.POST("/posts/:id/favorite", w.toggleFavorite)
 		guarded.POST("/posts/:id/essence", w.toggleEssence)

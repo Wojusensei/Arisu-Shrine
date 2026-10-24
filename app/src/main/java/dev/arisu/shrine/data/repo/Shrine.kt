@@ -426,6 +426,8 @@ object Shrine {
                     val res = apiCall { Api.service.heartbeat(HeartbeatReq(activeSeconds = 60)) }
 
                     res.unread?.let { _unreadCount.value = it }
+
+                    res.balanceTenths?.let { b -> _me.value = _me.value?.copy(balanceTenths = b) }
                 } catch (_: Exception) {
 
                 }
@@ -668,6 +670,12 @@ object Shrine {
     suspend fun toggleUp(id: String): Pair<Boolean, Int> {
         val r = apiCall { Api.service.toggleUp(postKey(id)) }
         return r.upped to r.upCount.toInt()
+    }
+
+    suspend fun offerPost(id: String, amount: Long): Pair<Long, Int> {
+        val r = apiCall { Api.service.offerPost(postKey(id), dev.arisu.shrine.data.remote.OfferReq(amount)) }
+        _me.value = _me.value?.copy(balanceTenths = r.balanceTenths)
+        return r.balanceTenths to r.offerTotal.toInt()
     }
 
     suspend fun toggleTrack(id: String): Boolean =
@@ -1320,6 +1328,7 @@ private fun PostDto.toPost(): Post = Post(
     commentCount = commentCount.toInt(),
     upCount = upCount.toInt(),
     saveCount = saveCount.toInt(),
+    offerCount = offerTotal.toInt(),
     upvoted = upped,
     tracked = tracked,
     favorited = favorited,
@@ -1380,6 +1389,7 @@ private fun NoticeKindOf(kind: String): NoticeKind = when (kind) {
     "warn" -> NoticeKind.WARN
     "mute" -> NoticeKind.MUTE
     "up" -> NoticeKind.UP
+    "offer" -> NoticeKind.OFFER
     else -> NoticeKind.SYSTEM
 }
 
@@ -1419,6 +1429,7 @@ private fun MeDto.toUser(): User = User(
     followerCount = followerCount.toInt(),
     onlineHours = TimeFmt.hours(onlineMinutes),
     postCount = postCount.toInt(),
+    balanceTenths = balanceTenths,
     showFields = showFields,
     notifyScope = notifyScope,
     achievements = emptyList(),
@@ -1450,4 +1461,5 @@ private fun UserDto.toUser(): User = User(
     followerCount = followerCount.toInt(),
     onlineHours = TimeFmt.hours(onlineMinutes),
     postCount = postCount.toInt(),
+    balanceTenths = balanceTenths,
 )

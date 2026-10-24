@@ -18,7 +18,8 @@ const postSelect = `SELECT p.id, p.board, p.title, p.body, p.intro, p.cover_url,
 	EXISTS(SELECT 1 FROM post_tracks WHERE post_id=p.id AND user_id=$1),
 	EXISTS(SELECT 1 FROM collection_posts cp JOIN collections c ON c.id=cp.collection_id
 		WHERE cp.post_id=p.id AND c.user_id=$1),
-	(SELECT count(*) FROM collection_posts sc WHERE sc.post_id=p.id)
+	(SELECT count(*) FROM collection_posts sc WHERE sc.post_id=p.id),
+	p.offer_total
 	FROM posts p JOIN users u ON u.id=p.author_id`
 
 const commentSelect = `SELECT c.id, c.post_id, c.parent_id, c.content, c.image_url, c.like_count, c.created_at,
@@ -45,7 +46,7 @@ func scanPost(row pgx.Row) (*model.Post, error) {
 	var created, updated time.Time
 	err := row.Scan(&p.ID, &p.Board, &p.Title, &p.Body, &p.Intro, &p.CoverURL, &p.Pinned, &p.Essence,
 		&p.UpCount, &p.CommentCount, &created, &updated, &p.Edited,
-		&aID, &aNick, &aRole, &aAvatar, &p.Upped, &p.Tracked, &p.Favorited, &p.SaveCount)
+		&aID, &aNick, &aRole, &aAvatar, &p.Upped, &p.Tracked, &p.Favorited, &p.SaveCount, &p.OfferTotal)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}

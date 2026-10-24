@@ -54,6 +54,8 @@ type User struct {
 	FollowingCount int64  `json:"following_count"`
 	FollowerCount  int64  `json:"follower_count"`
 	PostCount      int64  `json:"post_count"`
+
+	BalanceTenths int64 `json:"balance_tenths"`
 }
 
 type Me struct {
@@ -82,6 +84,7 @@ type Post struct {
 	UpCount      int64     `json:"up_count"`
 	CommentCount int64     `json:"comment_count"`
 	SaveCount    int64     `json:"save_count"`
+	OfferTotal   int64     `json:"offer_total"`
 	Upped        bool      `json:"upped"`
 	Tracked      bool      `json:"tracked"`
 	Favorited    bool      `json:"favorited"`

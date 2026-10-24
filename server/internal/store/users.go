@@ -43,11 +43,12 @@ type UserRow struct {
 	Banned              bool
 	DeactivatedAt       *time.Time
 	CreatedAt           time.Time
+	BalanceTenths       int64
 }
 
 const userColsRaw = `id,email,password_hash,nickname,role,signature,status_emoji,status_text,
 	blog_url,fixed_avatar_url,active_avatar_url,active_avatar_enabled,custom_markdown,custom_css,
-	show_fields,notify_scope,online_minutes,muted_until,banned,deactivated_at,created_at`
+	show_fields,notify_scope,online_minutes,muted_until,banned,deactivated_at,created_at,balance_tenths`
 
 func qcols(prefix string) string {
 	parts := strings.Split(userColsRaw, ",")
@@ -68,7 +69,7 @@ func scanUser(row pgx.Row) (*UserRow, error) {
 	err := row.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Nickname, &u.Role, &u.Signature,
 		&u.StatusEmoji, &u.StatusText, &u.BlogURL, &u.FixedAvatarURL, &u.ActiveAvatarURL,
 		&u.ActiveAvatarEnabled, &u.CustomMarkdown, &u.CustomCSS, &u.ShowFields, &u.NotifyScope,
-		&u.OnlineMinutes, &u.MutedUntil, &u.Banned, &u.DeactivatedAt, &u.CreatedAt)
+		&u.OnlineMinutes, &u.MutedUntil, &u.Banned, &u.DeactivatedAt, &u.CreatedAt, &u.BalanceTenths)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -149,6 +150,8 @@ func (u *UserRow) ToMe() *model.Me {
 	pub.BlogURL = u.BlogURL
 	pub.CustomMarkdown, pub.CustomCSS = u.CustomMarkdown, u.CustomCSS
 	pub.OnlineMinutes = u.OnlineMinutes
+
+	pub.BalanceTenths = u.BalanceTenths
 	return &model.Me{
 		User:                pub,
 		Email:               u.Email,

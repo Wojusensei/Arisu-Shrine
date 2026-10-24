@@ -347,6 +347,10 @@ func (w *Web) getMe(c *gin.Context) {
 	v := w.viewer(c)
 	me := v.User.ToMe()
 	_ = w.St.FillUserCounts(c.Request.Context(), &me.User, v.ID)
+
+	if b, err := w.St.GrantDailyOffer(c.Request.Context(), v.ID); err == nil {
+		me.User.BalanceTenths = b
+	}
 	c.JSON(http.StatusOK, me)
 }
 
@@ -655,6 +659,8 @@ func (w *Web) heartbeat(c *gin.Context) {
 	}
 
 	unread, _ := w.St.UnreadNoticeCount(c.Request.Context(), v.ID)
+
+	balanceTenths, _ := w.St.GrantDailyOffer(c.Request.Context(), v.ID)
 	st, _ := w.St.OnlineStats(c.Request.Context())
-	c.JSON(http.StatusOK, gin.H{"ok": true, "online_now": st.OnlineNow, "server_time": time.Now().Unix(), "unread": unread})
+	c.JSON(http.StatusOK, gin.H{"ok": true, "online_now": st.OnlineNow, "server_time": time.Now().Unix(), "unread": unread, "balance_tenths": balanceTenths})
 }

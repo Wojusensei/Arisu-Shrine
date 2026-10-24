@@ -162,6 +162,16 @@ object Api {
             .addInterceptor(baseRewrite)
             .addInterceptor(deviceInterceptor)
             .addInterceptor(authInterceptor)
+
+            .apply {
+                if (dev.arisu.shrine.BuildConfig.DEBUG) {
+                    addInterceptor(
+                        okhttp3.logging.HttpLoggingInterceptor { msg ->
+                            android.util.Log.d("ArisuNet", msg)
+                        }.setLevel(okhttp3.logging.HttpLoggingInterceptor.Level.BASIC)
+                    )
+                }
+            }
             .authenticator(authenticator)
             .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
             .readTimeout(20, java.util.concurrent.TimeUnit.SECONDS)

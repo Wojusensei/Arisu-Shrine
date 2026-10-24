@@ -24,11 +24,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -422,6 +426,30 @@ internal fun openMarkdownLink(context: android.content.Context, url: String) {
 }
 
 @Composable
+private fun codeAnnotated(code: String, lang: String): AnnotatedString {
+    val keyword = Vermilion
+    val string = Celadon
+    val comment = InkFaint
+    val number = Gold
+    val annotation = Indigo
+    return remember(code, lang, keyword, string, comment, number, annotation) {
+        buildAnnotatedString {
+            append(code)
+            for (t in highlightTokens(code, lang)) {
+                val color = when (t.kind) {
+                    TokenKind.KEYWORD -> keyword
+                    TokenKind.STRING -> string
+                    TokenKind.COMMENT -> comment
+                    TokenKind.NUMBER -> number
+                    TokenKind.ANNOTATION -> annotation
+                }
+                addStyle(SpanStyle(color = color), t.start, t.end)
+            }
+        }
+    }
+}
+
+@Composable
 internal fun renderInline(
     text: String,
     baseColor: Color,
@@ -633,33 +661,66 @@ fun MarkdownText(
                         }
                     }
 
-                    is MdBlock.Code -> Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
-                    ) {
-                        if (block.lang.isNotBlank()) {
+                    is MdBlock.Code -> {
+                        var copied by remember { mutableStateOf(false) }
+                        val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                        LaunchedEffect(copied) {
+                            if (copied) {
+                                kotlinx.coroutines.delay(1200)
+                                copied = false
+                            }
+                        }
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (block.lang.isNotBlank()) {
+                                    Text(
+                                        text = block.lang,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier
+                                            .padding(start = 12.dp, top = 4.dp)
+                                            .weight(1f),
+                                    )
+                                } else {
+                                    Spacer(Modifier.weight(1f))
+                                }
+                                IconButton(
+                                    onClick = {
+                                        clipboard.setText(AnnotatedString(block.code))
+                                        copied = true
+                                    },
+                                    modifier = Modifier.size(30.dp),
+                                ) {
+                                    Icon(
+                                        imageVector = if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+                                        contentDescription = "复制代码",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(15.dp),
+                                    )
+                                }
+                            }
                             Text(
-                                text = block.lang,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(start = 12.dp, top = 8.dp),
+                                text = codeAnnotated(block.code, block.lang),
+                                style = style.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    lineHeight = 18.sp,
+                                ),
+                                color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier
+                                    .horizontalScroll(rememberScrollState())
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
                             )
                         }
-                        Text(
-                            text = block.code,
-                            style = style.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 12.sp,
-                                lineHeight = 18.sp,
-                            ),
-                            color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier
-                                .horizontalScroll(rememberScrollState())
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
-                        )
                     }
 
                     is MdBlock.Quote -> Row(

@@ -88,6 +88,7 @@ import kotlinx.coroutines.launch
 import dev.arisu.shrine.data.model.Achievement
 import dev.arisu.shrine.data.model.ProfileTab
 import dev.arisu.shrine.data.model.User
+import dev.arisu.shrine.data.model.yenText
 import dev.arisu.shrine.data.model.avatarUrl
 import dev.arisu.shrine.nav.FOLLOW_MODE_FOLLOWERS
 import dev.arisu.shrine.nav.FOLLOW_MODE_FOLLOWING
@@ -421,6 +422,11 @@ private fun StatsCard(me: User, onOpenFollowList: (String) -> Unit) {
             StatColumn(
                 value = if (me.showFields["online_hours"] == false) "已隐藏" else me.onlineHours.toString(),
                 label = "总在线小时数",
+                modifier = Modifier.weight(1f),
+            )
+            StatColumn(
+                value = me.balanceTenths.yenText() + " 円",
+                label = "赛钱",
                 modifier = Modifier.weight(1f),
             )
     }

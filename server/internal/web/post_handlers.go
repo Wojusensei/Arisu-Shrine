@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"arisu/server/internal/model"
 	"arisu/server/internal/store"
@@ -272,6 +273,41 @@ type flagResp struct {
 	Tracked bool  `json:"tracked,omitempty"`
 	Favored bool  `json:"favorited,omitempty"`
 	Count   int64 `json:"count"`
+}
+
+func (w *Web) offerPost(c *gin.Context) {
+	v := w.viewer(c)
+	id, ok := pathID(c, "id")
+	if !ok {
+		w.bad(c, "参数错误")
+		return
+	}
+	var req struct {
+		Amount int64 `json:"amount"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.Amount <= 0 || req.Amount > 1_000_000 {
+		w.bad(c, "奉纳金额需为 1 到 100 万之间的整数")
+		return
+	}
+
+	if !w.intervalRateLimitMsg(c, v, 2*time.Second, "奉纳太频繁，稍候片刻") {
+		return
+	}
+	balanceTenths, offerTotal, err := w.St.OfferPost(c.Request.Context(), id, v.ID, req.Amount)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		w.notFound(c)
+	case errors.Is(err, store.ErrBadRequest):
+		w.bad(c, "不能向自己的帖子奉纳")
+	case errors.Is(err, store.ErrInsufficientBalance):
+		w.bad(c, "赛钱不足，请明日再来")
+	case errors.Is(err, store.ErrOfferCapPerPost):
+		w.bad(c, "单个帖子每名社员累计最多奉纳 1000 円")
+	case err != nil:
+		w.err(c, 500, "操作失败")
+	default:
+		c.JSON(http.StatusOK, gin.H{"balance_tenths": balanceTenths, "offer_total": offerTotal})
+	}
 }
 
 func (w *Web) toggleUp(c *gin.Context) {

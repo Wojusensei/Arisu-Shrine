@@ -31,6 +31,7 @@ data class UserDto(
     @SerialName("following_count") val followingCount: Long = 0,
     @SerialName("follower_count") val followerCount: Long = 0,
     @SerialName("post_count") val postCount: Long = 0,
+    @SerialName("balance_tenths") val balanceTenths: Long = 0,
 )
 
 @Serializable
@@ -59,6 +60,7 @@ data class MeDto(
     @SerialName("notify_scope") val notifyScope: Map<String, Boolean> = emptyMap(),
     @SerialName("muted_until") val mutedUntil: Long? = null,
     @SerialName("deactivated_at") val deactivatedAt: Long? = null,
+    @SerialName("balance_tenths") val balanceTenths: Long = 0,
 )
 
 @Serializable
@@ -76,6 +78,7 @@ data class PostDto(
     @SerialName("up_count") val upCount: Long = 0,
     @SerialName("comment_count") val commentCount: Long = 0,
     @SerialName("save_count") val saveCount: Long = 0,
+    @SerialName("offer_total") val offerTotal: Long = 0,
     val upped: Boolean = false,
     val tracked: Boolean = false,
     val favorited: Boolean = false,

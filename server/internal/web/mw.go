@@ -147,6 +147,10 @@ func (w *Web) postingRateLimit(c *gin.Context, v *viewerCtx, isNewbieInterval bo
 }
 
 func (w *Web) intervalRateLimit(c *gin.Context, v *viewerCtx, interval time.Duration) bool {
+	return w.intervalRateLimitMsg(c, v, interval, "发布太频繁，休息一下再试")
+}
+
+func (w *Web) intervalRateLimitMsg(c *gin.Context, v *viewerCtx, interval time.Duration, msg string) bool {
 	key := "rate:" + c.FullPath() + ":" + itoa(int(v.ID))
 	ok, err := w.RDB.SetNX(c.Request.Context(), key, 1, interval).Result()
 	if err != nil {
@@ -155,7 +159,7 @@ func (w *Web) intervalRateLimit(c *gin.Context, v *viewerCtx, interval time.Dura
 		return true
 	}
 	if !ok {
-		w.err(c, http.StatusTooManyRequests, "发布太频繁，休息一下再试")
+		w.err(c, http.StatusTooManyRequests, msg)
 		return false
 	}
 	return true

@@ -514,11 +514,18 @@ fun StatColumn(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
+        androidx.compose.foundation.text.BasicText(
             text = value,
-            style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
-            color = MaterialTheme.colorScheme.onSurface,
-            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleLarge.copy(
+                fontSize = 20.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
+            ),
+            maxLines = 1,
+            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(
+                minFontSize = 10.sp,
+                maxFontSize = 20.sp,
+            ),
         )
         Spacer(Modifier.height(2.dp))
         Text(

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Flag
 import androidx.compose.material.icons.rounded.Markunread
 import androidx.compose.material.icons.rounded.Star
+import androidx.compose.material.icons.rounded.CurrencyYen
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material.icons.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.Warning
@@ -580,6 +581,7 @@ internal fun noticeKindVisual(kind: NoticeKind): Pair<ImageVector, Color> = when
     NoticeKind.FOLLOW -> Icons.Rounded.Person to Indigo
     NoticeKind.WARN -> Icons.Rounded.Warning to Gold
     NoticeKind.MUTE -> Icons.Rounded.VolumeOff to Slate
+    NoticeKind.OFFER -> Icons.Rounded.CurrencyYen to Gold
 }
 
 @Composable

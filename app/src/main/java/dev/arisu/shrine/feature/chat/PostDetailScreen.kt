@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.ArrowUpward
 import androidx.compose.material.icons.rounded.ChatBubbleOutline
+import androidx.compose.material.icons.rounded.CurrencyYen
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
@@ -82,9 +83,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.arisu.shrine.core.components.ArisuConfirmDialog
+import dev.arisu.shrine.core.components.OfferSheet
 import dev.arisu.shrine.core.components.EmojiSheet
 import dev.arisu.shrine.core.components.FadeInOut
 import dev.arisu.shrine.core.components.ArisuAvatar
@@ -120,6 +123,7 @@ import dev.arisu.shrine.core.design.Vermilion
 import dev.arisu.shrine.core.markdown.MarkdownText
 import dev.arisu.shrine.data.model.Comment
 import dev.arisu.shrine.data.model.Post
+import dev.arisu.shrine.data.model.countCn
 import dev.arisu.shrine.data.repo.Shrine
 import dev.arisu.shrine.data.remote.toApiMessage
 import kotlinx.serialization.json.Json
@@ -171,6 +175,8 @@ fun PostDetailScreen(
     var collectionItems by remember { mutableStateOf<List<dev.arisu.shrine.data.model.Collection>>(emptyList()) }
     var activeCollectionId by remember { mutableStateOf<String?>(null) }
     var showEmoji by remember { mutableStateOf(false) }
+
+    var offering by remember { mutableStateOf(false) }
     var previewUrl by remember { mutableStateOf<String?>(null) }
 
     var pendingCommentImage by remember { mutableStateOf<java.io.File?>(null) }
@@ -378,6 +384,7 @@ fun PostDetailScreen(
                         item {
                             PostActionBar(
                                 post = p,
+                                onOffer = { offering = true },
                                 onUp = {
 
                                     if (!toggling) {
@@ -576,6 +583,20 @@ fun PostDetailScreen(
             }
             }
         }
+        }
+
+        if (offering) {
+            post?.let { cur ->
+                OfferSheet(
+                    post = cur,
+                    submitter = { amount ->
+                        val (_, total) = Shrine.offerPost(postId, amount)
+                        total
+                    },
+                    onDone = { newTotal -> post = post?.copy(offerCount = newTotal) },
+                    onDismiss = { offering = false },
+                )
+            }
         }
 
         if (deletingPost) {
@@ -951,6 +972,7 @@ private fun PostHead(
 @Composable
 private fun PostActionBar(
     post: Post,
+    onOffer: () -> Unit,
     onUp: () -> Unit,
     onTrack: () -> Unit,
     onFavorite: () -> Unit,
@@ -964,6 +986,15 @@ private fun PostActionBar(
                 .height(IntrinsicSize.Min),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            ActionCell(
+                icon = Icons.Rounded.CurrencyYen,
+                text = if (post.offerCount > 0) "奉纳 " + countCn(post.offerCount.toLong()) else "奉纳",
+                active = post.offerCount > 0,
+                contentDescription = "奉纳",
+                onClick = onOffer,
+                modifier = Modifier.weight(1f),
+            )
+            ActionDivider()
             ActionCell(
                 icon = Icons.Rounded.ArrowUpward,
                 text = "顶 " + post.upCount,
@@ -1040,10 +1071,15 @@ private fun ActionCell(
             modifier = Modifier.size(17.dp),
         )
         Spacer(Modifier.width(5.dp))
-        Text(
+
+        androidx.compose.foundation.text.BasicText(
             text = text,
-            style = MaterialTheme.typography.labelMedium,
-            color = tint,
+            style = MaterialTheme.typography.labelMedium.copy(color = tint),
+            maxLines = 1,
+            autoSize = androidx.compose.foundation.text.TextAutoSize.StepBased(
+                minFontSize = 7.sp,
+                maxFontSize = 12.sp,
+            ),
         )
     }
 }
