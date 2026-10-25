@@ -27,7 +27,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -49,6 +51,7 @@ import dev.arisu.shrine.core.components.SortBar
 import dev.arisu.shrine.core.components.TopBarIcon
 import dev.arisu.shrine.core.components.UnderlineTabs
 import dev.arisu.shrine.core.components.smoothScrollToTop
+import dev.arisu.shrine.core.markdown.markdownToPlain
 import dev.arisu.shrine.data.model.Board
 import dev.arisu.shrine.data.model.Post
 import dev.arisu.shrine.data.model.PostSort
@@ -65,6 +68,12 @@ sealed interface ListState<out T> {
 private val feedMemory = BoardMemory<Pair<Board, PostSort>, ListState<Post>>()
 
 private const val FEED_PAGE_SIZE = 20
+
+private const val VISIBLE_PREWARM = 4
+
+private suspend fun prewarmExcerpts(posts: List<Post>) = withContext(Dispatchers.Default) {
+    posts.forEach { if (it.intro.isBlank()) runCatching { markdownToPlain(it.body) } }
+}
 
 @Composable
 fun ChatBoardScreen(
@@ -98,21 +107,34 @@ fun ChatBoardScreen(
 
     val loadFirst: suspend () -> Unit = {
         refreshGen++
-        state = firstPaint(board, sort) ?: ListState.Loading
+        val restoredPaint = firstPaint(board, sort)
+        val cachedItems = (restoredPaint as? ListState.Ok<Post>)?.items.orEmpty()
+
+        prewarmExcerpts(cachedItems.take(VISIBLE_PREWARM))
+        state = restoredPaint ?: ListState.Loading
+        if (cachedItems.size > VISIBLE_PREWARM) {
+            scope.launch(Dispatchers.Default) { prewarmExcerpts(cachedItems.drop(VISIBLE_PREWARM)) }
+        }
         val restored = state as? ListState.Ok
         page = if (restored == null || restored.items.isEmpty()) 1 else (restored.items.size + FEED_PAGE_SIZE - 1) / FEED_PAGE_SIZE
         endReached = restored != null && restored.items.size >= restored.total
+        var restPrewarm: List<Post> = emptyList()
         state = try {
             val result = Shrine.postsOf(board, sort, page = 1)
             page = 1
             endReached = result.items.size >= result.total
             loadMoreFailed = false
+            prewarmExcerpts(result.items.take(VISIBLE_PREWARM))
+            restPrewarm = result.items.drop(VISIBLE_PREWARM)
             val fresh = ListState.Ok(result.items, result.total)
 
             if ((state as? ListState.Ok) == fresh) state else fresh
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             if (state is ListState.Loading) ListState.Fail(e.toApiMessage()) else state
+        }
+        if (restPrewarm.isNotEmpty()) {
+            scope.launch(Dispatchers.Default) { prewarmExcerpts(restPrewarm) }
         }
         (state as? ListState.Ok)?.let { ok ->
             Shrine.me.value?.id?.let { feedMemory.put(board to sort, it, ok) }
@@ -135,9 +157,13 @@ fun ChatBoardScreen(
                 if (refreshGen != snapGen || board != snapBoard || sort != snapSort || page != snapPage) return@launch
                 page += 1
                 endReached = (page - 1) * FEED_PAGE_SIZE + result.items.size >= result.total
+                prewarmExcerpts(result.items.take(VISIBLE_PREWARM))
 
                 val merged = ListState.Ok((current.items + result.items).distinctBy { it.id }, result.total)
                 state = merged
+                if (result.items.size > VISIBLE_PREWARM) {
+                    scope.launch(Dispatchers.Default) { prewarmExcerpts(result.items.drop(VISIBLE_PREWARM)) }
+                }
                 Shrine.me.value?.id?.let { feedMemory.put(snapBoard to snapSort, it, merged) }
                 loadMoreFailed = false
             } catch (e: Exception) {
@@ -246,7 +272,9 @@ fun ChatBoardScreen(
                                 verticalArrangement = Arrangement.spacedBy(16.dp),
                             ) {
                                 items(s.items, key = { it.id }, contentType = { "post" }) { post ->
-                                    PostCard(post = post, onClick = { onOpenPost(post.id) })
+
+                                    val open = remember(post.id, onOpenPost) { { onOpenPost(post.id) } }
+                                    PostCard(post = post, onClick = open)
                                 }
                                 item(key = "footer") {
                                     when {

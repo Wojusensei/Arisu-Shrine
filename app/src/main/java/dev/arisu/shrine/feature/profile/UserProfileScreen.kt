@@ -31,7 +31,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -113,7 +113,7 @@ fun UserProfileScreen(
     var loading by remember { mutableStateOf(user == null) }
     var failed by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableStateOf(0) }
-    val me by Shrine.me.collectAsState()
+    val me by Shrine.me.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     var moreMenuOpen by remember { mutableStateOf(false) }

@@ -213,19 +213,46 @@ internal fun normalizeHtml(source: String): String {
     return text.replace(Regex("""\n{3,}"""), "\n\n")
 }
 
+private val plainCodeFence = Regex("```[\\s\\S]*?(?:```|$)")
+private val plainImage = Regex("!\\[[^\\]]*]\\(([^)\\s]+)\\)")
+private val plainLink = Regex("\\[([^\\]]+)]\\(([^)\\s]+)\\)")
+private val plainPrefix = Regex("^[#>*\\-+]+\\s*", RegexOption.MULTILINE)
+private val plainTableRow = Regex("^\\s*\\|.*\\|\\s*$", RegexOption.MULTILINE)
+private val plainEmphasis = Regex("[*_~`]+")
+private val plainSpaces = Regex("\\s+")
+
+private val plainCache = object : LinkedHashMap<String, String>(64, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, String>) = size > 64
+}
+
 fun markdownToPlain(source: String): String {
+    synchronized(plainCache) { plainCache[source]?.let { return it } }
     var t = normalizeHtml(source)
-    t = t.replace(Regex("```[\\s\\S]*?(?:```|$)"), " ")
-    t = t.replace(Regex("!\\[[^\\]]*]\\(([^)\\s]+)\\)"), " [图片] ")
-    t = t.replace(Regex("\\[([^\\]]+)]\\(([^)\\s]+)\\)"), "$1")
-    t = t.replace(Regex("^[#>*\\-+]+\\s*", RegexOption.MULTILINE), "")
-    t = t.replace(Regex("^\\s*\\|.*\\|\\s*$", RegexOption.MULTILINE), "")
-    t = t.replace(Regex("[*_~`]+"), "")
-    t = t.replace(Regex("\\s+"), " ").trim()
+    t = t.replace(plainCodeFence, " ")
+    t = t.replace(plainImage, " [图片] ")
+    t = t.replace(plainLink, "$1")
+    t = t.replace(plainPrefix, "")
+    t = t.replace(plainTableRow, "")
+    t = t.replace(plainEmphasis, "")
+    t = t.replace(plainSpaces, " ").trim()
+    synchronized(plainCache) { plainCache[source] = t }
     return t
 }
 
+private val markdownCache = object : LinkedHashMap<String, List<MdBlock>>(32, 0.75f, true) {
+    override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<MdBlock>>) = size > 32
+}
+
 internal fun parseMarkdown(source: String, profileMode: Boolean = false): List<MdBlock> {
+
+    val key = if (profileMode) "p\u0000$source" else "n\u0000$source"
+    synchronized(markdownCache) { markdownCache.get(key) }?.let { return it }
+    val parsed = parseMarkdownUncached(source, profileMode)
+    synchronized(markdownCache) { markdownCache.put(key, parsed) }
+    return parsed
+}
+
+private fun parseMarkdownUncached(source: String, profileMode: Boolean = false): List<MdBlock> {
     val lines = normalizeHtml(source).replace("\r\n", "\n").split("\n")
     val blocks = mutableListOf<MdBlock>()
     var i = 0

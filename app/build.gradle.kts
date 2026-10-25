@@ -16,8 +16,8 @@ android {
         applicationId = "dev.arisu.shrine"
         minSdk = 26
         targetSdk = 35
-        versionCode = 49
-        versionName = "1.0.4.3"
+        versionCode = 50
+        versionName = "1.0.4.4"
 
         val prodBaseUrl = "https://arisushrine.com"
         val baseUrlOverride = (project.findProperty("arisuBaseUrl") as String?)?.trimEnd('/')
@@ -111,7 +111,6 @@ dependencies {
     implementation(libs.androidx.material.icons.extended)
     debugImplementation(libs.androidx.ui.tooling)
 
-    implementation(libs.androidx.paging.compose)
     implementation(libs.androidx.datastore.preferences)
 
     implementation(libs.coil.compose)

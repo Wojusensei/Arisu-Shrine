@@ -34,7 +34,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -84,7 +84,7 @@ fun ImageViewerDialog(
     var offset by remember(url) { mutableStateOf(Offset.Zero) }
 
     val painter = rememberAsyncImagePainter(model = url)
-    val painterState by painter.state.collectAsState()
+    val painterState by painter.state.collectAsStateWithLifecycle()
     val loaded = painterState is AsyncImagePainter.State.Success
 
     fun save() {

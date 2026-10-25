@@ -121,6 +121,7 @@ import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.design.NeuShadow
 import dev.arisu.shrine.core.design.Vermilion
 import dev.arisu.shrine.core.markdown.MarkdownText
+import dev.arisu.shrine.core.markdown.parseMarkdown
 import dev.arisu.shrine.data.model.Comment
 import dev.arisu.shrine.data.model.Post
 import dev.arisu.shrine.data.model.countCn
@@ -128,8 +129,10 @@ import dev.arisu.shrine.data.repo.Shrine
 import dev.arisu.shrine.data.remote.toApiMessage
 import kotlinx.serialization.json.Json
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val replyJson = Json { ignoreUnknownKeys = true }
 private val ReplySaver = Saver<Comment?, String>(
@@ -158,7 +161,7 @@ fun PostDetailScreen(
     var loadState by remember { mutableStateOf(if (post == null) "loading" else "ok") }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
-    val me by Shrine.me.collectAsState()
+    val me by Shrine.me.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     var menu by remember { mutableStateOf(false) }
@@ -196,6 +199,8 @@ fun PostDetailScreen(
     suspend fun refresh() {
         try {
             val p = Shrine.post(postId)
+
+            withContext(Dispatchers.Default) { runCatching { parseMarkdown(p.body) } }
             post = p
             comments = Shrine.commentsOf(postId)
             loadState = "ok"
@@ -446,7 +451,19 @@ fun PostDetailScreen(
                         if (comments.isEmpty()) {
                             item { ShrineEmptyState(note = "没有评论") }
                         } else {
-                            itemsIndexed(commentsShown, key = { _, c -> c.id }, contentType = { _, _ -> "comment" }) { index, comment ->
+                            itemsIndexed(
+                                commentsShown,
+                                key = { _, c -> c.id },
+
+                                contentType = { _, c ->
+                                    when {
+                                        c.imageUrl != null && c.parentId != null -> "comment_image_reply"
+                                        c.imageUrl != null -> "comment_image"
+                                        c.parentId != null -> "comment_reply"
+                                        else -> "comment"
+                                    }
+                                },
+                            ) { index, comment ->
 
                                 val dividerAfter = index == commentsShown.lastIndex ||
                                     commentsShown[index + 1].parentId == null

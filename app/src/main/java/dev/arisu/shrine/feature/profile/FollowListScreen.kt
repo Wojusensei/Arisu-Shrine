@@ -37,7 +37,7 @@ import dev.arisu.shrine.core.design.InkMuted
 import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.data.repo.Shrine
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -54,7 +54,7 @@ fun FollowListScreen(
 ) {
     val isFollowing = mode == FOLLOW_MODE_FOLLOWING
     val title = if (isFollowing) "关注" else "粉丝"
-    val me by Shrine.me.collectAsState()
+    val me by Shrine.me.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
     val cachedUsers = remember(isFollowing) {

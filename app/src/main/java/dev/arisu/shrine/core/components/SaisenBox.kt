@@ -27,7 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -116,7 +116,7 @@ fun OfferSheet(
     onDone: (newTotal: Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val me by Shrine.me.collectAsState()
+    val me by Shrine.me.collectAsStateWithLifecycle()
     var text by remember { mutableStateOf("") }
     var phase by remember { mutableStateOf<OfferPhase>(OfferPhase.Input) }
     val amount = text.toLongOrNull() ?: 0L

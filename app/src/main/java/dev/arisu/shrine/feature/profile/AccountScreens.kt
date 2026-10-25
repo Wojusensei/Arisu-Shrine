@@ -26,7 +26,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,8 +61,8 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun AccountManageScreen(onBack: () -> Unit, onSwitched: () -> Unit, modifier: Modifier = Modifier) {
-    val accounts by Shrine.vaultAccounts.collectAsState()
-    val me by Shrine.me.collectAsState()
+    val accounts by Shrine.vaultAccounts.collectAsStateWithLifecycle()
+    val me by Shrine.me.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var switching by remember { mutableStateOf<Long?>(null) }
     var removing by remember { mutableStateOf<VaultAccount?>(null) }

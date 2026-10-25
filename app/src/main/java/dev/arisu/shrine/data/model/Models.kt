@@ -1,6 +1,7 @@
 package dev.arisu.shrine.data.model
 
 import kotlinx.serialization.Serializable
+import androidx.compose.runtime.Immutable
 
 import androidx.compose.ui.graphics.Color
 import dev.arisu.shrine.core.design.Gold
@@ -63,6 +64,7 @@ val Role.accentSoft: Color
     }
 
 @Serializable
+@Immutable
 data class User(
 
     val id: String,
@@ -140,6 +142,7 @@ enum class PostSort(val label: String) {
 }
 
 @Serializable
+@Immutable
 data class Post(
 
     val id: String,
@@ -171,6 +174,7 @@ data class Post(
 )
 
 @Serializable
+@Immutable
 data class Comment(
     val id: String,
     val postId: String,
@@ -210,6 +214,7 @@ enum class EmaState(val label: String, val color: Color, val background: Color) 
 }
 
 @Serializable
+@Immutable
 data class Ema(
 
     val id: Int,
@@ -226,6 +231,7 @@ data class Ema(
 )
 
 @Serializable
+@Immutable
 data class EmaReply(
     val id: String,
     val emaId: Int,
@@ -283,6 +289,7 @@ enum class NoticeStatus(val label: String) {
 }
 
 @Serializable
+@Immutable
 data class Notice(
     val id: String,
     val kind: NoticeKind,
@@ -298,6 +305,7 @@ data class Notice(
 )
 
 @Serializable
+@Immutable
 data class Sticker(
     val id: String,
     val url: String,
@@ -305,6 +313,7 @@ data class Sticker(
 )
 
 @Serializable
+@Immutable
 data class Collection(
     val id: String,
     val name: String,

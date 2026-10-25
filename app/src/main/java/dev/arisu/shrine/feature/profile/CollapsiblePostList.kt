@@ -9,6 +9,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,7 +46,10 @@ internal fun CollapsiblePostList(posts: List<Post>, onOpenPost: (String) -> Unit
                 posts.take(3)
             }
             visible.forEach { post ->
-                PostCard(post = post, onClick = { onOpenPost(post.id) })
+                key(post.id) {
+                    val open = remember(post.id, onOpenPost) { { onOpenPost(post.id) } }
+                    PostCard(post = post, onClick = open)
+                }
             }
         }
 

@@ -79,7 +79,7 @@ import dev.arisu.shrine.core.markdown.MarkdownText
 import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import dev.arisu.shrine.data.model.EmaReply
@@ -111,7 +111,7 @@ fun EmaDetailScreen(
     var ema by remember { mutableStateOf(Shrine.peekEma(emaId)) }
     var replies by remember { mutableStateOf(Shrine.peekEmaReplies(emaId) ?: emptyList()) }
     var loadState by remember { mutableStateOf(if (ema == null) "loading" else "ok") }
-    val me by Shrine.me.collectAsState()
+    val me by Shrine.me.collectAsStateWithLifecycle()
     var pendingReplyDelete by remember { mutableStateOf<EmaReply?>(null) }
     val scope = rememberCoroutineScope()
 

@@ -45,7 +45,7 @@ import dev.arisu.shrine.data.ThemePrefs
 import dev.arisu.shrine.data.remote.ProfilePatchReq
 import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
@@ -67,7 +67,7 @@ fun SettingsScreen(
     onOpenBlocked: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    val me by Shrine.me.collectAsState()
+    val me by Shrine.me.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 

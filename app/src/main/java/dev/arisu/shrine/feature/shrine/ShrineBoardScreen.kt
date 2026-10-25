@@ -42,7 +42,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -651,7 +651,7 @@ private fun StaffSection(onOpenUser: (String) -> Unit) {
     var myApplication by remember { mutableStateOf(cachedStaff?.myApplication ?: dev.arisu.shrine.data.remote.MyApplicationRes()) }
     var reloadKey by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
-    val me by dev.arisu.shrine.data.repo.Shrine.me.collectAsState()
+    val me by dev.arisu.shrine.data.repo.Shrine.me.collectAsStateWithLifecycle()
     val staffListState = rememberLazyListState()
 
     LaunchedEffect(reloadKey) {

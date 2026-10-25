@@ -38,7 +38,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -282,7 +282,7 @@ fun LoginScreen(
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
-    val vaultAccounts by Shrine.vaultAccounts.collectAsState()
+    val vaultAccounts by Shrine.vaultAccounts.collectAsStateWithLifecycle()
 
     var switching by remember { mutableStateOf(false) }
     var removingAccount by remember { mutableStateOf<dev.arisu.shrine.data.VaultAccount?>(null) }

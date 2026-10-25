@@ -23,7 +23,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.launch
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
@@ -76,7 +76,7 @@ import dev.arisu.shrine.feature.shrine.ShrineBoardScreen
 
 @Composable
 fun ArisuApp() {
-    val session by Shrine.sessionState.collectAsState()
+    val session by Shrine.sessionState.collectAsStateWithLifecycle()
 
     when (session) {
         SessionState.Booting -> SplashScreen()
@@ -119,7 +119,6 @@ private fun ShrineApp(loggedIn: Boolean) {
 
     val normalizedRoute = currentRoute?.substringBefore('?')
     val currentTab = ArisuTab.entries.firstOrNull { it.route == normalizedRoute }
-    val unread by Shrine.unread.collectAsState()
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
@@ -164,14 +163,14 @@ private fun ShrineApp(loggedIn: Boolean) {
                     .consumeWindowInsets(androidx.compose.foundation.layout.PaddingValues(bottom = innerPadding.calculateBottomPadding()))
                     .padding(bottom = innerPadding.calculateBottomPadding())
             ) {
-                ArisuNavHost(navController = navController, currentRoute = currentRoute, loggedIn = loggedIn, unread = unread)
+                ArisuNavHost(navController = navController, currentRoute = currentRoute, loggedIn = loggedIn)
             }
         }
     }
 }
 
 @Composable
-private fun ArisuNavHost(navController: NavHostController, currentRoute: String?, loggedIn: Boolean, unread: Int) {
+private fun ArisuNavHost(navController: NavHostController, currentRoute: String?, loggedIn: Boolean) {
 
     val tabPatterns = remember {
         ArisuTab.entries.map { it.route } + (Routes.SHRINE + "?tab={tab}")
@@ -232,6 +231,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
         composable(
             route = Routes.CHAT,
         ) {
+            val unread by Shrine.unread.collectAsStateWithLifecycle()
             ChatBoardScreen(
                 unreadCount = unread,
                 onOpenPost = { navController.navigate(Routes.postDetail(it)) { launchSingleTop = true } },
@@ -316,6 +316,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
             route = Routes.SHRINE + "?tab={tab}",
             arguments = listOf(navArgument("tab") { type = NavType.IntType; defaultValue = 0 }),
         ) { entry ->
+            val unread by Shrine.unread.collectAsStateWithLifecycle()
             ShrineBoardScreen(
                 initialTabIndex = entry.arguments?.getInt("tab") ?: 0,
                 onOpenUser = { navController.navigate(Routes.userProfile(it)) { launchSingleTop = true } },
@@ -394,6 +395,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
         composable(
             route = Routes.PLAY,
         ) {
+            val unread by Shrine.unread.collectAsStateWithLifecycle()
             PlayScreen(
                 unreadCount = unread,
                 onOpenInbox = { navController.navigate(Routes.INBOX) { launchSingleTop = true } },
@@ -403,6 +405,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
         composable(
             route = Routes.ME,
         ) {
+            val unread by Shrine.unread.collectAsStateWithLifecycle()
             MyRoomScreen(
                 unreadCount = unread,
                 onOpenInbox = { navController.navigate(Routes.INBOX) { launchSingleTop = true } },
@@ -519,7 +522,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
         composable(Routes.INBOX) { entry ->
             val inboxDirty = entry.savedStateHandle
                 .getStateFlow("inbox_dirty", 0)
-                .collectAsState()
+                .collectAsStateWithLifecycle()
             InboxScreen(
                 onBack = { navController.popBackStack() },
                 onOpenDetail = { id -> navController.navigate(Routes.noticeDetail(id)) { launchSingleTop = true } },

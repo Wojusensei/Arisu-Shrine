@@ -228,11 +228,12 @@ fun SearchScreen(
                         SectionLabel(text = "帖子结果", trailing = "${result.posts.size} 条")
                     }
                     items(result.posts, key = { "post_${it.id}" }) { post ->
+                        val open = remember(post.id, onOpenPost) { { onOpenPost(post.id) } }
                         Column {
                             if (post.id == result.exactPostId) {
                                 ExactMatchBadge(Modifier.padding(start = 4.dp, bottom = 5.dp))
                             }
-                            PostCard(post = post, onClick = { onOpenPost(post.id) })
+                            PostCard(post = post, onClick = open)
                         }
                     }
                 }
