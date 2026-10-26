@@ -58,6 +58,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -1292,25 +1294,32 @@ private fun ReleaseNoteCard(release: ReleaseNote, onClick: () -> Unit) {
             }
         }
         Spacer(Modifier.height(12.dp))
+        val maxBodyHeightPx = with(LocalDensity.current) { 220.dp.roundToPx() }
+        var bodyHeightPx by remember(release.version) { mutableStateOf(0) }
         Box(
             Modifier
                 .fillMaxWidth()
                 .heightIn(max = 220.dp)
                 .clipToBounds()
         ) {
-            MarkdownText(release.body)
-
-            Box(
-                Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .height(44.dp)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, NeuBase)
-                        )
-                    )
+            MarkdownText(
+                release.body,
+                modifier = Modifier.onSizeChanged { bodyHeightPx = it.height },
             )
+
+            if (bodyHeightPx >= maxBodyHeightPx) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .height(44.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, NeuBase)
+                            )
+                        )
+                )
+            }
         }
     }
 }
