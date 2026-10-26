@@ -278,12 +278,12 @@ func (w *Web) omikujiHistory(c *gin.Context) {
 }
 
 func (w *Web) omikujiLeaderboard(c *gin.Context) {
-	list, err := w.St.OmikujiLeaderboard(c.Request.Context(), w.viewer(c).ID, 10)
+	board, err := w.St.OmikujiLeaderboard(c.Request.Context(), w.viewer(c).ID)
 	if err != nil {
 		w.err(c, 500, "加载失败，点击重试")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": list})
+	c.JSON(http.StatusOK, board)
 }
 
 func (w *Web) listReleases(c *gin.Context) {

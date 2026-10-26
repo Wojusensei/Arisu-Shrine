@@ -428,7 +428,17 @@ data class ReportListRes(
 data class OmikujiListRes(val items: List<OmikujiDto> = emptyList())
 
 @kotlinx.serialization.Serializable
-data class OmikujiLeaderRes(val items: List<OmikujiLeaderDto> = emptyList())
+data class OmikujiLeaderRes(
+    val items: List<OmikujiLeaderDto> = emptyList(),
+    val nearby: List<OmikujiLeaderDto> = emptyList(),
+    val me: OmikujiStandingDto? = null,
+)
+
+@kotlinx.serialization.Serializable
+data class OmikujiStandingDto(
+    val rank: Int,
+    val luck: Int,
+)
 
 @kotlinx.serialization.Serializable
 data class OmikujiLeaderDto(
@@ -437,6 +447,7 @@ data class OmikujiLeaderDto(
     val avatar: String = "",
     val luck: Int,
     val rank: Int,
+    @kotlinx.serialization.SerialName("is_me") val isMe: Boolean = false,
 )
 
 @kotlinx.serialization.Serializable

@@ -93,6 +93,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import dev.arisu.shrine.data.model.OmikujiBoard
 import dev.arisu.shrine.data.model.OmikujiDraw
 import dev.arisu.shrine.data.model.OmikujiFortune
 import dev.arisu.shrine.data.model.OmikujiLeaderRow
@@ -106,12 +107,14 @@ private sealed interface LuckState {
 
 private class PlaySnapshot(
     val luck: LuckState,
-    val leader: List<OmikujiLeaderRow>,
+    val leader: OmikujiBoard?,
     val stats: Shrine.OnlineStats?,
 )
 
 private val playMemory = BoardMemory<String, PlaySnapshot>()
 private const val PLAY_KEY = "play"
+
+private const val LEADER_TOP_RANKS = 10
 
 @Composable
 fun PlayScreen(
@@ -140,7 +143,7 @@ fun PlayScreen(
 
     LaunchedEffect(luckState, leader, stats) {
         val id = Shrine.me.value?.id ?: return@LaunchedEffect
-        playMemory.put(PLAY_KEY, id, PlaySnapshot(luckState, leader ?: emptyList(), stats))
+        playMemory.put(PLAY_KEY, id, PlaySnapshot(luckState, leader, stats))
     }
 
     val refreshLeader: suspend () -> Unit = {
@@ -347,8 +350,9 @@ fun PlayScreen(
                 }
             }
 
-            val leaderBoard = leader
-            if (!leaderBoard.isNullOrEmpty()) {
+            val board = leader
+            val leaderBoard = board?.items.orEmpty()
+            if (leaderBoard.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
                 ArisuCard(padding = 20.dp, watermark = true) {
                     Column(Modifier.fillMaxWidth()) {
@@ -408,6 +412,33 @@ fun PlayScreen(
                                 LeaderRow(row)
                             }
                         }
+
+                        val myRank = board?.me?.rank
+                        val nearby = board?.nearby.orEmpty()
+                        if (myRank != null && myRank > LEADER_TOP_RANKS && nearby.isNotEmpty()) {
+                            Spacer(Modifier.height(14.dp))
+                            HairlineDivider()
+                            Spacer(Modifier.height(12.dp))
+                            Text(
+                                text = "我的位置",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = InkTitle,
+                                letterSpacing = 3.sp,
+                                modifier = Modifier.align(Alignment.CenterHorizontally),
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            nearby.forEachIndexed { ni, row ->
+                                if (ni > 0) Spacer(Modifier.height(12.dp))
+                                LeaderRow(row)
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            text = "同分按求签先后排位",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = InkFaint,
+                            modifier = Modifier.align(Alignment.CenterHorizontally),
+                        )
                     }
                 }
             }
@@ -594,14 +625,29 @@ private fun PodiumSlot(row: OmikujiLeaderRow?, stepHeight: Dp, modifier: Modifie
             textStyle = if (first) MaterialTheme.typography.titleMedium else MaterialTheme.typography.labelLarge,
         )
         Spacer(Modifier.height(7.dp))
-        ArisuAvatar(
-            seed = 0,
-            name = row.nickname,
-            size = if (first) 52.dp else 42.dp,
-            role = row.role,
-            ring = true,
-            url = row.avatar,
-        )
+        Box {
+            ArisuAvatar(
+                seed = 0,
+                name = row.nickname,
+                size = if (first) 52.dp else 42.dp,
+                role = row.role,
+                ring = true,
+                url = row.avatar,
+            )
+
+            if (row.isMe) {
+                Text(
+                    text = "我",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = OnAccent,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .clip(CircleShape)
+                        .background(Vermilion)
+                        .padding(horizontal = 4.dp, vertical = 1.dp),
+                )
+            }
+        }
         Spacer(Modifier.height(6.dp))
         Text(
             text = row.nickname,
@@ -637,7 +683,21 @@ private fun PodiumSlot(row: OmikujiLeaderRow?, stepHeight: Dp, modifier: Modifie
 
 @Composable
 private fun LeaderRow(row: OmikujiLeaderRow) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .then(
+                if (row.isMe) {
+                    Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Vermilion.copy(alpha = 0.08f))
+                        .padding(horizontal = 6.dp, vertical = 5.dp)
+                } else {
+                    Modifier
+                }
+            ),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         RankSeal(
             rank = row.rank,
             size = 24.dp,
@@ -648,13 +708,24 @@ private fun LeaderRow(row: OmikujiLeaderRow) {
         ArisuAvatar(seed = 0, name = row.nickname, size = 30.dp, role = row.role, ring = true, url = row.avatar)
         Spacer(Modifier.width(9.dp))
         Column(Modifier.weight(1f)) {
-            Text(
-                text = row.nickname,
-                style = MaterialTheme.typography.bodyMedium,
-                color = row.role.accent,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = row.nickname,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = row.role.accent,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (row.isMe) {
+                    Spacer(Modifier.width(6.dp))
+                    SoftPill(
+                        text = "我",
+                        color = Vermilion,
+                        background = Vermilion.copy(alpha = 0.10f),
+                    )
+                }
+            }
             Spacer(Modifier.height(4.dp))
 
             Box(

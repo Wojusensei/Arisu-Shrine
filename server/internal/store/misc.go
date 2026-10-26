@@ -202,43 +202,78 @@ type OmikujiLeaderRow struct {
 	Avatar   string `json:"avatar"`
 	Luck     int    `json:"luck"`
 	Rank     int    `json:"rank"`
+	IsMe     bool   `json:"is_me"`
 }
 
-func (s *Store) OmikujiLeaderboard(ctx context.Context, viewerID int64, topRanks int) ([]OmikujiLeaderRow, error) {
+type OmikujiStanding struct {
+	Rank int `json:"rank"`
+	Luck int `json:"luck"`
+}
+
+type OmikujiBoard struct {
+	Items  []OmikujiLeaderRow `json:"items"`
+	Nearby []OmikujiLeaderRow `json:"nearby"`
+	Me     *OmikujiStanding   `json:"me,omitempty"`
+}
+
+const (
+	leaderboardTopRanks  = 10
+	leaderboardNeighbors = 2
+)
+
+func (s *Store) OmikujiLeaderboard(ctx context.Context, viewerID int64) (*OmikujiBoard, error) {
 	rows, err := s.Pool.Query(ctx, `
-		SELECT u.nickname, u.role,
-		       CASE WHEN u.active_avatar_enabled AND u.active_avatar_url <> '' THEN u.active_avatar_url ELSE u.fixed_avatar_url END,
-		       d.luck
-		FROM omikuji_draws d
-		JOIN users u ON u.id = d.user_id
-		WHERE d.day = `+OmikujiTodayExpr+` AND u.anonymized = FALSE AND u.deactivated_at IS NULL
-		AND NOT EXISTS (SELECT 1 FROM blocks bl WHERE bl.blocker_id=$1 AND bl.blocked_id=u.id)
-		ORDER BY d.luck DESC, d.drawn_at ASC
-		LIMIT 200`, viewerID)
+		WITH ranked AS (
+			SELECT u.id, u.nickname, u.role,
+			       CASE WHEN u.active_avatar_enabled AND u.active_avatar_url <> '' THEN u.active_avatar_url ELSE u.fixed_avatar_url END AS avatar,
+			       d.luck, d.drawn_at,
+			       row_number() OVER (ORDER BY d.luck DESC, d.drawn_at ASC, d.user_id ASC) AS rn
+			FROM omikuji_draws d
+			JOIN users u ON u.id = d.user_id
+			WHERE d.day = `+OmikujiTodayExpr+` AND u.anonymized = FALSE AND u.deactivated_at IS NULL
+		), me AS (
+			SELECT rn, luck FROM ranked WHERE id=$1
+		)
+		SELECT r.nickname, r.role, r.avatar, r.luck, r.rn, r.id=$1 AS is_me,
+		       (r.rn <= $2) AS in_top,
+		       COALESCE(me.rn > $2 AND r.rn BETWEEN me.rn - $3 AND me.rn + $3, FALSE) AS in_window
+		FROM ranked r
+		LEFT JOIN me ON TRUE
+		WHERE (r.rn <= $2
+		       OR (me.rn > $2 AND r.rn BETWEEN me.rn - $3 AND me.rn + $3))
+		  AND NOT EXISTS (SELECT 1 FROM blocks bl WHERE bl.blocker_id=$1 AND bl.blocked_id=r.id)
+		ORDER BY r.rn`, viewerID, leaderboardTopRanks, leaderboardNeighbors)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	out := make([]OmikujiLeaderRow, 0, topRanks)
-	prevLuck := -1
-	rank := 0
+	board := &OmikujiBoard{
+		Items:  make([]OmikujiLeaderRow, 0, leaderboardTopRanks),
+		Nearby: make([]OmikujiLeaderRow, 0, leaderboardNeighbors*2+1),
+	}
 	for rows.Next() {
-		var r OmikujiLeaderRow
-		if err := rows.Scan(&r.Nickname, &r.Role, &r.Avatar, &r.Luck); err != nil {
+		var (
+			r        OmikujiLeaderRow
+			rank     int
+			inTop    bool
+			inWindow bool
+		)
+		if err := rows.Scan(&r.Nickname, &r.Role, &r.Avatar, &r.Luck, &rank, &r.IsMe, &inTop, &inWindow); err != nil {
 			return nil, err
 		}
-		if r.Luck != prevLuck {
-			rank = len(out) + 1
-			prevLuck = r.Luck
-		}
-		if rank > topRanks {
-			break
-		}
 		r.Rank = rank
-		out = append(out, r)
+		if r.IsMe {
+			board.Me = &OmikujiStanding{Rank: rank, Luck: r.Luck}
+		}
+		if inTop {
+			board.Items = append(board.Items, r)
+		}
+		if inWindow {
+			board.Nearby = append(board.Nearby, r)
+		}
 	}
-	return out, rows.Err()
+	return board, rows.Err()
 }
 
 func (s *Store) DrawOmikuji(ctx context.Context, userID int64) (*model.Omikuji, error) {

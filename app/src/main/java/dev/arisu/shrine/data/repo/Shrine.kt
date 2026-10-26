@@ -17,9 +17,11 @@ import dev.arisu.shrine.data.model.EmaState
 import dev.arisu.shrine.data.model.EmaTag
 import dev.arisu.shrine.data.model.Notice
 import dev.arisu.shrine.data.model.NoticeKind
+import dev.arisu.shrine.data.model.OmikujiBoard
 import dev.arisu.shrine.data.model.OmikujiDraw
 import dev.arisu.shrine.data.model.OmikujiLeaderRow
 import dev.arisu.shrine.data.model.OmikujiFortune
+import dev.arisu.shrine.data.model.OmikujiStanding
 import dev.arisu.shrine.data.model.Post
 import dev.arisu.shrine.data.model.PostSort
 import dev.arisu.shrine.data.model.ReleaseChannel
@@ -48,6 +50,7 @@ import dev.arisu.shrine.data.remote.LogoutReq
 import dev.arisu.shrine.data.remote.MeDto
 import dev.arisu.shrine.data.remote.MyApplicationRes
 import dev.arisu.shrine.data.remote.MuteReq
+import dev.arisu.shrine.data.remote.OmikujiLeaderDto
 import dev.arisu.shrine.data.remote.NoticeStarReq
 import dev.arisu.shrine.data.remote.PasswordPatchReq
 import dev.arisu.shrine.data.remote.PostDto
@@ -1061,25 +1064,23 @@ object Shrine {
         CacheStore.put(scopedKey(cacheKey("omikuji", omikujiDayKey())), Int.serializer(), luck)
     }
 
-    suspend fun omikujiLeaderboard(): List<OmikujiLeaderRow> =
+    suspend fun omikujiLeaderboard(): OmikujiBoard =
         cached(
-            cacheKey("omikujiBoard", omikujiDayKey()),
-            ListSerializer(OmikujiLeaderRow.serializer()),
-            cacheIf = { it.isNotEmpty() },
+
+            cacheKey("omikujiBoard4", omikujiDayKey()),
+            OmikujiBoard.serializer(),
+            cacheIf = { it.items.isNotEmpty() || it.nearby.isNotEmpty() },
         ) {
-            apiCall { Api.service.omikujiLeaderboard() }.items.map {
-                OmikujiLeaderRow(
-                    nickname = it.nickname,
-                    role = it.role.toRole() ?: Role.MEMBER,
-                    avatar = it.avatar.ifEmpty { null },
-                    luck = it.luck,
-                    rank = it.rank,
-                )
-            }
+            val res = apiCall { Api.service.omikujiLeaderboard() }
+            OmikujiBoard(
+                items = res.items.map { it.toLeaderRow() },
+                nearby = res.nearby.map { it.toLeaderRow() },
+                me = res.me?.let { OmikujiStanding(it.rank, it.luck) },
+            )
         }
 
-    fun peekOmikujiLeaderboard(): List<OmikujiLeaderRow>? =
-        peekCache(cacheKey("omikujiBoard", omikujiDayKey()), ListSerializer(OmikujiLeaderRow.serializer()))
+    fun peekOmikujiLeaderboard(): OmikujiBoard? =
+        peekCache(cacheKey("omikujiBoard4", omikujiDayKey()), OmikujiBoard.serializer())
 
     suspend fun onlineStats(): OnlineStats =
         cached(cacheKey("stats"), OnlineStats.serializer()) {
@@ -1442,6 +1443,15 @@ private fun UserBriefDto.toUserBrief(): User = User(
     fixedAvatarSeed = stableSeed(no),
     fixedAvatarUrl = avatar.ifEmpty { null },
     following = following,
+)
+
+private fun OmikujiLeaderDto.toLeaderRow(): OmikujiLeaderRow = OmikujiLeaderRow(
+    nickname = nickname,
+    role = role.toRole() ?: Role.MEMBER,
+    avatar = avatar.ifEmpty { null },
+    luck = luck,
+    rank = rank,
+    isMe = isMe,
 )
 
 private fun UserDto.toUser(): User = User(

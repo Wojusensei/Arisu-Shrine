@@ -360,10 +360,27 @@ data class OmikujiDraw(
 )
 
 @Serializable
+@Immutable
 data class OmikujiLeaderRow(
     val nickname: String,
     val role: Role,
     val avatar: String? = null,
     val luck: Int,
     val rank: Int,
+    val isMe: Boolean = false,
+)
+
+@Serializable
+@Immutable
+data class OmikujiStanding(
+    val rank: Int,
+    val luck: Int,
+)
+
+@Serializable
+@Immutable
+data class OmikujiBoard(
+    val items: List<OmikujiLeaderRow> = emptyList(),
+    val nearby: List<OmikujiLeaderRow> = emptyList(),
+    val me: OmikujiStanding? = null,
 )

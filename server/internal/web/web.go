@@ -76,7 +76,10 @@ func (w *Web) Router() *gin.Engine {
 	})
 	r.MaxMultipartMemory = 12 << 20
 
-	api := r.Group("/api", w.floodGuard())
+	api := r.Group("/api", w.floodGuard(), func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		c.Next()
+	})
 
 	api.GET("/health", func(c *gin.Context) {
 		hctx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
