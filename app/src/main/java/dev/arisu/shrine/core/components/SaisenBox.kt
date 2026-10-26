@@ -304,8 +304,13 @@ fun OfferSheet(
                         .weight(1f)
                         .height(44.dp)
                         .let { m ->
-                            if (!locked && amount >= 1 && amount * 10 <= tenths) {
+
+                            if (!locked && amount >= 1) {
                                 m.clickableNoRipple {
+                                    if (amount * 10 > tenths) {
+                                        errMsg = "赛钱不足，请明日再来"
+                                        return@clickableNoRipple
+                                    }
                                     scope.launch {
                                         phase = OfferPhase.Busy
                                         try {
