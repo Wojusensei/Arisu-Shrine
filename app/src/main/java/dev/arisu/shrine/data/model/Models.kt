@@ -164,6 +164,8 @@ data class Post(
     val saveCount: Int = 0,
 
     val offerCount: Int = 0,
+
+    val offered: Boolean = false,
     val upvoted: Boolean = false,
     val tracked: Boolean = false,
     val favorited: Boolean = false,

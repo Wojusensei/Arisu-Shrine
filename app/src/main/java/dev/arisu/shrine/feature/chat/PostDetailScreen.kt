@@ -610,7 +610,7 @@ fun PostDetailScreen(
                         val (_, total) = Shrine.offerPost(postId, amount)
                         total
                     },
-                    onDone = { newTotal -> post = post?.copy(offerCount = newTotal) },
+                    onDone = { newTotal -> post = post?.copy(offerCount = newTotal, offered = true) },
                     onDismiss = { offering = false },
                 )
             }
@@ -1006,7 +1006,7 @@ private fun PostActionBar(
             ActionCell(
                 icon = Icons.Rounded.CurrencyYen,
                 text = if (post.offerCount > 0) "奉纳 " + countCn(post.offerCount.toLong()) else "奉纳",
-                active = post.offerCount > 0,
+                active = post.offered,
                 contentDescription = "奉纳",
                 onClick = onOffer,
                 modifier = Modifier.weight(1f),

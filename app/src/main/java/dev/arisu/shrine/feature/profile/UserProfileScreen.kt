@@ -127,6 +127,8 @@ fun UserProfileScreen(
     var reportOpen by remember { mutableStateOf(false) }
 
     var blocked by remember { mutableStateOf(false) }
+
+    var banned by remember { mutableStateOf(false) }
     var blockConfirm by remember { mutableStateOf(false) }
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
 
@@ -139,6 +141,7 @@ fun UserProfileScreen(
             val detail = Shrine.user(userId)
             user = detail.user
             blocked = detail.blocked
+            banned = detail.banned
             tiles = Shrine.tiles(userId)
             failed = false
         } catch (e: Exception) {
@@ -203,20 +206,23 @@ fun UserProfileScreen(
                                 },
                             )
                             if (me?.role?.canCurate == true) {
-                                DropdownMenuItem(
-                                    text = { Text("封禁") },
-                                    onClick = {
-                                        moreMenuOpen = false
-                                        banOpen = true
-                                    },
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("解除封禁") },
-                                    onClick = {
-                                        moreMenuOpen = false
-                                        unbanOpen = true
-                                    },
-                                )
+                                if (banned) {
+                                    DropdownMenuItem(
+                                        text = { Text("解除封禁") },
+                                        onClick = {
+                                            moreMenuOpen = false
+                                            unbanOpen = true
+                                        },
+                                    )
+                                } else {
+                                    DropdownMenuItem(
+                                        text = { Text("封禁") },
+                                        onClick = {
+                                            moreMenuOpen = false
+                                            banOpen = true
+                                        },
+                                    )
+                                }
                             }
                         }
                         if (me?.role?.canAssignRoles == true && userId != me?.id) {
@@ -384,6 +390,7 @@ fun UserProfileScreen(
             reasonHint = "封禁理由（必填）",
             onConfirm = { reason ->
                 Shrine.banUser(userId, reason)
+                banned = true
                 banOpen = false
                 notice = "已发送至对方社务箱"
             },
@@ -397,6 +404,7 @@ fun UserProfileScreen(
             confirmText = "确认解除",
             onConfirm = {
                 Shrine.unbanUser(userId)
+                banned = false
                 unbanOpen = false
                 notice = "已解除封禁"
             },

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -175,6 +176,20 @@ func luckBand(v int) string {
 	}
 }
 
+const (
+	omikujiLuckMean   = 68.0
+	omikujiLuckStdDev = 25.0
+)
+
+func drawLuck() int {
+	for {
+		v := int(math.Round(omikujiLuckMean + omikujiLuckStdDev*rand.NormFloat64()))
+		if v >= 1 && v <= 100 {
+			return v
+		}
+	}
+}
+
 const OmikujiTodayExpr = `(now() AT TIME ZONE 'Asia/Shanghai')::date`
 
 var shanghaiLoc = mustShanghai()
@@ -290,7 +305,7 @@ func (s *Store) DrawOmikuji(ctx context.Context, userID int64) (*model.Omikuji, 
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return nil, err
 	}
-	luck := rand.Intn(100) + 1
+	luck := drawLuck()
 	err = s.Pool.QueryRow(ctx, `INSERT INTO omikuji_draws(user_id, day, result, luck)
 		VALUES($1, `+OmikujiTodayExpr+`, $2, $3)
 		RETURNING drawn_at`,

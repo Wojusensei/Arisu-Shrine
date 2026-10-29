@@ -85,6 +85,7 @@ type Post struct {
 	CommentCount int64     `json:"comment_count"`
 	SaveCount    int64     `json:"save_count"`
 	OfferTotal   int64     `json:"offer_total"`
+	Offered      bool      `json:"offered"`
 	Upped        bool      `json:"upped"`
 	Tracked      bool      `json:"tracked"`
 	Favorited    bool      `json:"favorited"`

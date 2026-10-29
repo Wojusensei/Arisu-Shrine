@@ -37,12 +37,14 @@ func (w *Web) userDetail(c *gin.Context) {
 	blocked, _ := w.St.Blocks(c.Request.Context(), v.ID, id)
 
 	muted := v.ID == id || model.IsAdmin(v.Role)
+	banned := v.ID == id || model.IsAdmin(v.Role)
 	c.JSON(http.StatusOK, gin.H{
 		"user":       pub,
 		"following":  following,
 		"follows_me": followsMe,
 		"blocked":    blocked,
 		"muted":      muted && u.MutedUntilActive() != nil,
+		"banned":     banned && u.Banned,
 	})
 }
 

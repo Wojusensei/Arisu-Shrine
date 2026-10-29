@@ -79,6 +79,7 @@ data class PostDto(
     @SerialName("comment_count") val commentCount: Long = 0,
     @SerialName("save_count") val saveCount: Long = 0,
     @SerialName("offer_total") val offerTotal: Long = 0,
+    val offered: Boolean = false,
     val upped: Boolean = false,
     val tracked: Boolean = false,
     val favorited: Boolean = false,
@@ -264,6 +265,7 @@ data class UserDetailDto(
     @SerialName("follows_me") val followsMe: Boolean = false,
     val muted: Boolean = false,
     val blocked: Boolean = false,
+    val banned: Boolean = false,
 )
 
 @Serializable

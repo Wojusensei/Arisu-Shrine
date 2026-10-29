@@ -921,6 +921,7 @@ object Shrine {
         val followsMe: Boolean,
         val muted: Boolean,
         val blocked: Boolean = false,
+        val banned: Boolean = false,
     )
 
     suspend fun user(id: String): UserDetail =
@@ -930,7 +931,7 @@ object Shrine {
                 following = dto.following,
                 followsMe = dto.followsMe,
             )
-            UserDetail(user, dto.following, dto.followsMe, dto.muted, dto.blocked)
+            UserDetail(user, dto.following, dto.followsMe, dto.muted, dto.blocked, dto.banned)
         }
 
     suspend fun blockUser(id: String) {
@@ -1330,6 +1331,7 @@ private fun PostDto.toPost(): Post = Post(
     upCount = upCount.toInt(),
     saveCount = saveCount.toInt(),
     offerCount = offerTotal.toInt(),
+    offered = offered,
     upvoted = upped,
     tracked = tracked,
     favorited = favorited,
