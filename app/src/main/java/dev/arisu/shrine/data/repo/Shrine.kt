@@ -737,6 +737,18 @@ object Shrine {
         apiCall { Api.service.deleteComment(commentId.toLongOrNull() ?: 0L, DeleteReasonReq(reason ?: "")) }
     }
 
+    suspend fun cacheComments(postNo: String, items: List<Comment>) {
+        withContext(Dispatchers.IO) {
+            CacheStore.put(scopedKey(cacheKey("comments", postNo)), ListSerializer(Comment.serializer()), items)
+        }
+    }
+
+    suspend fun cachePost(postNo: String, post: Post) {
+        withContext(Dispatchers.IO) {
+            CacheStore.put(scopedKey(cacheKey("post", postNo)), Post.serializer(), post)
+        }
+    }
+
     @Serializable
     data class EmaPage(val items: List<Ema>, val total: Long, val page: Int)
 

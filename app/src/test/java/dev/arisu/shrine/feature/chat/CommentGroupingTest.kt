@@ -66,4 +66,18 @@ class CommentGroupingTest {
     fun emptyListPassesThrough() {
         assertEquals(emptyList<Comment>(), emptyList<Comment>().groupedByThread())
     }
+
+    @Test
+    fun subtreeIdsCoverNestedRepliesOnly() {
+
+        val flat = listOf(c("A"), c("B"), c("R1", parentId = "A"), c("R2", parentId = "R1"), c("R3", parentId = "B"))
+        assertEquals(setOf("A", "R1", "R2"), flat.subtreeIds("A"))
+    }
+
+    @Test
+    fun subtreeIdsTerminateOnParentCycle() {
+
+        val flat = listOf(c("A", parentId = "B"), c("B", parentId = "A"), c("C"))
+        assertEquals(setOf("A", "B"), flat.subtreeIds("A"))
+    }
 }

@@ -34,3 +34,16 @@ internal fun List<Comment>.groupedByThread(): List<Comment> {
     }
     return out
 }
+
+internal fun List<Comment>.subtreeIds(rootId: String): Set<String> {
+    val byParent = groupBy { it.parentId }
+    val out = LinkedHashSet<String>()
+    val stack = ArrayDeque<String>()
+    stack.addLast(rootId)
+    while (stack.isNotEmpty()) {
+        val id = stack.removeLast()
+        if (!out.add(id)) continue
+        byParent[id]?.forEach { stack.addLast(it.id) }
+    }
+    return out
+}

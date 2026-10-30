@@ -220,6 +220,17 @@ fun PostDetailScreen(
 
     LaunchedEffect(postId) { refresh() }
 
+    suspend fun forgetDeletedComment(target: Comment) {
+        val removed = comments.subtreeIds(target.id)
+        val left = comments.filterNot { it.id in removed }
+        comments = left
+        post = post?.copy(
+            commentCount = ((post?.commentCount ?: removed.size) - removed.size).coerceAtLeast(0),
+        )
+        post?.let { Shrine.cachePost(postId, it) }
+        Shrine.cacheComments(postId, left)
+    }
+
     fun uploadCommentImage(file: java.io.File) {
         uploadingImage = true
         uploadProgress = 0f
@@ -639,8 +650,7 @@ fun PostDetailScreen(
                     confirmText = "删除",
                     onConfirm = {
                         Shrine.deleteComment(target.id)
-                        comments = comments.filterNot { it.id == target.id }
-                        post = post?.copy(commentCount = (post?.commentCount ?: 1) - 1)
+                        forgetDeletedComment(target)
                         deletingComment = null
                     },
                     onDismiss = { deletingComment = null },
@@ -653,8 +663,7 @@ fun PostDetailScreen(
                     reasonHint = "删除理由（必填）",
                     onConfirm = { reason ->
                         Shrine.deleteComment(target.id, reason)
-                        comments = comments.filterNot { it.id == target.id }
-                        post = post?.copy(commentCount = (post?.commentCount ?: 1) - 1)
+                        forgetDeletedComment(target)
                         deletingComment = null
                     },
                     onDismiss = { deletingComment = null },
