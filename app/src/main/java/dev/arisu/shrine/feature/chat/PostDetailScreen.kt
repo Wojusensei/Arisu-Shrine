@@ -46,6 +46,7 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Notifications
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.material.icons.rounded.PushPin
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.ThumbUp
 import androidx.compose.material3.AlertDialog
@@ -59,13 +60,16 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -87,6 +91,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.arisu.shrine.core.components.ArisuConfirmDialog
+import dev.arisu.shrine.core.components.DraftRestoredBanner
 import dev.arisu.shrine.core.components.OfferSheet
 import dev.arisu.shrine.core.components.EmojiSheet
 import dev.arisu.shrine.core.components.FadeInOut
@@ -119,18 +124,26 @@ import dev.arisu.shrine.core.design.InkMuted
 import dev.arisu.shrine.core.design.NeuBaseHigh
 import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.design.NeuShadow
+import dev.arisu.shrine.core.design.ReadingScale
 import dev.arisu.shrine.core.design.Vermilion
 import dev.arisu.shrine.core.markdown.MarkdownText
 import dev.arisu.shrine.core.markdown.parseMarkdown
+import dev.arisu.shrine.data.local.Draft
+import dev.arisu.shrine.data.local.DraftStore
+import dev.arisu.shrine.data.local.HistoryStore
 import dev.arisu.shrine.data.model.Comment
 import dev.arisu.shrine.data.model.Post
 import dev.arisu.shrine.data.model.countCn
 import dev.arisu.shrine.data.repo.Shrine
+import dev.arisu.shrine.feature.share.ShareCard
+import dev.arisu.shrine.feature.share.ShareCardData
 import dev.arisu.shrine.data.remote.toApiMessage
 import kotlinx.serialization.json.Json
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -191,6 +204,12 @@ fun PostDetailScreen(
     var replyTo by rememberSaveable(stateSaver = ReplySaver) { mutableStateOf<Comment?>(null) }
 
     var draftImage by rememberSaveable { mutableStateOf<String?>(null) }
+
+    var draftLoaded by rememberSaveable(postId) { mutableStateOf(false) }
+    var draftRestored by rememberSaveable(postId) { mutableStateOf(false) }
+
+    var restoreAttempted by rememberSaveable(postId) { mutableStateOf(false) }
+    var lastReadMarker by rememberSaveable(postId) { mutableStateOf<String?>(null) }
     var uploadingImage by remember { mutableStateOf(false) }
     var newCollection by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
@@ -218,7 +237,54 @@ fun PostDetailScreen(
         }
     }
 
-    LaunchedEffect(postId) { refresh() }
+    LaunchedEffect(postId) {
+        refresh()
+        if (!draftLoaded) {
+            val uid = Shrine.me.value?.id
+            if (uid != null && draft.isBlank() && draftImage == null && replyTo == null) {
+                val saved = DraftStore.get(uid, DraftStore.COMMENT_POST, postId)
+                if (saved != null && saved.body.isNotBlank()) {
+                    draft = saved.body
+                    draftImage = saved.imageUrl
+                    replyTo = saved.replyToId?.let { id ->
+                        comments.firstOrNull { it.id == id } ?: Comment(
+                            id = id,
+                            postId = postId,
+                            authorId = "",
+                            authorName = saved.replyToNickname.orEmpty(),
+                            content = "",
+                            createdAt = "",
+                        )
+                    }
+                    draftRestored = true
+                }
+            }
+
+            draftLoaded = true
+        }
+    }
+
+    LaunchedEffect(draft, draftImage, replyTo, draftLoaded) {
+        if (!draftLoaded) return@LaunchedEffect
+        val uid = Shrine.me.value?.id ?: return@LaunchedEffect
+        if (draft.isBlank() && draftImage == null && replyTo == null) {
+            DraftStore.deleteAsync(uid, DraftStore.COMMENT_POST, postId)
+            return@LaunchedEffect
+        }
+        delay(600)
+        DraftStore.saveAsync(
+            Draft(
+                userId = uid,
+                kind = DraftStore.COMMENT_POST,
+                targetId = postId,
+                targetTitle = post?.title.orEmpty(),
+                body = draft,
+                imageUrl = draftImage,
+                replyToId = replyTo?.id,
+                replyToNickname = replyTo?.authorName,
+            ),
+        )
+    }
 
     suspend fun forgetDeletedComment(target: Comment) {
         val removed = comments.subtreeIds(target.id)
@@ -243,6 +309,50 @@ fun PostDetailScreen(
             }
             uploadingImage = false
             uploadProgress = -1f
+        }
+    }
+
+    LaunchedEffect(post?.id) {
+        val p = post ?: return@LaunchedEffect
+        val uid = Shrine.me.value?.id ?: return@LaunchedEffect
+        HistoryStore.visit(uid, HistoryStore.POST, postId, p.title, p.board.label)
+    }
+
+    LaunchedEffect(loadState, commentsShown) {
+        if (restoreAttempted || loadState != "ok" || commentsShown.isEmpty()) return@LaunchedEffect
+        restoreAttempted = true
+        val uid = Shrine.me.value?.id ?: return@LaunchedEffect
+        val entry = HistoryStore.get(uid, HistoryStore.POST, postId) ?: return@LaunchedEffect
+        val id = entry.lastCommentId ?: return@LaunchedEffect
+        val index = commentsShown.indexOfFirst { it.id == id }
+
+        if (index < 10) return@LaunchedEffect
+        lastReadMarker = id
+        listState.scrollToItem(3 + index, entry.lastOffset.coerceAtLeast(0))
+    }
+
+    val shownNow by rememberUpdatedState(commentsShown)
+    LaunchedEffect(restoreAttempted) {
+        if (!restoreAttempted) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+            .collectLatest { (lazyIndex, offset) ->
+                delay(700)
+                val uid = Shrine.me.value?.id ?: return@collectLatest
+                val index = lazyIndex - 3
+                val comment = shownNow.getOrNull(index) ?: return@collectLatest
+                HistoryStore.savePositionAsync(uid, HistoryStore.POST, postId, comment.id, index, offset)
+            }
+    }
+
+    DisposableEffect(postId) {
+        onDispose {
+            val uid = Shrine.me.value?.id ?: return@onDispose
+            val index = listState.firstVisibleItemIndex - 3
+            val comment = shownNow.getOrNull(index) ?: return@onDispose
+            HistoryStore.savePositionAsync(
+                uid, HistoryStore.POST, postId, comment.id, index,
+                listState.firstVisibleItemScrollOffset,
+            )
         }
     }
 
@@ -324,6 +434,35 @@ fun PostDetailScreen(
                                                 errorMsg = e.toApiMessage()
                                             }
                                             toggling = false
+                                        }
+                                    }
+                                },
+                            )
+                        }
+                        if (post != null) {
+                            DropdownMenuItem(
+                                text = { Text("生成分享卡片") },
+                                leadingIcon = { MenuIcon(Icons.Rounded.Share) },
+                                onClick = {
+                                    menu = false
+                                    val p = post ?: return@DropdownMenuItem
+                                    scope.launch {
+                                        try {
+                                            ShareCard.share(
+                                                context,
+                                                ShareCardData(
+                                                    kind = "帖子",
+                                                    meta = p.board.label,
+                                                    id = p.id,
+                                                    title = p.title,
+                                                    body = ShareCard.plainText(p.body),
+                                                    author = p.authorName,
+                                                    time = p.createdAt,
+                                                ),
+                                            )
+                                        } catch (e: Exception) {
+                                            if (e is kotlinx.coroutines.CancellationException) throw e
+                                            errorMsg = e.toApiMessage()
                                         }
                                     }
                                 },
@@ -481,6 +620,7 @@ fun PostDetailScreen(
                                 CommentItem(
                                     comment = comment,
                                     showFollowingDivider = dividerAfter,
+                                    showLastReadMarker = comment.id == lastReadMarker,
                                     canModerate = currentUser?.role?.canModerate ?: false,
                                     onOpenUser = onOpenUser,
                                     onLike = label@{
@@ -536,6 +676,9 @@ fun PostDetailScreen(
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth(),
                     ) {
+                        if (draftRestored) {
+                            DraftRestoredBanner(onDismiss = { draftRestored = false })
+                        }
                         if (replyingTo != null) {
                             ReplyBanner(
                                 nickname = replyingTo.authorName,
@@ -589,6 +732,9 @@ fun PostDetailScreen(
                                             draft = ""
                                             draftImage = null
                                             replyTo = null
+                                            Shrine.me.value?.id?.let {
+                                                DraftStore.deleteAsync(it, DraftStore.COMMENT_POST, postId)
+                                            }
                                             comments = comments + created
                                             post = post?.copy(commentCount = comments.size)
                                             focusManager.clearFocus()
@@ -1139,11 +1285,41 @@ private fun commentAnnotated(
     if (last < content.length) append(content.substring(last))
 }
 
+@Composable
+private fun LastReadDivider() {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+        )
+        Text(
+            text = "上次读到",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 8.dp),
+        )
+        Box(
+            Modifier
+                .weight(1f)
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CommentItem(
     comment: Comment,
     showFollowingDivider: Boolean,
+    showLastReadMarker: Boolean,
     canModerate: Boolean,
     onOpenUser: (String) -> Unit,
     onLike: () -> Unit,
@@ -1159,6 +1335,9 @@ private fun CommentItem(
 
     Box(Modifier.fillMaxWidth()) {
         Column {
+        if (showLastReadMarker) {
+            LastReadDivider()
+        }
         Row(
             Modifier
                 .fillMaxWidth()
@@ -1218,13 +1397,16 @@ private fun CommentItem(
                         prefixStyle = SpanStyle(
                             color = mentionColor,
                             fontWeight = FontWeight.SemiBold,
-                            fontSize = MaterialTheme.typography.labelMedium.fontSize,
+                            fontSize = ReadingScale.sp(MaterialTheme.typography.labelMedium.fontSize),
                         ),
                         linkColor = mentionColor,
                         onOpenUser = onOpenUser,
                         mentionNames = comment.mentionNames,
                     ),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = ReadingScale.of(
+                        MaterialTheme.typography.bodyMedium,
+                        balanced = comment.content.length <= 60,
+                    ),
                     color = MaterialTheme.colorScheme.onSurface,
                 )
 

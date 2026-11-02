@@ -38,22 +38,22 @@ val InkMuted: Color get() = if (ArisuTheme.isDark) Color(0xFF8B949E) else Color(
 
 val InkFaint: Color get() = if (ArisuTheme.isDark) Color(0xFF6E7681) else Color(0xFFA09790)
 
-val Paper: Color get() = if (ArisuTheme.isDark) Color(0xFF0A0E14) else Color(0xFFF7F3EE)
+val Paper: Color get() = if (ArisuTheme.isDark) Color(0xFF0A0E14) else Color(0xFFF9F7F4)
 
-val PaperSunken: Color get() = if (ArisuTheme.isDark) Color(0xFF080B10) else Color(0xFFEFE8E1)
+val PaperSunken: Color get() = if (ArisuTheme.isDark) Color(0xFF080B10) else Color(0xFFF2EEEA)
 
 val Surface: Color get() = if (ArisuTheme.isDark) Color(0xFF131820) else Color(0xFFFFFFFF)
 
-val SurfaceWarm: Color get() = if (ArisuTheme.isDark) Color(0xFF151A22) else Color(0xFFFDFBF8)
+val SurfaceWarm: Color get() = if (ArisuTheme.isDark) Color(0xFF151A22) else Color(0xFFFEFCFA)
 
-val Hairline: Color get() = if (ArisuTheme.isDark) Color(0xFF2B323B) else Color(0xFFEAE2D9)
+val Hairline: Color get() = if (ArisuTheme.isDark) Color(0xFF2B323B) else Color(0xFFECE7E2)
 
-val HairlineSoft: Color get() = if (ArisuTheme.isDark) Color(0xFF222933) else Color(0xFFF3ECE5)
+val HairlineSoft: Color get() = if (ArisuTheme.isDark) Color(0xFF222933) else Color(0xFFF5F2EF)
 
 val Gold: Color get() = if (ArisuTheme.isDark) Color(0xFFD5AA4D) else Color(0xFF9E7729)
 val GoldSoft: Color get() = if (ArisuTheme.isDark) Color(0xFF342C1C) else Color(0xFFF6EDD8)
 
-val Heat0: Color get() = if (ArisuTheme.isDark) Color(0xFF242A34) else Color(0xFFE3DCD2)
+val Heat0: Color get() = if (ArisuTheme.isDark) Color(0xFF242A34) else Color(0xFFE8E3DD)
 val Heat1: Color get() = if (ArisuTheme.isDark) Color(0xFF4A3A3C) else Color(0xFFF2CEC7)
 val Heat2: Color get() = if (ArisuTheme.isDark) Color(0xFF7A4A4A) else Color(0xFFDE9A8D)
 val Heat3: Color get() = if (ArisuTheme.isDark) Color(0xFFB25A55) else Color(0xFFC25F4E)
@@ -74,7 +74,7 @@ val IndigoSoft: Color get() = if (ArisuTheme.isDark) Color(0xFF1F2D45) else Colo
 val Celadon: Color get() = if (ArisuTheme.isDark) Color(0xFF9CCFAE) else Color(0xFF46685E)
 val CeladonSoft: Color get() = if (ArisuTheme.isDark) Color(0xFF24352B) else Color(0xFFE4EEEA)
 val Slate: Color get() = if (ArisuTheme.isDark) Color(0xFF99A1AC) else Color(0xFF8C847C)
-val SlateSoft: Color get() = if (ArisuTheme.isDark) Color(0xFF2C323B) else Color(0xFFF0EBE6)
+val SlateSoft: Color get() = if (ArisuTheme.isDark) Color(0xFF2C323B) else Color(0xFFF1EDE9)
 
 val StateOpen: Color get() = Indigo
 val StateOpenBg: Color get() = IndigoSoft
@@ -129,17 +129,17 @@ val AmberOchre: Color get() = Gold
 val AmberOchreSoft: Color get() = GoldSoft
 val SakuraPink: Color get() = VermilionBright
 
-val NeuBase: Color get() = if (ArisuTheme.isDark) Color(0xFF0A0E14) else Color(0xFFEDE8E1)
+val NeuBase: Color get() = if (ArisuTheme.isDark) Color(0xFF0A0E14) else Color(0xFFF2EFEB)
 
-val NeuBaseHigh: Color get() = if (ArisuTheme.isDark) Color(0xFF10151D) else Color(0xFFF1ECE6)
+val NeuBaseHigh: Color get() = if (ArisuTheme.isDark) Color(0xFF10151D) else Color(0xFFF4F1ED)
 
-val NeuInset: Color get() = if (ArisuTheme.isDark) Color(0xFF080B10) else Color(0xFFE4DED5)
+val NeuInset: Color get() = if (ArisuTheme.isDark) Color(0xFF080B10) else Color(0xFFE8E4DE)
 
-val NeuInsetDeep: Color get() = if (ArisuTheme.isDark) Color(0xFF05070C) else Color(0xFFDBD4CA)
+val NeuInsetDeep: Color get() = if (ArisuTheme.isDark) Color(0xFF05070C) else Color(0xFFDFDBD5)
 
 val NeuLight: Color get() = if (ArisuTheme.isDark) Color(0xFF3A4250) else Color(0xFFFFFFFF)
 
-val NeuShadow: Color get() = if (ArisuTheme.isDark) Color(0xFF000000) else Color(0xFFC6BCAD)
+val NeuShadow: Color get() = if (ArisuTheme.isDark) Color(0xFF000000) else Color(0xFFCDC7BE)
 
 val NeuAvatarGrey: Color get() = if (ArisuTheme.isDark) Color(0xFF7D8590) else Color(0xFF9C948A)
-val NeuAvatarBg: Color get() = if (ArisuTheme.isDark) Color(0xFF232B36) else Color(0xFFE0DAD1)
+val NeuAvatarBg: Color get() = if (ArisuTheme.isDark) Color(0xFF232B36) else Color(0xFFE4E0DA)

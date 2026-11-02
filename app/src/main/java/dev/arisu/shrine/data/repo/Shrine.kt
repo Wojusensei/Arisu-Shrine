@@ -6,6 +6,8 @@ import dev.arisu.shrine.core.util.TimeFmt
 import dev.arisu.shrine.data.AccountVault
 import dev.arisu.shrine.data.SessionStore
 import dev.arisu.shrine.data.VaultAccount
+import dev.arisu.shrine.data.local.DraftStore
+import dev.arisu.shrine.data.local.HistoryStore
 import dev.arisu.shrine.data.model.Achievement
 import dev.arisu.shrine.data.model.Board
 import dev.arisu.shrine.data.model.ChangeKind
@@ -132,6 +134,8 @@ object Shrine {
         session = SessionStore(context)
         vault = AccountVault(context)
         CacheStore.init(context)
+        DraftStore.init(context)
+        HistoryStore.init(context)
 
         CacheStore.preload()
 

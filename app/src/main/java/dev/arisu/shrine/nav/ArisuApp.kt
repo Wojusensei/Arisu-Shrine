@@ -64,6 +64,9 @@ import dev.arisu.shrine.feature.profile.BlockedUsersScreen
 import dev.arisu.shrine.feature.profile.CollectionsScreen
 import dev.arisu.shrine.feature.profile.EditProfileScreen
 import dev.arisu.shrine.feature.profile.FollowListScreen
+import dev.arisu.shrine.data.model.Board
+import dev.arisu.shrine.feature.profile.DraftsScreen
+import dev.arisu.shrine.feature.profile.HistoryScreen
 import dev.arisu.shrine.feature.profile.MyRoomScreen
 import dev.arisu.shrine.feature.profile.SessionsScreen
 import dev.arisu.shrine.feature.profile.SettingsScreen
@@ -414,10 +417,32 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
                 onOpenPost = { navController.navigate(Routes.postDetail(it)) { launchSingleTop = true } },
                 onOpenFollowList = { navController.navigate(Routes.followList(it)) { launchSingleTop = true } },
                 onOpenCollections = { navController.navigate(Routes.COLLECTIONS) { launchSingleTop = true } },
+                onOpenDrafts = { navController.navigate(Routes.DRAFTS) { launchSingleTop = true } },
+                onOpenHistory = { navController.navigate(Routes.HISTORY) { launchSingleTop = true } },
                 onOpenUser = { navController.navigate(Routes.userProfile(it)) { launchSingleTop = true } },
                 onOpenMyProfileTab = { tab ->
                     Shrine.me.value?.id?.let { navController.navigate(Routes.userProfile(it, tab)) { launchSingleTop = true } }
                 },
+            )
+        }
+        composable(Routes.DRAFTS) {
+            DraftsScreen(
+                onBack = { navController.popBackStack() },
+                onOpenPost = { navController.navigate(Routes.postDetail(it)) { launchSingleTop = true } },
+                onOpenEma = { navController.navigate(Routes.emaDetail(it)) { launchSingleTop = true } },
+                onNewPost = {
+                    navController.navigate("${Routes.NEW_POST}?board=${Board.MAIN.name}") {
+                        launchSingleTop = true
+                    }
+                },
+                onNewEma = { navController.navigate(Routes.NEW_EMA) { launchSingleTop = true } },
+            )
+        }
+        composable(Routes.HISTORY) {
+            HistoryScreen(
+                onBack = { navController.popBackStack() },
+                onOpenPost = { navController.navigate(Routes.postDetail(it)) { launchSingleTop = true } },
+                onOpenEma = { navController.navigate(Routes.emaDetail(it)) { launchSingleTop = true } },
             )
         }
         composable(Routes.EDIT_PROFILE) {

@@ -105,6 +105,8 @@ fun MyRoomScreen(
     onOpenCollections: () -> Unit,
     onOpenUser: (String) -> Unit,
     onOpenMyProfileTab: (Int) -> Unit = {},
+    onOpenDrafts: () -> Unit = {},
+    onOpenHistory: () -> Unit = {},
     modifier: Modifier = Modifier,
 
     initialTabIndex: Int = 0,
@@ -271,6 +273,8 @@ fun MyRoomScreen(
                 me = meState,
                 counts = counts,
                 onOpenCollections = onOpenCollections,
+                onOpenDrafts = onOpenDrafts,
+                onOpenHistory = onOpenHistory,
                 onOpenFollowList = onOpenFollowList,
                 onOpenPostsTab = onOpenMyProfileTab,
                 onShowAchievements = { showAchievements = true },
@@ -514,6 +518,8 @@ private fun EntryGroups(
     me: User,
     counts: Quad,
     onOpenCollections: () -> Unit,
+    onOpenDrafts: () -> Unit,
+    onOpenHistory: () -> Unit,
     onOpenFollowList: (String) -> Unit,
     onOpenPostsTab: (Int) -> Unit,
     onShowAchievements: () -> Unit,
@@ -607,6 +613,16 @@ private fun EntryGroups(
             SettingNavRow(
                 title = "收藏夹管理",
                 onClick = onOpenCollections,
+            )
+            SettingNavRow(
+                title = "草稿箱",
+                subtitle = "未发送的回复、帖子与绘马",
+                onClick = onOpenDrafts,
+            )
+            SettingNavRow(
+                title = "浏览足迹",
+                subtitle = "最近看过的帖子与绘马",
+                onClick = onOpenHistory,
                 showDivider = false,
             )
         }

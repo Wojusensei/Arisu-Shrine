@@ -1,39 +1,65 @@
 package dev.arisu.shrine.feature.profile
 
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Block
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.PersonOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import java.io.File
 import androidx.core.content.FileProvider
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import dev.arisu.shrine.core.components.ArisuTextField
 import dev.arisu.shrine.core.components.ArisuTopBar
 import dev.arisu.shrine.core.components.SectionCard
@@ -41,6 +67,12 @@ import dev.arisu.shrine.core.components.SectionLabel
 import dev.arisu.shrine.core.components.SettingNavRow
 import dev.arisu.shrine.core.components.SettingSwitchRow
 import dev.arisu.shrine.core.design.ArisuTheme
+import dev.arisu.shrine.core.design.NeuInsetDeep
+import dev.arisu.shrine.core.design.NeuLight
+import dev.arisu.shrine.core.design.NeuShadow
+import dev.arisu.shrine.core.design.ReadingScale
+import dev.arisu.shrine.core.design.Vermilion
+import dev.arisu.shrine.data.ReadingPrefs
 import dev.arisu.shrine.data.ThemePrefs
 import dev.arisu.shrine.data.remote.ProfilePatchReq
 import dev.arisu.shrine.data.remote.toApiMessage
@@ -152,6 +184,12 @@ fun SettingsScreen(
                     },
                     showDivider = false,
                 )
+            }
+
+            Spacer(Modifier.height(6.dp))
+            SectionLabel("阅读")
+            SectionCard {
+                ReadingSizeRow()
             }
 
             Spacer(Modifier.height(6.dp))
@@ -499,5 +537,177 @@ fun SettingsScreen(
                 TextButton(onClick = { notice = null }) { Text("知道了") }
             },
         )
+    }
+}
+
+@Composable
+private fun ReadingSizeRow() {
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.FormatSize,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.size(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = "正文字号",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = "仅影响正文阅读，不改变界面字号",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .padding(start = 18.dp, end = 18.dp)
+                .padding(bottom = 14.dp),
+        ) {
+            ReadingSizeSlider()
+        }
+    }
+}
+
+@Composable
+private fun ReadingSizeSlider() {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    var selected by remember {
+        mutableIntStateOf(ReadingScale.steps.indexOf(ReadingScale.nearest(ReadingScale.value)))
+    }
+
+    var dragValue by remember { mutableFloatStateOf(selected.toFloat()) }
+    var dragging by remember { mutableStateOf(false) }
+
+    fun pick(index: Int) {
+        val idx = index.coerceIn(0, ReadingScale.steps.lastIndex)
+        if (idx == selected) return
+        selected = idx
+        ReadingScale.apply(ReadingScale.steps[idx])
+        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+    }
+
+    fun persist() {
+        scope.launch { ReadingPrefs.setScale(context, ReadingScale.steps[selected]) }
+    }
+
+    BoxWithConstraints(
+        Modifier
+            .fillMaxWidth()
+            .height(68.dp)
+            .pointerInput(Unit) {
+                fun fractionAt(x: Float): Float {
+                    val start = 14.dp.toPx()
+                    val end = size.width - 14.dp.toPx()
+                    if (end <= start) return 0f
+                    return ((x - start) / (end - start) * 3f).coerceIn(0f, 3f)
+                }
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    dragging = true
+                    dragValue = fractionAt(down.position.x)
+                    pick(dragValue.roundToInt())
+                    down.consume()
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                        dragValue = fractionAt(change.position.x)
+                        pick(dragValue.roundToInt())
+                        change.consume()
+                    }
+                    dragging = false
+                    persist()
+                }
+            },
+    ) {
+        val inset = 14.dp
+        val trackStart = inset
+        val trackEnd = maxWidth - inset
+        val span = (trackEnd - trackStart).coerceAtLeast(0.dp)
+        val thumbFraction by animateFloatAsState(
+            targetValue = if (dragging) dragValue else selected.toFloat(),
+            animationSpec = if (dragging) snap() else spring(dampingRatio = 0.78f, stiffness = 520f),
+            label = "readingThumb",
+        )
+        val thumbCenter = trackStart + span * (thumbFraction / 3f)
+
+        Box(
+            Modifier
+                .offset(x = trackStart, y = 20.dp)
+                .width(span)
+                .height(8.dp)
+                .clip(CircleShape)
+                .background(NeuInsetDeep)
+        )
+        Box(
+            Modifier
+                .offset(x = trackStart, y = 20.dp)
+                .width((thumbCenter - trackStart).coerceAtLeast(0.dp))
+                .height(8.dp)
+                .clip(CircleShape)
+                .background(Vermilion.copy(alpha = 0.32f))
+        )
+        ReadingScale.labels.forEachIndexed { index, _ ->
+            val x = trackStart + span * (index / 3f)
+            Box(
+                Modifier
+                    .offset(x = x - 2.dp, y = 22.dp)
+                    .size(4.dp)
+                    .clip(CircleShape)
+                    .background(if (index <= selected) Vermilion else NeuShadow.copy(alpha = 0.45f))
+            )
+        }
+        Box(
+            Modifier
+                .offset(x = thumbCenter - 14.dp, y = 10.dp)
+                .size(28.dp)
+                .shadow(5.dp, CircleShape, ambientColor = NeuLight, spotColor = NeuShadow)
+                .background(Vermilion, CircleShape)
+                .border(2.dp, NeuLight, CircleShape)
+        )
+        Layout(
+            content = {
+                ReadingScale.labels.forEachIndexed { index, label ->
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (index == selected) Vermilion
+                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = if (index == selected) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset(y = 42.dp),
+        ) { measurables, constraints ->
+            val width = constraints.maxWidth
+            val placeables = measurables.map { it.measure(Constraints()) }
+            val height = placeables.maxOfOrNull { it.height } ?: 0
+            layout(width, height) {
+                val start = 14.dp.roundToPx()
+                val end = width - 14.dp.roundToPx()
+                placeables.forEachIndexed { index, placeable ->
+                    val center = start + ((end - start) * index / 3f).roundToInt()
+                    val x = (center - placeable.width / 2).coerceIn(0, (width - placeable.width).coerceAtLeast(0))
+                    placeable.place(x, 0)
+                }
+            }
+        }
     }
 }

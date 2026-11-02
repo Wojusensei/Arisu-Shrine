@@ -26,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.MoreVert
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Send
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.rounded.EmojiEmotions
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import dev.arisu.shrine.core.components.ArisuAvatar
 import dev.arisu.shrine.core.components.ArisuTopBar
 import dev.arisu.shrine.core.components.ArisuTextField
+import dev.arisu.shrine.core.components.DraftRestoredBanner
 import dev.arisu.shrine.core.components.HairlineDivider
 import dev.arisu.shrine.core.components.RoleTag
 import dev.arisu.shrine.core.components.SectionLabel
@@ -76,11 +78,17 @@ import dev.arisu.shrine.core.design.NeuBaseHigh
 import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.design.Vermilion
 import dev.arisu.shrine.core.markdown.MarkdownText
+import dev.arisu.shrine.data.local.Draft
+import dev.arisu.shrine.data.local.DraftStore
+import dev.arisu.shrine.data.local.HistoryStore
 import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
+import dev.arisu.shrine.feature.share.ShareCard
+import dev.arisu.shrine.feature.share.ShareCardData
 import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import dev.arisu.shrine.data.model.EmaReply
 import dev.arisu.shrine.data.model.EmaState
@@ -106,6 +114,8 @@ fun EmaDetailScreen(
     var deleteTarget by remember { mutableStateOf<dev.arisu.shrine.data.model.Ema?>(null) }
 
     var reply by rememberSaveable { mutableStateOf("") }
+    var replyLoaded by rememberSaveable(emaId) { mutableStateOf(false) }
+    var replyRestored by rememberSaveable(emaId) { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
 
     var ema by remember { mutableStateOf(Shrine.peekEma(emaId)) }
@@ -114,6 +124,7 @@ fun EmaDetailScreen(
     val me by Shrine.me.collectAsStateWithLifecycle()
     var pendingReplyDelete by remember { mutableStateOf<EmaReply?>(null) }
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     fun refresh() {
         scope.launch {
@@ -134,7 +145,49 @@ fun EmaDetailScreen(
         }
     }
 
-    LaunchedEffect(emaId) { refresh() }
+    LaunchedEffect(emaId) {
+        refresh()
+        if (!replyLoaded) {
+            val uid = Shrine.me.value?.id
+            if (uid != null && reply.isBlank()) {
+                val saved = DraftStore.get(uid, DraftStore.COMMENT_EMA, emaId.toString())
+                if (saved != null && saved.body.isNotBlank()) {
+                    reply = saved.body
+                    replyRestored = true
+                }
+            }
+
+            replyLoaded = true
+        }
+    }
+
+    LaunchedEffect(ema?.id) {
+        val e = ema ?: return@LaunchedEffect
+        val uid = Shrine.me.value?.id ?: return@LaunchedEffect
+        HistoryStore.visit(
+            uid, HistoryStore.EMA, emaId.toString(), e.title,
+            e.tags.joinToString(" · ") { it.label },
+        )
+    }
+
+    LaunchedEffect(reply, replyLoaded, ema?.title) {
+        if (!replyLoaded) return@LaunchedEffect
+        val uid = Shrine.me.value?.id ?: return@LaunchedEffect
+        if (reply.isBlank()) {
+            DraftStore.deleteAsync(uid, DraftStore.COMMENT_EMA, emaId.toString())
+            return@LaunchedEffect
+        }
+        delay(600)
+        DraftStore.saveAsync(
+            Draft(
+                userId = uid,
+                kind = DraftStore.COMMENT_EMA,
+                targetId = emaId.toString(),
+                targetTitle = ema?.title.orEmpty(),
+                body = reply,
+            ),
+        )
+    }
 
     val canModerate = me?.role?.canModerate ?: false
     val isAuthor = ema?.authorId == me?.id
@@ -160,6 +213,29 @@ fun EmaDetailScreen(
                                 canEdit = isAuthor,
                                 canDelete = isAuthor || canModerate,
                                 onDismiss = { menuOpen = false },
+                                onShare = {
+                                    menuOpen = false
+                                    val e = menuEma
+                                    scope.launch {
+                                        try {
+                                            ShareCard.share(
+                                                context,
+                                                ShareCardData(
+                                                    kind = "绘马",
+                                                    meta = e.tags.joinToString(" · ") { it.label },
+                                                    id = "#${e.id}",
+                                                    title = e.title,
+                                                    body = ShareCard.plainText(e.body),
+                                                    author = e.authorName,
+                                                    time = e.createdAt,
+                                                ),
+                                            )
+                                        } catch (ex: Exception) {
+                                            if (ex is kotlinx.coroutines.CancellationException) throw ex
+                                            notice = ex.toApiMessage()
+                                        }
+                                    }
+                                },
                                 onReport = {
                                     menuOpen = false
                                     reportOpen = true
@@ -391,41 +467,51 @@ fun EmaDetailScreen(
                             modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 96.dp),
                         )
 
-                        ReplyComposer(
-                            value = reply,
-
-                            onValueChange = { if (it.length <= 1000) reply = it },
-                            onEmoji = { showEmoji = true },
-                            onSend = {
-                                val text = reply.trim()
-                                if (text.isNotEmpty() && !sending) {
-                                    sending = true
-                                    scope.launch {
-                                        try {
-                                            val created = Shrine.addEmaReply(emaId, text)
-
-                                            replies = replies + created
-                                            ema = ema0.copy(replyCount = replies.size)
-                                            reply = ""
-                                            try {
-                                                replies = Shrine.emaReplies(emaId)
-                                                ema = ema0.copy(replyCount = replies.size)
-                                            } catch (e: Exception) {
-                                                if (e is kotlinx.coroutines.CancellationException) throw e
-                                            }
-                                        } catch (e: Exception) {
-                                            if (e is kotlinx.coroutines.CancellationException) throw e
-                                            notice = e.toApiMessage()
-                                        }
-                                        sending = false
-                                    }
-                                }
-                            },
-                            modifier = Modifier
+                        Column(
+                            Modifier
                                 .align(Alignment.BottomCenter)
                                 .windowInsetsPadding(WindowInsets.navigationBars)
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
-                        )
+                        ) {
+                            if (replyRestored) {
+                                DraftRestoredBanner(onDismiss = { replyRestored = false })
+                            }
+                            ReplyComposer(
+                                value = reply,
+
+                                onValueChange = { if (it.length <= 1000) reply = it },
+                                onEmoji = { showEmoji = true },
+                                onSend = {
+                                    val text = reply.trim()
+                                    if (text.isNotEmpty() && !sending) {
+                                        sending = true
+                                        scope.launch {
+                                            try {
+                                                val created = Shrine.addEmaReply(emaId, text)
+
+                                                replies = replies + created
+                                                ema = ema0.copy(replyCount = replies.size)
+                                                reply = ""
+                                                Shrine.me.value?.id?.let {
+                                                    DraftStore.deleteAsync(it, DraftStore.COMMENT_EMA, emaId.toString())
+                                                }
+                                                try {
+                                                    replies = Shrine.emaReplies(emaId)
+                                                    ema = ema0.copy(replyCount = replies.size)
+                                                } catch (e: Exception) {
+                                                    if (e is kotlinx.coroutines.CancellationException) throw e
+                                                }
+                                            } catch (e: Exception) {
+                                                if (e is kotlinx.coroutines.CancellationException) throw e
+                                                notice = e.toApiMessage()
+                                            }
+                                            sending = false
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
                     }
                 }
             }
@@ -440,11 +526,19 @@ private fun EmaMoreMenu(
     canEdit: Boolean,
     canDelete: Boolean,
     onDismiss: () -> Unit,
+    onShare: () -> Unit,
     onReport: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
 ) {
     DropdownMenu(expanded = true, onDismissRequest = onDismiss) {
+        DropdownMenuItem(
+            text = { Text("生成分享卡片") },
+            leadingIcon = {
+                Icon(Icons.Rounded.Share, null, modifier = Modifier.size(18.dp))
+            },
+            onClick = onShare,
+        )
         if (canReport) {
             DropdownMenuItem(
                 text = { Text("举报") },

@@ -3,4 +3,5 @@
     <files-path name="camera" path="camera/" />
     <cache-path name="upload" path="upload/" />
     <cache-path name="export" path="export/" />
+    <cache-path name="share" path="share/" />
 </paths>

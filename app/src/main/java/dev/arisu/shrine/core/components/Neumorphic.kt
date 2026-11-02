@@ -311,7 +311,7 @@ fun PageBackground(
             .background(NeuBase)
             .background(
                 Brush.verticalGradient(
-                    0.0f to Vermilion.copy(alpha = 0.05f),
+                    0.0f to Vermilion.copy(alpha = 0.035f),
                     0.32f to Color.Transparent,
                 )
             )
@@ -329,7 +329,7 @@ fun PageBackground(
 
 fun Modifier.headerAtmosphere(): Modifier = this.background(
     Brush.verticalGradient(
-        0.0f to Vermilion.copy(alpha = 0.05f),
+        0.0f to Vermilion.copy(alpha = 0.035f),
         1.0f to Color.Transparent,
     )
 )

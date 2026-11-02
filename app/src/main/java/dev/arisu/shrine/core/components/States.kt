@@ -146,6 +146,7 @@ fun ShrineEmptyState(
     note: String,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    title: String = "少女祈祷中",
 ) {
     FadeIn(modifier = modifier) {
         Column(
@@ -203,7 +204,7 @@ fun ShrineEmptyState(
             }
             Spacer(Modifier.height(20.dp))
             Text(
-                text = "少女祈祷中",
+                text = title,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )

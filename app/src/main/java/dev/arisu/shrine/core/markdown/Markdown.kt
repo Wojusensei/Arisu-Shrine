@@ -52,12 +52,14 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.arisu.shrine.core.design.ReadingScale
 import dev.arisu.shrine.core.design.Celadon
 import dev.arisu.shrine.core.design.Gold
 import dev.arisu.shrine.core.design.Indigo
@@ -591,6 +593,10 @@ fun MarkdownText(
     mentionNames: Map<String, String>? = null,
 ) {
     val blocks = remember(markdown, naturalImages) { parseMarkdown(markdown, naturalImages) }
+
+    val bodyStyle = ReadingScale.of(style)
+    fun readingStyle(text: String): TextStyle =
+        if (text.length <= 60) ReadingScale.of(style, balanced = true) else bodyStyle
     val codeBg = MaterialTheme.colorScheme.surfaceVariant
     val codeColor = MaterialTheme.colorScheme.onSurfaceVariant
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -605,12 +611,13 @@ fun MarkdownText(
             blocks.forEach { block ->
                 when (block) {
                     is MdBlock.Heading -> {
-                        val (size, weight) = when (block.level) {
+                        val (baseSize, weight) = when (block.level) {
                             1 -> 22.sp to FontWeight.Bold
                             2 -> 18.sp to FontWeight.Bold
                             3 -> 16.sp to FontWeight.SemiBold
                             else -> 15.sp to FontWeight.SemiBold
                         }
+                        val size = ReadingScale.sp(baseSize)
                         CenteredBlock(block.centered) {
                         Column {
                             if (block.level <= 2) {
@@ -624,14 +631,24 @@ fun MarkdownText(
                                     Spacer(Modifier.width(8.dp))
                                     Text(
                                         text = renderInline(block.text, color, codeBg, codeColor, onMentionClick, mentionNames),
-                                        style = style.copy(fontSize = size, fontWeight = weight, lineHeight = size * 1.35f),
+                                        style = style.copy(
+                                            fontSize = size,
+                                            fontWeight = weight,
+                                            lineHeight = size * 1.35f,
+                                            lineBreak = LineBreak.Heading,
+                                        ),
                                         color = color,
                                     )
                                 }
                             } else {
                                 Text(
                                     text = renderInline(block.text, color, codeBg, codeColor, onMentionClick, mentionNames),
-                                    style = style.copy(fontSize = size, fontWeight = weight, lineHeight = size * 1.35f),
+                                    style = style.copy(
+                                        fontSize = size,
+                                        fontWeight = weight,
+                                        lineHeight = size * 1.35f,
+                                        lineBreak = LineBreak.Heading,
+                                    ),
                                     color = color,
                                 )
                             }
@@ -642,7 +659,7 @@ fun MarkdownText(
                     is MdBlock.Paragraph -> CenteredBlock(block.centered) {
                         Text(
                             text = renderInline(block.text, color, codeBg, codeColor, onMentionClick, mentionNames),
-                            style = style,
+                            style = readingStyle(block.text),
                             color = color,
                             textAlign = if (block.centered) androidx.compose.ui.text.style.TextAlign.Center
                             else androidx.compose.ui.text.style.TextAlign.Start,
@@ -655,7 +672,7 @@ fun MarkdownText(
                             Row {
                                 Box(
                                     Modifier
-                                        .padding(top = style.fontSize.value.dp * 0.62f)
+                                        .padding(top = bodyStyle.fontSize.value.dp * 0.62f)
                                         .size(5.dp)
                                         .clip(RoundedCornerShape(3.dp))
                                         .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.75f))
@@ -663,7 +680,7 @@ fun MarkdownText(
                                 Spacer(Modifier.width(9.dp))
                                 Text(
                                     text = renderInline(item, color, codeBg, codeColor, onMentionClick, mentionNames),
-                                    style = style,
+                                    style = readingStyle(item),
                                     color = color,
                                 )
                             }
@@ -675,13 +692,13 @@ fun MarkdownText(
                             Row {
                                 Text(
                                     text = "${index + 1}.",
-                                    style = style.copy(fontWeight = FontWeight.SemiBold),
+                                    style = bodyStyle.copy(fontWeight = FontWeight.SemiBold),
                                     color = MaterialTheme.colorScheme.primary,
                                 )
                                 Spacer(Modifier.width(7.dp))
                                 Text(
                                     text = renderInline(item, color, codeBg, codeColor, onMentionClick, mentionNames),
-                                    style = style,
+                                    style = readingStyle(item),
                                     color = color,
                                 )
                             }
@@ -739,8 +756,9 @@ fun MarkdownText(
                                 text = codeAnnotated(block.code, block.lang),
                                 style = style.copy(
                                     fontFamily = FontFamily.Monospace,
-                                    fontSize = 12.sp,
-                                    lineHeight = 18.sp,
+                                    fontSize = ReadingScale.sp(12.sp),
+                                    lineHeight = ReadingScale.sp(18.sp),
+                                    lineBreak = LineBreak.Simple,
                                 ),
                                 color = MaterialTheme.colorScheme.onSurface,
                                 modifier = Modifier
@@ -765,13 +783,13 @@ fun MarkdownText(
                         )
                         Text(
                             text = renderInline(block.text, color, codeBg, codeColor, onMentionClick, mentionNames),
-                            style = style.copy(fontStyle = FontStyle.Italic),
+                            style = readingStyle(block.text).copy(fontStyle = FontStyle.Italic),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 13.dp, vertical = 11.dp),
                         )
                     }
 
-                    is MdBlock.Table -> MarkdownTable(block, style, color, onMentionClick, mentionNames)
+                    is MdBlock.Table -> MarkdownTable(block, bodyStyle, color, onMentionClick, mentionNames)
 
                     is MdBlock.Tasks -> Column(Modifier.fillMaxWidth()) {
                         block.items.forEach { (done, text) ->
@@ -791,7 +809,7 @@ fun MarkdownText(
                                     text = renderInline(
                                         text, color, codeBg, codeColor, onMentionClick, mentionNames,
                                     ),
-                                    style = style,
+                                    style = readingStyle(text),
                                     color = if (done) InkFaint else color,
                                 )
                             }
@@ -889,7 +907,7 @@ private fun MarkdownTable(
             block.header.forEach { cell ->
                 Text(
                     text = renderInline(cell, color, codeBg, codeColor, onMentionClick, mentionNames),
-                    style = style.copy(fontWeight = FontWeight.SemiBold, fontSize = 13.sp),
+                    style = style.copy(fontWeight = FontWeight.SemiBold, fontSize = ReadingScale.sp(13.sp)),
                     color = color,
                     modifier = Modifier
                         .weight(1f)
@@ -910,7 +928,7 @@ private fun MarkdownTable(
                 row.forEach { cell ->
                     Text(
                         text = renderInline(cell, color, codeBg, codeColor, onMentionClick, mentionNames),
-                        style = style.copy(fontSize = 13.sp),
+                        style = style.copy(fontSize = ReadingScale.sp(13.sp)),
                         color = color,
                         modifier = Modifier
                             .weight(1f)

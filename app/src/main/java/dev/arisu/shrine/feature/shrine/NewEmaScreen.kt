@@ -34,6 +34,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -66,7 +67,10 @@ import dev.arisu.shrine.core.markdown.MdMark
 import dev.arisu.shrine.core.markdown.insertMark
 import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
+import dev.arisu.shrine.data.local.Draft
+import dev.arisu.shrine.data.local.DraftStore
 import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import dev.arisu.shrine.data.model.EmaTag
 
@@ -101,11 +105,48 @@ fun NewEmaScreen(
         mutableStateOf(TextFieldValue(editEma?.body ?: ""))
     }
     val tags = remember(editEma) { mutableStateListOf<EmaTag>().apply { editEma?.tags?.let { addAll(it) } } }
+    var draftLoaded by rememberSaveable(editEma) { mutableStateOf(editEma != null) }
     var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val bodyField = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        if (editEma != null || draftLoaded) return@LaunchedEffect
+        val uid = Shrine.me.value?.id
+        if (uid != null && title.isBlank() && body.text.isBlank() && tags.isEmpty()) {
+            val saved = DraftStore.get(uid, DraftStore.EMA, "new")
+            if (saved != null) {
+                title = saved.title
+                body = TextFieldValue(saved.body)
+                tags.clear()
+                saved.tags.mapNotNullTo(tags) { wire -> EmaTag.entries.firstOrNull { it.label == wire } }
+            }
+        }
+
+        draftLoaded = true
+    }
+
+    LaunchedEffect(title, body.text, tags.toList(), draftLoaded) {
+        if (editEma != null || !draftLoaded) return@LaunchedEffect
+        val uid = Shrine.me.value?.id ?: return@LaunchedEffect
+        if (title.isBlank() && body.text.isBlank() && tags.isEmpty()) {
+            DraftStore.deleteAsync(uid, DraftStore.EMA, "new")
+            return@LaunchedEffect
+        }
+        delay(600)
+        DraftStore.saveAsync(
+            Draft(
+                userId = uid,
+                kind = DraftStore.EMA,
+                targetId = "new",
+                title = title,
+                body = body.text,
+                tags = tags.map { it.label },
+            ),
+        )
+    }
 
     val canSubmit = title.isNotBlank() && body.text.isNotBlank() && !submitting
 
@@ -130,7 +171,7 @@ fun NewEmaScreen(
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmDiscard = false },
             title = { Text("放弃撰写？") },
-            text = { Text("尚未发布的内容不会被保存。") },
+            text = { Text(if (editEma != null) "尚未保存的修改不会被保留。" else "尚未发布的内容会留在草稿箱。") },
             confirmButton = {
                 androidx.compose.material3.TextButton(
                     onClick = { confirmDiscard = false; onBack() },
@@ -158,6 +199,9 @@ fun NewEmaScreen(
                                 Shrine.updateEma(editEma.id, title.trim(), body.text.trim(), tags.toList())
                             } else {
                                 Shrine.createEma(title.trim(), body.text.trim(), tags.toList())
+                            }
+                            if (editEma == null) {
+                                Shrine.me.value?.id?.let { DraftStore.deleteAsync(it, DraftStore.EMA, "new") }
                             }
                             onCreated(ema.id)
                         } catch (e: Exception) {

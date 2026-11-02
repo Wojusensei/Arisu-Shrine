@@ -34,6 +34,7 @@ val EmojiPalette = listOf(
 
 private enum class SheetTab(val label: String) {
     EMOJI("表情"),
+    KAOMOJI("颜文字"),
     STICKER("表情包"),
 }
 
@@ -45,26 +46,26 @@ fun EmojiSheet(
     onSticker: ((Sticker) -> Unit)? = null,
 ) {
     var tab by remember { mutableStateOf(SheetTab.EMOJI) }
+
+    val tabs = remember(onSticker) {
+        if (onSticker != null) {
+            listOf(SheetTab.EMOJI, SheetTab.KAOMOJI, SheetTab.STICKER)
+        } else {
+            listOf(SheetTab.EMOJI, SheetTab.KAOMOJI)
+        }
+    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier
                 .fillMaxWidth()
                 .padding(start = 20.dp, end = 20.dp, bottom = 28.dp)
         ) {
-            if (onSticker != null) {
-                UnderlineTabs(
-                    items = SheetTab.entries,
-                    selected = tab,
-                    onSelect = { tab = it },
-                    label = { it.label },
-                )
-            } else {
-                Text(
-                    text = "表情",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
+            UnderlineTabs(
+                items = tabs,
+                selected = tab,
+                onSelect = { tab = it },
+                label = { it.label },
+            )
             Spacer(Modifier.height(12.dp))
 
             when (tab) {
@@ -92,6 +93,13 @@ fun EmojiSheet(
                     }
                     Spacer(Modifier.height(6.dp))
                 }
+
+                SheetTab.KAOMOJI -> KaomojiPanel(
+                    onPick = { text ->
+                        onSelect(text)
+                        onDismiss()
+                    },
+                )
 
                 SheetTab.STICKER -> if (onSticker != null) {
                     StickerPanel(onPick = { sticker ->

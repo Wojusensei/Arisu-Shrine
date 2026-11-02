@@ -12,6 +12,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import dev.arisu.shrine.core.design.ArisuShrineTheme
 import dev.arisu.shrine.core.design.ArisuTheme
+import dev.arisu.shrine.core.design.ReadingScale
+import dev.arisu.shrine.data.ReadingPrefs
 import dev.arisu.shrine.data.ThemePrefs
 import dev.arisu.shrine.nav.ArisuApp
 import kotlinx.coroutines.runBlocking
@@ -19,10 +21,12 @@ import kotlinx.coroutines.runBlocking
 class MainActivity : ComponentActivity() {
 
     private var nightOverride: Boolean? = null
+    private var readingScale: Float = 1f
 
     override fun attachBaseContext(newBase: Context) {
 
         nightOverride = runBlocking { ThemePrefs.currentNightOverride(newBase) }
+        readingScale = runBlocking { ReadingPrefs.currentScale(newBase) }
         val dark = nightOverride ?: false
         val config = Configuration(newBase.resources.configuration)
         config.uiMode = (config.uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
@@ -35,6 +39,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         ArisuTheme.apply(nightOverride)
+        ReadingScale.apply(readingScale)
         setContent {
             ArisuShrineTheme {
                 Surface(

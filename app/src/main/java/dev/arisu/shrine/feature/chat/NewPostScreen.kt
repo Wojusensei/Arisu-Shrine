@@ -48,6 +48,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -84,6 +85,8 @@ import dev.arisu.shrine.core.markdown.insertMark
 import dev.arisu.shrine.core.markdown.withText
 import dev.arisu.shrine.core.media.downloadImageToFile
 import dev.arisu.shrine.core.media.stagePickedImage
+import dev.arisu.shrine.data.local.Draft
+import dev.arisu.shrine.data.local.DraftStore
 import dev.arisu.shrine.data.model.Board
 import dev.arisu.shrine.data.model.Post
 import dev.arisu.shrine.data.remote.toApiMessage
@@ -94,6 +97,7 @@ import java.io.File
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -124,9 +128,50 @@ fun NewPostScreen(
     var showMention by remember { mutableStateOf(false) }
     var publishing by remember { mutableStateOf(false) }
     var coverUrl by rememberSaveable(editPost) { mutableStateOf(editPost?.coverUrl?.takeIf { it.isNotBlank() }) }
+
+    var draftLoaded by rememberSaveable(editPost) { mutableStateOf(editPost != null) }
     var error by remember { mutableStateOf<String?>(null) }
     val bodyField = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(Unit) {
+        if (editPost != null || draftLoaded) return@LaunchedEffect
+        val uid = Shrine.me.value?.id
+        if (uid != null && title.isBlank() && intro.isBlank() && body.text.isBlank() && coverUrl == null) {
+            val saved = DraftStore.get(uid, DraftStore.POST, "new")
+            if (saved != null) {
+                title = saved.title
+                intro = saved.intro
+                body = TextFieldValue(saved.body)
+                coverUrl = saved.coverUrl
+                Board.entries.firstOrNull { it.name == saved.board }?.let { board = it }
+            }
+        }
+
+        draftLoaded = true
+    }
+
+    LaunchedEffect(title, intro, body.text, board, coverUrl, draftLoaded) {
+        if (editPost != null || !draftLoaded) return@LaunchedEffect
+        val uid = Shrine.me.value?.id ?: return@LaunchedEffect
+        if (title.isBlank() && intro.isBlank() && body.text.isBlank() && coverUrl == null) {
+            DraftStore.deleteAsync(uid, DraftStore.POST, "new")
+            return@LaunchedEffect
+        }
+        delay(600)
+        DraftStore.saveAsync(
+            Draft(
+                userId = uid,
+                kind = DraftStore.POST,
+                targetId = "new",
+                title = title,
+                intro = intro,
+                body = body.text,
+                board = board.name,
+                coverUrl = coverUrl,
+            ),
+        )
+    }
 
     val staged = remember { mutableStateListOf<StagedImage>() }
     var coverFile by remember { mutableStateOf<File?>(null) }
@@ -309,6 +354,9 @@ fun NewPostScreen(
                 staged.clear()
                 coverFile?.delete()
                 coverFile = null
+                if (editPost == null) {
+                    Shrine.me.value?.id?.let { DraftStore.deleteAsync(it, DraftStore.POST, "new") }
+                }
                 onPublished(post.id)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -362,7 +410,7 @@ fun NewPostScreen(
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmDiscard = false },
             title = { Text(if (editPost != null) "放弃修改？" else "放弃撰写？") },
-            text = { Text(if (editPost != null) "尚未保存的修改不会被保留。" else "尚未发布的内容不会被保存。") },
+            text = { Text(if (editPost != null) "尚未保存的修改不会被保留。" else "尚未发布的内容会留在草稿箱。") },
             confirmButton = {
                 androidx.compose.material3.TextButton(
                     onClick = {
