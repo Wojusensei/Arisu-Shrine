@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.ImageDecoder
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -102,12 +103,22 @@ fun readExifDegrees(file: File): Int = runCatching {
 fun decodeForEdit(file: File, maxDim: Int): Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeFile(file.absolutePath, bounds)
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return decodeWithImageDecoder(file, maxDim)
     val opts = BitmapFactory.Options().apply {
         inSampleSize = imageSampleSize(bounds.outWidth, bounds.outHeight, maxDim)
     }
-    val src = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return null
+    val src = BitmapFactory.decodeFile(file.absolutePath, opts) ?: return decodeWithImageDecoder(file, maxDim)
     return rotateBitmap(src, readExifDegrees(file))
+}
+
+private fun decodeWithImageDecoder(file: File, maxDim: Int): Bitmap? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+    return runCatching {
+        ImageDecoder.decodeBitmap(ImageDecoder.createSource(file)) { decoder, info, _ ->
+            decoder.setTargetSampleSize(imageSampleSize(info.size.width, info.size.height, maxDim))
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+        }
+    }.getOrNull()
 }
 
 fun scaleDownTo(bmp: Bitmap, maxDim: Int): Bitmap {

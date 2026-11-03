@@ -215,6 +215,8 @@ fun PostDetailScreen(
     var sending by remember { mutableStateOf(false) }
     var showMention by remember { mutableStateOf(false) }
 
+    var mentionAt by remember { mutableStateOf(-1) }
+
     suspend fun refresh() {
         try {
             val p = Shrine.post(postId)
@@ -695,9 +697,15 @@ fun PostDetailScreen(
                             uploadProgress = uploadProgress,
                             onDraftChange = { new ->
 
-                                if (new.length == draft.length + 1 && new.endsWith("@")) showMention = true
-
-                                if (new.length <= 2000) draft = new
+                                if (new.length <= 2000) {
+                                    insertedAt(draft, new)?.let { at ->
+                                        if (new[at] == '@') {
+                                            mentionAt = at
+                                            showMention = true
+                                        }
+                                    }
+                                    draft = new
+                                }
                             },
                             onEmoji = { showEmoji = true },
                             onPickImage = pickImage@{ uri ->
@@ -979,9 +987,18 @@ fun PostDetailScreen(
         if (showMention) {
             MentionPickerSheet(
                 visible = true,
-                onDismiss = { showMention = false },
+                onDismiss = {
+                    showMention = false
+                    mentionAt = -1
+                },
                 onPick = { u ->
-                    draft = draft.dropLast(1) + "@" + u.id + " "
+                    val at = mentionAt.takeIf { it in draft.indices && draft[it] == '@' }
+                    draft = if (at != null) {
+                        draft.replaceRange(at, at + 1, "@${u.id} ")
+                    } else {
+                        draft.dropLast(1) + "@${u.id} "
+                    }
+                    mentionAt = -1
                     showMention = false
                 },
             )
@@ -1705,4 +1722,11 @@ private fun SheetButton(text: String, enabled: Boolean, onClick: () -> Unit, mod
             else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
+}
+
+private fun insertedAt(old: String, new: String): Int? {
+    if (new.length != old.length + 1) return null
+    var i = 0
+    while (i < old.length && old[i] == new[i]) i++
+    return i
 }

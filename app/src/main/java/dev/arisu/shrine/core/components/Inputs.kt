@@ -126,6 +126,8 @@ fun ArisuTextField(
     visualTransformation: VisualTransformation = VisualTransformation.None,
     enabled: Boolean = true,
     containerColor: Color = NeuInset,
+
+    fieldModifier: Modifier = Modifier,
 ) {
     ArisuFieldShell(
         isEmpty = value.isEmpty(),
@@ -148,7 +150,9 @@ fun ArisuTextField(
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
             keyboardOptions = keyboardOptions,
             visualTransformation = visualTransformation,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(fieldModifier),
         )
     }
 }

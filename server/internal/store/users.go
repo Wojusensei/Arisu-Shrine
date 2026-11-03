@@ -456,20 +456,28 @@ func (s *Store) OnlineStats(ctx context.Context) (*model.OnlineStats, error) {
 }
 
 func (s *Store) Tiles(ctx context.Context, userID int64) ([]model.Tile, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT day, minutes, posts, comments FROM activity_days
-		WHERE user_id=$1 AND day > (now() AT TIME ZONE 'Asia/Shanghai')::date - 371`, userID)
+
+	rows, err := s.Pool.Query(ctx, `SELECT day, sum(minutes)::int, sum(posts)::int, sum(comments)::int, max(omikuji)::int
+		FROM (
+			SELECT day, minutes, posts, comments, 0 AS omikuji FROM activity_days
+			WHERE user_id=$1 AND day > (now() AT TIME ZONE 'Asia/Shanghai')::date - 371
+			UNION ALL
+			SELECT day, 0, 0, 0, 1 FROM omikuji_draws
+			WHERE user_id=$1 AND day > (now() AT TIME ZONE 'Asia/Shanghai')::date - 371
+		) a
+		GROUP BY day`, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	byDay := map[string][3]int{}
+	byDay := map[string][4]int{}
 	for rows.Next() {
 		var day time.Time
-		var m, p, c int
-		if err := rows.Scan(&day, &m, &p, &c); err != nil {
+		var m, p, c, o int
+		if err := rows.Scan(&day, &m, &p, &c, &o); err != nil {
 			return nil, err
 		}
-		byDay[day.Format("2006-01-02")] = [3]int{m, p, c}
+		byDay[day.Format("2006-01-02")] = [4]int{m, p, c, o}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -481,16 +489,17 @@ func (s *Store) Tiles(ctx context.Context, userID int64) ([]model.Tile, error) {
 		key := d.Format("2006-01-02")
 		t := model.Tile{Date: key}
 		if v, ok := byDay[key]; ok {
-			t.Minutes, t.Posts, t.Comments = v[0], v[1], v[2]
-			t.Score = tileLevel(v[0], v[1], v[2])
+			t.Minutes, t.Posts, t.Comments, t.Omikuji = v[0], v[1], v[2], v[3]
+			t.Score = tileLevel(v[0], v[1], v[2], v[3])
 		}
 		out = append(out, t)
 	}
 	return out, nil
 }
 
-func tileLevel(minutes, posts, comments int) int {
-	score := minutes/15 + posts*3 + comments
+func tileLevel(minutes, posts, comments, omikuji int) int {
+
+	score := minutes/15 + posts*3 + comments + omikuji
 	switch {
 	case score == 0:
 		return 0

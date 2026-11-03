@@ -203,6 +203,31 @@ func (w *Web) resolveReport(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+func (w *Web) searchMentionUsers(c *gin.Context) {
+	v := w.viewer(c)
+	if !w.intervalRateLimitMsg(c, v, 200*time.Millisecond, "查询太频繁，请稍后再试") {
+		return
+	}
+	q := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(c.Query("q")), "@"))
+	if q == "" {
+		c.JSON(http.StatusOK, gin.H{"users": []model.UserBrief{}})
+		return
+	}
+	if len(q) > 100 {
+		w.bad(c, "关键词太长了")
+		return
+	}
+	users, err := w.St.SearchMentionUsers(c.Request.Context(), v.ID, q, 8)
+	if err != nil {
+		w.err(c, http.StatusInternalServerError, "查找失败，请稍后重试")
+		return
+	}
+	if users == nil {
+		users = []model.UserBrief{}
+	}
+	c.JSON(http.StatusOK, gin.H{"users": users})
+}
+
 func (w *Web) search(c *gin.Context) {
 	v := w.viewer(c)
 

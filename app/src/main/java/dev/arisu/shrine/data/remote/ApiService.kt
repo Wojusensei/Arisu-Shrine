@@ -279,6 +279,9 @@ interface ApiService {
     @GET("api/search")
     suspend fun search(@Query("q") q: String, @Query("regex") regex: String): SearchResultDto
 
+    @GET("api/search/users")
+    suspend fun searchUsers(@Query("q") q: String): MentionUsersDto
+
     @GET("api/play/online")
     suspend fun onlineStats(): OnlineStatsDto
 

@@ -106,25 +106,41 @@ fun NewEmaScreen(
     }
     val tags = remember(editEma) { mutableStateListOf<EmaTag>().apply { editEma?.tags?.let { addAll(it) } } }
     var draftLoaded by rememberSaveable(editEma) { mutableStateOf(editEma != null) }
+
+    var draftPrompt by remember { mutableStateOf<Draft?>(null) }
     var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val bodyField = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
 
+    fun keepDraft(saved: Draft) {
+        title = saved.title
+        body = TextFieldValue(saved.body)
+        tags.clear()
+        saved.tags.mapNotNullTo(tags) { wire -> EmaTag.entries.firstOrNull { it.label == wire } }
+        draftLoaded = true
+        draftPrompt = null
+    }
+
+    fun dropDraft() {
+        Shrine.me.value?.id?.let { DraftStore.deleteAsync(it, DraftStore.EMA, "new") }
+        draftLoaded = true
+        draftPrompt = null
+    }
+
     LaunchedEffect(Unit) {
         if (editEma != null || draftLoaded) return@LaunchedEffect
         val uid = Shrine.me.value?.id
         if (uid != null && title.isBlank() && body.text.isBlank() && tags.isEmpty()) {
             val saved = DraftStore.get(uid, DraftStore.EMA, "new")
-            if (saved != null) {
-                title = saved.title
-                body = TextFieldValue(saved.body)
-                tags.clear()
-                saved.tags.mapNotNullTo(tags) { wire -> EmaTag.entries.firstOrNull { it.label == wire } }
+
+            if (saved != null && title.isBlank() && body.text.isBlank() && tags.isEmpty()) {
+
+                draftPrompt = saved
+                return@LaunchedEffect
             }
         }
-
         draftLoaded = true
     }
 
@@ -165,6 +181,25 @@ fun NewEmaScreen(
         body = insertMark(body, MdMark(snippet, caret = caret, block = action.block))
         runCatching { bodyField.requestFocus() }
         keyboard?.show()
+    }
+
+    draftPrompt?.let { saved ->
+        androidx.compose.material3.AlertDialog(
+
+            onDismissRequest = { keepDraft(saved) },
+            title = { Text("继续编辑草稿？") },
+            text = { Text("上次的草稿还没有发布。") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { keepDraft(saved) }) {
+                    Text("继续编辑")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { dropDraft() }) {
+                    Text("重新开始")
+                }
+            },
+        )
     }
 
     if (confirmDiscard) {

@@ -189,6 +189,7 @@ func (w *Web) Router() *gin.Engine {
 		guarded.POST("/reports/:id/resolve", w.resolveReport)
 
 		guarded.GET("/search", w.search)
+		guarded.GET("/search/users", w.searchMentionUsers)
 		guarded.GET("/play/online", w.onlineStats)
 		guarded.POST("/play/omikuji", w.drawOmikuji)
 		guarded.GET("/play/omikuji/today", w.omikujiToday)

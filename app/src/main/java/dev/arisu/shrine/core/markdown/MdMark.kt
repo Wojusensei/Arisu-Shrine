@@ -45,3 +45,24 @@ fun TextFieldValue.withText(newText: String): TextFieldValue =
             selection.max.coerceAtMost(newText.length),
         ),
     )
+
+fun TextFieldValue.replaceSpan(old: String, new: String): TextFieldValue {
+    val at = text.indexOf(old)
+    if (at < 0) return this
+    val delta = new.length - old.length
+    val end = at + old.length
+    fun map(offset: Int): Int = when {
+        offset <= at -> offset
+        offset >= end -> offset + delta
+
+        else -> at + new.length
+    }
+    val replaced = text.replaceRange(at, end, new)
+    return TextFieldValue(
+        replaced,
+        TextRange(
+            map(selection.min).coerceIn(0, replaced.length),
+            map(selection.max).coerceIn(0, replaced.length),
+        ),
+    )
+}

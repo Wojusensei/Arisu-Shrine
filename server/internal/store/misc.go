@@ -88,6 +88,81 @@ func parsePostNo(q string) (int64, bool) {
 	return n, true
 }
 
+func (s *Store) SearchMentionUsers(ctx context.Context, viewerID int64, q string, limit int) ([]model.UserBrief, error) {
+	if limit <= 0 || limit > 20 {
+		limit = 8
+	}
+	raw := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(q), "@"))
+	if raw == "" {
+		return nil, nil
+	}
+
+	idText := ""
+	lower := strings.ToLower(raw)
+	if strings.HasPrefix(lower, "user_") {
+		idText = strings.TrimPrefix(lower, "user_")
+	} else if isDigits(raw) {
+		idText = raw
+	}
+	if n, err := strconv.ParseInt(idText, 10, 64); err == nil && n > 0 {
+
+		idText = strconv.FormatInt(n, 10)
+	} else {
+		idText = ""
+	}
+
+	norm := strings.NewReplacer(" ", "", "　", "").Replace(raw)
+	if norm == "" {
+		norm = raw
+	}
+	rows, err := s.Pool.Query(ctx, `SELECT `+userBriefCols+` FROM users u
+		WHERE u.anonymized=FALSE
+		AND NOT EXISTS (SELECT 1 FROM blocks b WHERE b.blocker_id=$2 AND b.blocked_id=u.id)
+		AND (
+			u.nickname ILIKE '%' || $1 || '%'
+			OR replace(replace(lower(u.nickname), ' ', ''), '　', '') ILIKE '%' || $3 || '%'
+			OR ($4 <> '' AND u.id::text LIKE $4 || '%')
+		)
+		ORDER BY
+			CASE
+				WHEN $4 <> '' AND u.id::text=$4 THEN 0
+				WHEN lower(u.nickname)=lower($1) THEN 1
+				WHEN u.nickname ILIKE $1 || '%' THEN 2
+				WHEN replace(replace(lower(u.nickname), ' ', ''), '　', '') LIKE $3 || '%' THEN 3
+				WHEN u.nickname ILIKE '%' || $1 || '%' THEN 4
+				ELSE 5
+			END,
+			u.id
+		LIMIT `+fmt.Sprint(limit),
+		escapeLike(raw), viewerID, escapeLike(norm), idText)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []model.UserBrief{}
+	for rows.Next() {
+		var id int64
+		var nick, role, avatar string
+		if err := rows.Scan(&id, &nick, &role, &avatar); err != nil {
+			return nil, err
+		}
+		out = append(out, scanBrief(id, nick, role, avatar))
+	}
+	return out, rows.Err()
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Store) SearchUsers(ctx context.Context, viewerID int64, q string, limit int) ([]model.UserBrief, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 20

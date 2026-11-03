@@ -82,6 +82,7 @@ import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.markdown.MARKDOWN_STICKER_ALT
 import dev.arisu.shrine.core.markdown.MdMark
 import dev.arisu.shrine.core.markdown.insertMark
+import dev.arisu.shrine.core.markdown.replaceSpan
 import dev.arisu.shrine.core.markdown.withText
 import dev.arisu.shrine.core.media.downloadImageToFile
 import dev.arisu.shrine.core.media.stagePickedImage
@@ -130,24 +131,40 @@ fun NewPostScreen(
     var coverUrl by rememberSaveable(editPost) { mutableStateOf(editPost?.coverUrl?.takeIf { it.isNotBlank() }) }
 
     var draftLoaded by rememberSaveable(editPost) { mutableStateOf(editPost != null) }
+
+    var draftPrompt by remember { mutableStateOf<Draft?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val bodyField = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+
+    fun keepDraft(saved: Draft) {
+        title = saved.title
+        intro = saved.intro
+        body = TextFieldValue(saved.body)
+        coverUrl = saved.coverUrl
+        Board.entries.firstOrNull { it.name == saved.board }?.let { board = it }
+        draftLoaded = true
+        draftPrompt = null
+    }
+
+    fun dropDraft() {
+        Shrine.me.value?.id?.let { DraftStore.deleteAsync(it, DraftStore.POST, "new") }
+        draftLoaded = true
+        draftPrompt = null
+    }
 
     LaunchedEffect(Unit) {
         if (editPost != null || draftLoaded) return@LaunchedEffect
         val uid = Shrine.me.value?.id
         if (uid != null && title.isBlank() && intro.isBlank() && body.text.isBlank() && coverUrl == null) {
             val saved = DraftStore.get(uid, DraftStore.POST, "new")
-            if (saved != null) {
-                title = saved.title
-                intro = saved.intro
-                body = TextFieldValue(saved.body)
-                coverUrl = saved.coverUrl
-                Board.entries.firstOrNull { it.name == saved.board }?.let { board = it }
+
+            if (saved != null && title.isBlank() && intro.isBlank() && body.text.isBlank() && coverUrl == null) {
+
+                draftPrompt = saved
+                return@LaunchedEffect
             }
         }
-
         draftLoaded = true
     }
 
@@ -195,8 +212,10 @@ fun NewPostScreen(
     androidx.activity.compose.BackHandler(enabled = hasDraft && !publishing) { confirmDiscard = true }
 
     fun stripMark(md: String) {
-        val cleaned = body.text.replace(md, "").replace(Regex("\\n{3,}"), "\n\n")
-        body = body.withText(cleaned.trimEnd())
+
+        val next = body.replaceSpan(md, "")
+        val cleaned = next.text.replace(Regex("\\n{3,}"), "\n\n").trimEnd()
+        body = next.withText(cleaned)
     }
 
     fun upload(item: StagedImage) {
@@ -213,7 +232,7 @@ fun NewPostScreen(
                 val old = item.markdown
 
                 body = if (old != null && body.text.contains(old)) {
-                    body.withText(body.text.replace(old, snippet))
+                    body.replaceSpan(old, snippet)
                 } else {
                     insertMark(body, MdMark("$snippet\n", block = true))
                 }
@@ -406,6 +425,25 @@ fun NewPostScreen(
         return
     }
 
+    draftPrompt?.let { saved ->
+        androidx.compose.material3.AlertDialog(
+
+            onDismissRequest = { keepDraft(saved) },
+            title = { Text("继续编辑草稿？") },
+            text = { Text("上次的草稿还没有发布。") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { keepDraft(saved) }) {
+                    Text("继续编辑")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { dropDraft() }) {
+                    Text("重新开始")
+                }
+            },
+        )
+    }
+
     if (confirmDiscard) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { confirmDiscard = false },
@@ -557,14 +595,16 @@ fun NewPostScreen(
                     value = body,
                     onValueChange = { new ->
 
-                        val caret = new.selection.start
-                        if (new.text.length == body.text.length + 1 && new.selection.collapsed &&
-                            new.text.getOrNull(caret - 1) == '@'
-                        ) {
-                            showMention = true
-                        }
+                        if (new.text.length <= 32000) {
 
-                        if (new.text.length <= 32000) body = new
+                            val caret = new.selection.start
+                            if (new.text.length == body.text.length + 1 && new.selection.collapsed &&
+                                new.text.getOrNull(caret - 1) == '@'
+                            ) {
+                                showMention = true
+                            }
+                            body = new
+                        }
                     },
                     placeholder = "写点什么……\n\n可用 **加粗**、*斜体*、`行内代码`，也可插入列表、引用与图片。",
                     singleLine = false,

@@ -193,6 +193,7 @@ type Tile struct {
 	Posts    int    `json:"posts"`
 	Comments int    `json:"comments"`
 	Minutes  int    `json:"minutes"`
+	Omikuji  int    `json:"omikuji"`
 }
 
 type StaffGroup struct {

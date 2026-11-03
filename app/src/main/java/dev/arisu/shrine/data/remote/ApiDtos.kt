@@ -275,6 +275,11 @@ data class SearchResultDto(
 )
 
 @Serializable
+data class MentionUsersDto(
+    val users: List<UserBriefDto> = emptyList(),
+)
+
+@Serializable
 data class UpdateCheckDto(
     @SerialName("update_available") val updateAvailable: Boolean = false,
     @SerialName("latest_version") val latestVersion: String? = null,

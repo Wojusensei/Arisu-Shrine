@@ -142,4 +142,63 @@ class MdMarkTest {
         val after = insertMark(value("下一段", 0), imageMark)
         assertEquals("![图片](https://x/a.png)\n下一段", after.text)
     }
+
+    private val placeholder = "![图片](上传中-1)"
+    private val snippet = "![图片](https://x/a.png)"
+
+    @Test
+    fun replaceSpanKeepsCaretAfterReplacement() {
+        val text = "$placeholder\n"
+        val after = value(text, text.length).replaceSpan(placeholder, snippet)
+        assertEquals("$snippet\n", after.text)
+        assertEquals(TextRange(snippet.length + 1), after.selection)
+    }
+
+    @Test
+    fun replaceSpanShiftsTextTypedAfterPlaceholder() {
+        val text = "$placeholder\n后半"
+        val after = value(text, text.length).replaceSpan(placeholder, snippet)
+        assertEquals("$snippet\n后半", after.text)
+        assertEquals(TextRange(after.text.length), after.selection)
+    }
+
+    @Test
+    fun replaceSpanCollapsesCaretInsideReplacement() {
+        val after = value(placeholder, 3).replaceSpan(placeholder, snippet)
+        assertEquals(TextRange(snippet.length), after.selection)
+    }
+
+    @Test
+    fun replaceSpanLeavesEarlierCaretAlone() {
+        val after = value("前$placeholder", 1).replaceSpan(placeholder, snippet)
+        assertEquals("前$snippet", after.text)
+        assertEquals(TextRange(1), after.selection)
+    }
+
+    @Test
+    fun replaceSpanRemovesAndPullsCaretBack() {
+        val text = "前${placeholder}后"
+        val after = value(text, text.length).replaceSpan(placeholder, "")
+        assertEquals("前后", after.text)
+        assertEquals(TextRange(2), after.selection)
+    }
+
+    @Test
+    fun replaceSpanMissingTextIsNoOp() {
+        val before = value("正文", 1)
+        assertEquals(before, before.replaceSpan("不存在", "x"))
+    }
+
+    @Test
+    fun firstUploadDoesNotSplitSecondPlaceholder() {
+        val second = "![图片](上传中-2)"
+        var body = insertMark(value("", 0), MdMark("$placeholder\n", block = true))
+        body = insertMark(body, MdMark("$second\n", block = true))
+        body = body.replaceSpan(placeholder, snippet)
+        assertEquals("$snippet\n$second\n", body.text)
+        assertEquals(TextRange(body.text.length), body.selection)
+
+        body = insertMark(body, MdMark("字"))
+        assertEquals("$snippet\n$second\n字", body.text)
+    }
 }

@@ -52,6 +52,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.arisu.shrine.core.components.ArisuAvatar
@@ -77,7 +78,10 @@ import dev.arisu.shrine.core.components.smoothScrollToTop
 import dev.arisu.shrine.core.design.NeuBaseHigh
 import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.design.Vermilion
+import dev.arisu.shrine.core.markdown.MARKDOWN_STICKER_ALT
 import dev.arisu.shrine.core.markdown.MarkdownText
+import dev.arisu.shrine.core.markdown.MdMark
+import dev.arisu.shrine.core.markdown.insertMark
 import dev.arisu.shrine.data.local.Draft
 import dev.arisu.shrine.data.local.DraftStore
 import dev.arisu.shrine.data.local.HistoryStore
@@ -113,7 +117,9 @@ fun EmaDetailScreen(
     var reportOpen by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<dev.arisu.shrine.data.model.Ema?>(null) }
 
-    var reply by rememberSaveable { mutableStateOf("") }
+    var reply by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(""))
+    }
     var replyLoaded by rememberSaveable(emaId) { mutableStateOf(false) }
     var replyRestored by rememberSaveable(emaId) { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
@@ -149,10 +155,10 @@ fun EmaDetailScreen(
         refresh()
         if (!replyLoaded) {
             val uid = Shrine.me.value?.id
-            if (uid != null && reply.isBlank()) {
+            if (uid != null && reply.text.isBlank()) {
                 val saved = DraftStore.get(uid, DraftStore.COMMENT_EMA, emaId.toString())
                 if (saved != null && saved.body.isNotBlank()) {
-                    reply = saved.body
+                    reply = TextFieldValue(saved.body)
                     replyRestored = true
                 }
             }
@@ -170,10 +176,10 @@ fun EmaDetailScreen(
         )
     }
 
-    LaunchedEffect(reply, replyLoaded, ema?.title) {
+    LaunchedEffect(reply.text, replyLoaded, ema?.title) {
         if (!replyLoaded) return@LaunchedEffect
         val uid = Shrine.me.value?.id ?: return@LaunchedEffect
-        if (reply.isBlank()) {
+        if (reply.text.isBlank()) {
             DraftStore.deleteAsync(uid, DraftStore.COMMENT_EMA, emaId.toString())
             return@LaunchedEffect
         }
@@ -184,7 +190,7 @@ fun EmaDetailScreen(
                 kind = DraftStore.COMMENT_EMA,
                 targetId = emaId.toString(),
                 targetTitle = ema?.title.orEmpty(),
-                body = reply,
+                body = reply.text,
             ),
         )
     }
@@ -282,10 +288,11 @@ fun EmaDetailScreen(
 
         if (showEmoji) {
             EmojiSheet(
-                onSelect = { reply += it },
+
+                onSelect = { reply = insertMark(reply, MdMark(it)) },
                 onSticker = { sticker ->
-                    val snippet = "![${dev.arisu.shrine.core.markdown.MARKDOWN_STICKER_ALT}](${sticker.url})"
-                    reply = if (reply.isBlank()) snippet else reply.trimEnd('\n') + "\n" + snippet
+                    val snippet = "![$MARKDOWN_STICKER_ALT](${sticker.url})\n"
+                    reply = insertMark(reply, MdMark(snippet, block = true))
                 },
                 onDismiss = { showEmoji = false },
             )
@@ -479,10 +486,10 @@ fun EmaDetailScreen(
                             ReplyComposer(
                                 value = reply,
 
-                                onValueChange = { if (it.length <= 1000) reply = it },
+                                onValueChange = { if (it.text.length <= 1000) reply = it },
                                 onEmoji = { showEmoji = true },
                                 onSend = {
-                                    val text = reply.trim()
+                                    val text = reply.text.trim()
                                     if (text.isNotEmpty() && !sending) {
                                         sending = true
                                         scope.launch {
@@ -491,7 +498,7 @@ fun EmaDetailScreen(
 
                                                 replies = replies + created
                                                 ema = ema0.copy(replyCount = replies.size)
-                                                reply = ""
+                                                reply = TextFieldValue("")
                                                 Shrine.me.value?.id?.let {
                                                     DraftStore.deleteAsync(it, DraftStore.COMMENT_EMA, emaId.toString())
                                                 }
@@ -717,13 +724,13 @@ private fun EmaReplyRow(
 
 @Composable
 private fun ReplyComposer(
-    value: String,
-    onValueChange: (String) -> Unit,
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
     onEmoji: () -> Unit,
     onSend: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val canSend = value.isNotBlank()
+    val canSend = value.text.isNotBlank()
     Row(
         modifier
             .fillMaxWidth()

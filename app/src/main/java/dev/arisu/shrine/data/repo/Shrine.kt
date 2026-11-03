@@ -1065,6 +1065,9 @@ object Shrine {
         )
     }
 
+    suspend fun searchMentionUsers(q: String): List<User> =
+        apiCall { Api.service.searchUsers(q) }.users.map { it.toUserBrief() }
+
     @Serializable
     data class OnlineStats(val onlineNow: Int, val registered: Int, val todayPeak: Int, val todayMinutes: Int, val totalMinutes: Int)
 
