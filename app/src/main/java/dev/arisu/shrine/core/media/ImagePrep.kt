@@ -18,7 +18,51 @@ const val UPLOAD_MAX_DIM = 2048
 
 private const val KEEP_RAW_BYTES = 700L * 1024
 
-private val PLAIN_TYPES = setOf("image/jpeg", "image/jpg", "image/png", "image/webp")
+fun sniffImageKind(head: ByteArray): String? {
+    fun at(i: Int) = if (i < head.size) head[i].toInt() and 0xff else -1
+    if (at(0) == 0xff && at(1) == 0xd8 && at(2) == 0xff) return "jpeg"
+    if (at(0) == 0x89 && at(1) == 0x50 && at(2) == 0x4e && at(3) == 0x47 &&
+        at(4) == 0x0d && at(5) == 0x0a && at(6) == 0x1a && at(7) == 0x0a
+    ) return "png"
+    if (at(0) == 'G'.code && at(1) == 'I'.code && at(2) == 'F'.code && at(3) == '8'.code) return "gif"
+    if (at(0) == 'R'.code && at(1) == 'I'.code && at(2) == 'F'.code && at(3) == 'F'.code &&
+        at(8) == 'W'.code && at(9) == 'E'.code && at(10) == 'B'.code && at(11) == 'P'.code
+    ) return "webp"
+    if (at(4) == 'f'.code && at(5) == 't'.code && at(6) == 'y'.code && at(7) == 'p'.code) {
+        val brand = String(head, 8, minOf(4, head.size - 8), Charsets.US_ASCII)
+        if (brand in setOf("heic", "heix", "hevc", "hevx", "mif1", "msf1", "avif", "avis")) {
+            return "heif"
+        }
+    }
+    return null
+}
+
+fun sniffImageKind(file: File): String? = runCatching {
+    file.inputStream().use { input ->
+        val head = ByteArray(12)
+        val n = input.read(head)
+        if (n <= 0) null else sniffImageKind(head.copyOf(n))
+    }
+}.getOrNull()
+
+private fun kindExt(kind: String?): String = when (kind) {
+    "png" -> "png"
+    "gif" -> "gif"
+    "webp" -> "webp"
+    else -> "jpg"
+}
+
+private fun renamedWithExt(file: File, kind: String?): File {
+    val ext = kindExt(kind)
+    if (file.extension.equals(ext, ignoreCase = true)) return file
+    val target = File(file.parentFile, "${file.nameWithoutExtension}.$ext")
+    if (file.renameTo(target)) return target
+    return runCatching {
+        target.outputStream().use { out -> file.inputStream().use { it.copyTo(out) } }
+        file.delete()
+        target
+    }.getOrDefault(file)
+}
 
 fun extForMime(mime: String?): String = when (mime?.lowercase()) {
     "image/png" -> "png"
@@ -108,21 +152,31 @@ suspend fun stagePickedImage(context: Context, uri: Uri, dir: File): File = with
 
         throw if (it is ApiError) it else ApiError("读取图片失败，请换一张试试")
     }
-    if (mime == "image/gif") return@withContext raw
+    val kind = sniffImageKind(raw)
+    if (kind == "gif") return@withContext renamedWithExt(raw, "gif")
 
+    val plainKind = kind == "jpeg" || kind == "png" || kind == "webp"
+    val namedRaw = if (plainKind) renamedWithExt(raw, kind) else raw
+    val kindMime = when (kind) {
+        "jpeg" -> "image/jpeg"
+        "png" -> "image/png"
+        "webp" -> "image/webp"
+        else -> ""
+    }
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(raw.absolutePath, bounds)
+    BitmapFactory.decodeFile(namedRaw.absolutePath, bounds)
     val longEdge = maxOf(bounds.outWidth, bounds.outHeight)
-    if (!needsRecompress(mime, longEdge, raw.length()) && mime in PLAIN_TYPES) {
-        return@withContext raw
+
+    if (plainKind && !needsRecompress(kindMime, longEdge, namedRaw.length())) {
+        return@withContext namedRaw
     }
 
-    val decoded = runCatching { decodeForEdit(raw, UPLOAD_MAX_DIM) }.getOrNull()
-        ?: if (mime in PLAIN_TYPES) return@withContext raw
-        else throw ApiError("识别不出这张图片的格式，请换一张试试")
+    val decoded = runCatching { decodeForEdit(namedRaw, UPLOAD_MAX_DIM) }.getOrNull()
+        ?: if (plainKind) return@withContext namedRaw
+        else throw ApiError("这张图片的格式暂不支持，请换一张试试")
 
     val bmp = scaleDownTo(decoded, UPLOAD_MAX_DIM)
-    val keepAlpha = mime == "image/png" && bmp.hasAlpha()
+    val keepAlpha = bmp.hasAlpha() && (kind == "png" || mime == "image/png")
 
     val ext = if (keepAlpha) "png" else "jpg"
     val out = File(dir, "upload_${System.currentTimeMillis()}.$ext")
@@ -134,12 +188,17 @@ suspend fun stagePickedImage(context: Context, uri: Uri, dir: File): File = with
         )
     }
     bmp.recycle()
-
-    if (!ok || !recompressWorthIt(out.length(), raw.length())) {
+    if (!ok) {
         out.delete()
-        return@withContext raw
+        if (plainKind) return@withContext namedRaw
+        throw ApiError("图片处理失败，请换一张试试")
     }
-    raw.delete()
+
+    if (plainKind && !recompressWorthIt(out.length(), namedRaw.length())) {
+        out.delete()
+        return@withContext namedRaw
+    }
+    namedRaw.delete()
     out
 }
 

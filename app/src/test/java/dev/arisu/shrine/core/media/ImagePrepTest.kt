@@ -1,6 +1,8 @@
 package dev.arisu.shrine.core.media
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -36,6 +38,24 @@ class ImagePrepTest {
         assertFalse(recompressWorthIt(0, 900 * 1024))
         assertFalse(recompressWorthIt(900 * 1024, 900 * 1024))
         assertFalse(recompressWorthIt(1200 * 1024, 900 * 1024))
+    }
+
+    @Test
+    fun `按文件头认图，不信任相册的 MIME`() {
+        assertEquals("jpeg", sniffImageKind(byteArrayOf(0xff.toByte(), 0xd8.toByte(), 0xff.toByte())))
+        assertEquals(
+            "png",
+            sniffImageKind(byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)),
+        )
+        assertEquals("gif", sniffImageKind("GIF89a".toByteArray()))
+        assertEquals("webp", sniffImageKind("RIFF____WEBPVP8 ".toByteArray()))
+    }
+
+    @Test
+    fun `HEIC 与 AVIF 单独识别，不能被当成 jpg 原样发出去`() {
+        assertEquals("heif", sniffImageKind("____ftypheic".toByteArray()))
+        assertEquals("heif", sniffImageKind("____ftypavif".toByteArray()))
+        assertNull(sniffImageKind("not-an-image".toByteArray()))
     }
 
     @Test
