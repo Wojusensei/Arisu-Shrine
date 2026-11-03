@@ -243,7 +243,9 @@ fun PostDetailScreen(
             val uid = Shrine.me.value?.id
             if (uid != null && draft.isBlank() && draftImage == null && replyTo == null) {
                 val saved = DraftStore.get(uid, DraftStore.COMMENT_POST, postId)
-                if (saved != null && saved.body.isNotBlank()) {
+                if (saved != null &&
+                    (saved.body.isNotBlank() || saved.imageUrl != null || saved.replyToId != null)
+                ) {
                     draft = saved.body
                     draftImage = saved.imageUrl
                     replyTo = saved.replyToId?.let { id ->
@@ -264,7 +266,7 @@ fun PostDetailScreen(
         }
     }
 
-    LaunchedEffect(draft, draftImage, replyTo, draftLoaded) {
+    LaunchedEffect(draft, draftImage, replyTo, draftLoaded, post?.title) {
         if (!draftLoaded) return@LaunchedEffect
         val uid = Shrine.me.value?.id ?: return@LaunchedEffect
         if (draft.isBlank() && draftImage == null && replyTo == null) {
@@ -326,9 +328,10 @@ fun PostDetailScreen(
         val id = entry.lastCommentId ?: return@LaunchedEffect
         val index = commentsShown.indexOfFirst { it.id == id }
 
-        if (index < 10) return@LaunchedEffect
-        lastReadMarker = id
-        listState.scrollToItem(3 + index, entry.lastOffset.coerceAtLeast(0))
+        val target = if (index >= 0) index else entry.lastIndex
+        if (target < 10 || target >= commentsShown.size) return@LaunchedEffect
+        lastReadMarker = if (index >= 0) id else null
+        listState.scrollToItem(3 + target, if (index >= 0) entry.lastOffset.coerceAtLeast(0) else 0)
     }
 
     val shownNow by rememberUpdatedState(commentsShown)
@@ -725,7 +728,7 @@ fun PostDetailScreen(
                                             val created = Shrine.addComment(
                                                 postId, text,
                                                 parentId = replyTo?.id,
-                                                replyToUserId = replyTo?.authorId,
+                                                replyToUserId = replyTo?.authorId?.takeIf { it.isNotBlank() },
                                                 imageUrl = draftImage?.takeIf { it.isNotBlank() },
                                             )
 

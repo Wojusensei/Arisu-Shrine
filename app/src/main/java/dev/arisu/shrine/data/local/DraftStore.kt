@@ -7,6 +7,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -40,7 +41,7 @@ object DraftStore {
     const val EMA = "ema"
 
     private const val MAX_DRAFTS = 100
-    private const val MAX_BODY = 20000
+    private const val MAX_BODY = 40000
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -67,29 +68,37 @@ object DraftStore {
         cache = null
     }
 
-    suspend fun list(userId: String): List<Draft> = mutex.withLock {
-        readLocked()
-            .filter { it.userId == userId }
-            .sortedByDescending { it.updatedAt }
+    suspend fun list(userId: String): List<Draft> = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            readLocked()
+                .filter { it.userId == userId }
+                .sortedByDescending { it.updatedAt }
+        }
     }
 
-    suspend fun get(userId: String, kind: String, targetId: String): Draft? = mutex.withLock {
-        readLocked().firstOrNull { it.userId == userId && it.kind == kind && it.targetId == targetId }
+    suspend fun get(userId: String, kind: String, targetId: String): Draft? = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            readLocked().firstOrNull { it.userId == userId && it.kind == kind && it.targetId == targetId }
+        }
     }
 
-    suspend fun save(draft: Draft) = mutex.withLock {
-        val now = System.currentTimeMillis()
-        val clean = draft.copy(
-            body = draft.body.take(MAX_BODY),
-            updatedAt = if (draft.updatedAt == 0L) now else draft.updatedAt,
-        )
-        val rest = readLocked().filterNot { it.id == clean.id }
-        writeLocked((rest + clean).sortedByDescending { it.updatedAt }.take(MAX_DRAFTS))
+    suspend fun save(draft: Draft) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val now = System.currentTimeMillis()
+            val clean = draft.copy(
+                body = draft.body.take(MAX_BODY),
+                updatedAt = if (draft.updatedAt == 0L) now else draft.updatedAt,
+            )
+            val rest = readLocked().filterNot { it.id == clean.id }
+            writeLocked((rest + clean).sortedByDescending { it.updatedAt }.take(MAX_DRAFTS))
+        }
     }
 
-    suspend fun delete(userId: String, kind: String, targetId: String) = mutex.withLock {
-        val id = "$userId|$kind|$targetId"
-        writeLocked(readLocked().filterNot { it.id == id })
+    suspend fun delete(userId: String, kind: String, targetId: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val id = "$userId|$kind|$targetId"
+            writeLocked(readLocked().filterNot { it.id == id })
+        }
     }
 
     fun saveAsync(draft: Draft) {

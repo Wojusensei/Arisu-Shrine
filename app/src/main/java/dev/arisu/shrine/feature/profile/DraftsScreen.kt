@@ -28,13 +28,17 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import dev.arisu.shrine.core.components.ArisuTopBar
 import dev.arisu.shrine.core.components.HairlineDivider
 import dev.arisu.shrine.core.components.ShrineEmptyState
@@ -53,6 +57,7 @@ fun DraftsScreen(
     modifier: Modifier = Modifier,
 ) {
     val me by Shrine.me.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
     var drafts by remember { mutableStateOf<List<Draft>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<Draft?>(null) }
@@ -61,6 +66,14 @@ fun DraftsScreen(
         val uid = me?.id ?: return@LaunchedEffect
         drafts = DraftStore.list(uid)
         loaded = true
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        val uid = me?.id ?: return@LifecycleEventEffect
+        scope.launch {
+            drafts = DraftStore.list(uid)
+            loaded = true
+        }
     }
 
     Column(modifier.fillMaxSize()) {

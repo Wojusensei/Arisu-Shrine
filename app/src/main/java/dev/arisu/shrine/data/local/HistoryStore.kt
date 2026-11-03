@@ -7,6 +7,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -57,14 +58,18 @@ object HistoryStore {
         cache = null
     }
 
-    suspend fun list(userId: String): List<HistoryEntry> = mutex.withLock {
-        readLocked()
-            .filter { it.userId == userId }
-            .sortedByDescending { it.visitedAt }
+    suspend fun list(userId: String): List<HistoryEntry> = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            readLocked()
+                .filter { it.userId == userId }
+                .sortedByDescending { it.visitedAt }
+        }
     }
 
-    suspend fun get(userId: String, kind: String, targetId: String): HistoryEntry? = mutex.withLock {
-        readLocked().firstOrNull { it.userId == userId && it.kind == kind && it.targetId == targetId }
+    suspend fun get(userId: String, kind: String, targetId: String): HistoryEntry? = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            readLocked().firstOrNull { it.userId == userId && it.kind == kind && it.targetId == targetId }
+        }
     }
 
     suspend fun visit(
@@ -73,23 +78,25 @@ object HistoryStore {
         targetId: String,
         title: String,
         subtitle: String,
-    ) = mutex.withLock {
-        val old = readLocked().firstOrNull {
-            it.userId == userId && it.kind == kind && it.targetId == targetId
+    ) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val old = readLocked().firstOrNull {
+                it.userId == userId && it.kind == kind && it.targetId == targetId
+            }
+            upsertLocked(
+                HistoryEntry(
+                    userId = userId,
+                    kind = kind,
+                    targetId = targetId,
+                    title = title,
+                    subtitle = subtitle,
+                    visitedAt = System.currentTimeMillis(),
+                    lastCommentId = old?.lastCommentId,
+                    lastIndex = old?.lastIndex ?: -1,
+                    lastOffset = old?.lastOffset ?: 0,
+                ),
+            )
         }
-        upsertLocked(
-            HistoryEntry(
-                userId = userId,
-                kind = kind,
-                targetId = targetId,
-                title = title,
-                subtitle = subtitle,
-                visitedAt = System.currentTimeMillis(),
-                lastCommentId = old?.lastCommentId,
-                lastIndex = old?.lastIndex ?: -1,
-                lastOffset = old?.lastOffset ?: 0,
-            ),
-        )
     }
 
     suspend fun savePosition(
@@ -99,22 +106,26 @@ object HistoryStore {
         commentId: String,
         index: Int,
         offset: Int,
-    ) = mutex.withLock {
-        val old = readLocked().firstOrNull {
-            it.userId == userId && it.kind == kind && it.targetId == targetId
-        } ?: return@withLock
-        upsertLocked(
-            old.copy(
-                lastCommentId = commentId,
-                lastIndex = index,
-                lastOffset = offset,
-                visitedAt = System.currentTimeMillis(),
-            ),
-        )
+    ) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            val old = readLocked().firstOrNull {
+                it.userId == userId && it.kind == kind && it.targetId == targetId
+            } ?: return@withLock
+            upsertLocked(
+                old.copy(
+                    lastCommentId = commentId,
+                    lastIndex = index,
+                    lastOffset = offset,
+                    visitedAt = System.currentTimeMillis(),
+                ),
+            )
+        }
     }
 
-    suspend fun clear(userId: String) = mutex.withLock {
-        writeLocked(readLocked().filterNot { it.userId == userId })
+    suspend fun clear(userId: String) = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            writeLocked(readLocked().filterNot { it.userId == userId })
+        }
     }
 
     fun visitAsync(userId: String, kind: String, targetId: String, title: String, subtitle: String) {

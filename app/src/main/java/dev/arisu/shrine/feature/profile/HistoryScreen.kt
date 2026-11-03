@@ -24,13 +24,17 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import dev.arisu.shrine.core.components.ArisuTopBar
 import dev.arisu.shrine.core.components.HairlineDivider
 import dev.arisu.shrine.core.components.SectionLabel
@@ -52,6 +56,7 @@ fun HistoryScreen(
     modifier: Modifier = Modifier,
 ) {
     val me by Shrine.me.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
     var entries by remember { mutableStateOf<List<HistoryEntry>>(emptyList()) }
     var loaded by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -60,6 +65,14 @@ fun HistoryScreen(
         val uid = me?.id ?: return@LaunchedEffect
         entries = HistoryStore.list(uid)
         loaded = true
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        val uid = me?.id ?: return@LifecycleEventEffect
+        scope.launch {
+            entries = HistoryStore.list(uid)
+            loaded = true
+        }
     }
 
     val today = LocalDate.now()

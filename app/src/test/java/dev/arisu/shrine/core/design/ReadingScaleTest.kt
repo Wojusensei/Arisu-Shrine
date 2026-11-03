@@ -2,10 +2,17 @@ package dev.arisu.shrine.core.design
 
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.sp
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ReadingScaleTest {
+
+    @After
+    fun resetScale() {
+
+        ReadingScale.apply(1f)
+    }
 
     @Test
     fun nearestSnapsToFourSteps() {
