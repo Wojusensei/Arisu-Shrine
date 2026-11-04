@@ -190,6 +190,20 @@ class MdMarkTest {
     }
 
     @Test
+    fun replaceRangeWithPutsCaretAfterInsert() {
+        val after = value("正文 @", 4).replaceRangeWith(3, 4, "@User_000015 ")
+        assertEquals("正文 @User_000015 ", after.text)
+        assertEquals(TextRange(after.text.length), after.selection)
+    }
+
+    @Test
+    fun replaceRangeWithClampsOutOfBounds() {
+        val after = value("甲", 1).replaceRangeWith(9, 12, "乙")
+        assertEquals("甲乙", after.text)
+        assertEquals(TextRange(2), after.selection)
+    }
+
+    @Test
     fun firstUploadDoesNotSplitSecondPlaceholder() {
         val second = "![图片](上传中-2)"
         var body = insertMark(value("", 0), MdMark("$placeholder\n", block = true))

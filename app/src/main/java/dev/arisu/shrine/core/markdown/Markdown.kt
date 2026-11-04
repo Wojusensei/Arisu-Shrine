@@ -432,6 +432,7 @@ private fun buildTable(lines: List<String>): MdBlock.Table {
 
 private val inlineRe = Regex(
     """(!\[[^\]]*]\([^)\s]+\))""" +
+        """|(\*\*\*[^*]+\*\*\*)""" +
         """|(\*\*[^*]+\*\*)""" +
         """|(\*[^*\n]+\*)""" +
         """|(`[^`]+`)""" +
@@ -495,6 +496,10 @@ internal fun renderInline(
                 if (m.range.first > last) append(text.substring(last, m.range.first))
                 val token = m.value
                 when {
+                    token.startsWith("***") -> withStyle(
+                        SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)
+                    ) { append(token.removeSurrounding("***")) }
+
                     token.startsWith("**") -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
                         append(token.removeSurrounding("**"))
                     }

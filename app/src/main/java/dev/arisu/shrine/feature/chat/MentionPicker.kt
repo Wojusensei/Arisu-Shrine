@@ -36,11 +36,11 @@ import dev.arisu.shrine.core.components.YinYangOrb
 import dev.arisu.shrine.data.model.User
 import dev.arisu.shrine.data.model.avatarUrl
 import dev.arisu.shrine.data.model.displayAvatarSeed
+import dev.arisu.shrine.data.remote.ApiError
 import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
-import retrofit2.HttpException
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -208,8 +208,8 @@ private fun MentionStatusRow(
 
 private suspend fun fetchMentionUsers(q: String): List<User> = try {
     Shrine.searchMentionUsers(q)
-} catch (e: HttpException) {
-    if (e.code() != 429) throw e
+} catch (e: ApiError) {
+    if (e.code != 429) throw e
     delay(260)
     Shrine.searchMentionUsers(q)
 }

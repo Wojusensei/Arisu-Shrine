@@ -206,7 +206,7 @@ object Api {
     }
 }
 
-class ApiError(message: String) : Exception(message)
+class ApiError(message: String, val code: Int? = null) : Exception(message)
 
 fun Throwable.toApiMessage(): String = when (this) {
     is ApiError -> message ?: "请求失败"
@@ -241,7 +241,7 @@ suspend fun <T> apiCall(block: suspend () -> T): T {
         } catch (_: Exception) {
             null
         }
-        throw ApiError(msg ?: "网络请求失败（HTTP ${e.code()}）")
+        throw ApiError(msg ?: "网络请求失败（HTTP ${e.code()}）", e.code())
     } catch (e: IOException) {
 
         val retryable = e is java.net.SocketException ||

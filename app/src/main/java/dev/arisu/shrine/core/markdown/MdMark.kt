@@ -46,6 +46,15 @@ fun TextFieldValue.withText(newText: String): TextFieldValue =
         ),
     )
 
+fun TextFieldValue.replaceRangeWith(start: Int, end: Int, new: String): TextFieldValue {
+    val from = start.coerceIn(0, text.length)
+    val to = end.coerceIn(from, text.length)
+    return TextFieldValue(
+        text.replaceRange(from, to, new),
+        TextRange(from + new.length),
+    )
+}
+
 fun TextFieldValue.replaceSpan(old: String, new: String): TextFieldValue {
     val at = text.indexOf(old)
     if (at < 0) return this

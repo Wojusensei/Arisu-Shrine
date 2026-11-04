@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.EmojiEmotions
 import androidx.compose.material.icons.rounded.FormatBold
 import androidx.compose.material.icons.rounded.FormatItalic
 import androidx.compose.material.icons.rounded.FormatListBulleted
+import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Link
@@ -80,8 +81,11 @@ import dev.arisu.shrine.core.components.accentRaised
 import dev.arisu.shrine.core.components.neuInset
 import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.markdown.MARKDOWN_STICKER_ALT
+import dev.arisu.shrine.core.markdown.MdAction
 import dev.arisu.shrine.core.markdown.MdMark
+import dev.arisu.shrine.core.markdown.applyMarkdownAction
 import dev.arisu.shrine.core.markdown.insertMark
+import dev.arisu.shrine.core.markdown.replaceRangeWith
 import dev.arisu.shrine.core.markdown.replaceSpan
 import dev.arisu.shrine.core.markdown.withText
 import dev.arisu.shrine.core.media.downloadImageToFile
@@ -103,6 +107,13 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private const val MAX_PICK = 9
+
+private val StaleUploadMark = Regex("""\n?!\[图片]\(上传中-\d+\)\n?""")
+
+internal fun stripStaleUploads(text: String): String =
+    text.replace(StaleUploadMark, "")
+        .replace(Regex("\\n{3,}"), "\n\n")
+        .trim()
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -140,7 +151,9 @@ fun NewPostScreen(
     fun keepDraft(saved: Draft) {
         title = saved.title
         intro = saved.intro
-        body = TextFieldValue(saved.body)
+
+        val restored = stripStaleUploads(saved.body)
+        body = TextFieldValue(restored, TextRange(restored.length))
         coverUrl = saved.coverUrl
         Board.entries.firstOrNull { it.name == saved.board }?.let { board = it }
         draftLoaded = true
@@ -354,7 +367,7 @@ fun NewPostScreen(
     fun publish() {
         if (publishing) return
 
-        val finalBody = body.text.replace(Regex("""!\[图片]\(上传中-\d+\)"""), "").trim()
+        val finalBody = stripStaleUploads(body.text)
         if (title.isBlank() || finalBody.isBlank()) return
         publishing = true
         error = null
@@ -546,9 +559,9 @@ fun NewPostScreen(
             )
 
             MarkdownToolbar(
-                onInsert = { mark ->
+                onAction = { action ->
 
-                    body = insertMark(body, mark)
+                    body = applyMarkdownAction(body, action)
                     runCatching { bodyField.requestFocus() }
                     keyboard?.show()
                 },
@@ -996,25 +1009,23 @@ private data class MdTool(
     val icon: ImageVector,
     val label: String,
 
-    val mark: MdMark?,
+    val action: MdAction?,
 )
 
 private val MdTools = listOf(
-    MdTool(Icons.Rounded.FormatBold, "加粗", MdMark("**粗体**", select = "粗体")),
-    MdTool(Icons.Rounded.FormatItalic, "斜体", MdMark("*斜体*", select = "斜体")),
-    MdTool(
-        dev.arisu.shrine.core.components.ShrineIcons.Title, "标题",
-        MdMark("## 小标题", select = "小标题", block = true),
-    ),
-    MdTool(Icons.Rounded.FormatListBulleted, "列表", MdMark("- 列表项", select = "列表项", block = true)),
-    MdTool(Icons.Rounded.Code, "代码块", MdMark("```\n代码\n```", select = "代码", block = true)),
+    MdTool(Icons.Rounded.FormatBold, "加粗", MdAction.Bold),
+    MdTool(Icons.Rounded.FormatItalic, "斜体", MdAction.Italic),
+    MdTool(dev.arisu.shrine.core.components.ShrineIcons.Title, "标题", MdAction.Heading),
+    MdTool(Icons.Rounded.FormatListBulleted, "列表", MdAction.List),
+    MdTool(Icons.Rounded.Code, "代码", MdAction.Code),
+    MdTool(Icons.Rounded.FormatQuote, "引用", MdAction.Quote),
     MdTool(Icons.Rounded.Image, "图片", null),
-    MdTool(Icons.Rounded.Link, "链接", MdMark("[链接文字](https://)", select = "链接文字")),
+    MdTool(Icons.Rounded.Link, "链接", MdAction.Link),
 )
 
 @Composable
 private fun MarkdownToolbar(
-    onInsert: (MdMark) -> Unit,
+    onAction: (MdAction) -> Unit,
     onPickImage: () -> Unit,
 ) {
 
@@ -1042,8 +1053,8 @@ private fun MarkdownToolbar(
                         interactionSource = interaction,
                         indication = null,
                     ) {
-                        val mark = tool.mark
-                        if (mark != null) onInsert(mark) else onPickImage()
+                        val action = tool.action
+                        if (action != null) onAction(action) else onPickImage()
                     }
                     .padding(horizontal = 5.dp, vertical = 5.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -1109,5 +1120,5 @@ private fun applyMention(value: TextFieldValue, userId: String): TextFieldValue 
     val at = if (caret in 1..text.length && text[caret - 1] == '@') caret - 1 else caret
     val insert = "@$userId "
     val end = if (at < text.length && text[at] == '@') at + 1 else at
-    return TextFieldValue(text.replaceRange(at, end, insert), TextRange(at + insert.length))
+    return value.replaceRangeWith(at, end, insert)
 }

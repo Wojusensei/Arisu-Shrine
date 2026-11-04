@@ -51,6 +51,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
@@ -157,8 +158,9 @@ fun EmaDetailScreen(
             val uid = Shrine.me.value?.id
             if (uid != null && reply.text.isBlank()) {
                 val saved = DraftStore.get(uid, DraftStore.COMMENT_EMA, emaId.toString())
-                if (saved != null && saved.body.isNotBlank()) {
-                    reply = TextFieldValue(saved.body)
+
+                if (saved != null && reply.text.isBlank() && saved.body.isNotBlank()) {
+                    reply = TextFieldValue(saved.body, TextRange(saved.body.length))
                     replyRestored = true
                 }
             }

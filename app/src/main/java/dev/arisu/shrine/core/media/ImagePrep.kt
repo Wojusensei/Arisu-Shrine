@@ -41,7 +41,13 @@ fun sniffImageKind(head: ByteArray): String? {
 fun sniffImageKind(file: File): String? = runCatching {
     file.inputStream().use { input ->
         val head = ByteArray(12)
-        val n = input.read(head)
+        var n = 0
+
+        while (n < head.size) {
+            val read = input.read(head, n, head.size - n)
+            if (read < 0) break
+            n += read
+        }
         if (n <= 0) null else sniffImageKind(head.copyOf(n))
     }
 }.getOrNull()

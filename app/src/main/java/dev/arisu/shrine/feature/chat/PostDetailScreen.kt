@@ -126,8 +126,13 @@ import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.design.NeuShadow
 import dev.arisu.shrine.core.design.ReadingScale
 import dev.arisu.shrine.core.design.Vermilion
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
+import dev.arisu.shrine.core.markdown.MdMark
 import dev.arisu.shrine.core.markdown.MarkdownText
+import dev.arisu.shrine.core.markdown.insertMark
 import dev.arisu.shrine.core.markdown.parseMarkdown
+import dev.arisu.shrine.core.markdown.replaceRangeWith
 import dev.arisu.shrine.data.local.Draft
 import dev.arisu.shrine.data.local.DraftStore
 import dev.arisu.shrine.data.local.HistoryStore
@@ -200,7 +205,9 @@ fun PostDetailScreen(
 
     var collectedStickers by remember { mutableStateOf<Set<String>>(emptySet()) }
 
-    var draft by rememberSaveable { mutableStateOf("") }
+    var draft by rememberSaveable(stateSaver = TextFieldValue.Saver) {
+        mutableStateOf(TextFieldValue(""))
+    }
     var replyTo by rememberSaveable(stateSaver = ReplySaver) { mutableStateOf<Comment?>(null) }
 
     var draftImage by rememberSaveable { mutableStateOf<String?>(null) }
@@ -243,22 +250,25 @@ fun PostDetailScreen(
         refresh()
         if (!draftLoaded) {
             val uid = Shrine.me.value?.id
-            if (uid != null && draft.isBlank() && draftImage == null && replyTo == null) {
+            if (uid != null && draft.text.isBlank() && draftImage == null && replyTo == null) {
                 val saved = DraftStore.get(uid, DraftStore.COMMENT_POST, postId)
-                if (saved != null &&
+
+                if (saved != null && draft.text.isBlank() && draftImage == null && replyTo == null &&
                     (saved.body.isNotBlank() || saved.imageUrl != null || saved.replyToId != null)
                 ) {
-                    draft = saved.body
+                    draft = TextFieldValue(saved.body, TextRange(saved.body.length))
                     draftImage = saved.imageUrl
+
                     replyTo = saved.replyToId?.let { id ->
-                        comments.firstOrNull { it.id == id } ?: Comment(
-                            id = id,
-                            postId = postId,
-                            authorId = "",
-                            authorName = saved.replyToNickname.orEmpty(),
-                            content = "",
-                            createdAt = "",
-                        )
+                        comments.firstOrNull { it.id == id }
+                            ?: if (loadState == "ok") null else Comment(
+                                id = id,
+                                postId = postId,
+                                authorId = "",
+                                authorName = saved.replyToNickname.orEmpty(),
+                                content = "",
+                                createdAt = "",
+                            )
                     }
                     draftRestored = true
                 }
@@ -268,10 +278,10 @@ fun PostDetailScreen(
         }
     }
 
-    LaunchedEffect(draft, draftImage, replyTo, draftLoaded, post?.title) {
+    LaunchedEffect(draft.text, draftImage, replyTo, draftLoaded, post?.title) {
         if (!draftLoaded) return@LaunchedEffect
         val uid = Shrine.me.value?.id ?: return@LaunchedEffect
-        if (draft.isBlank() && draftImage == null && replyTo == null) {
+        if (draft.text.isBlank() && draftImage == null && replyTo == null) {
             DraftStore.deleteAsync(uid, DraftStore.COMMENT_POST, postId)
             return@LaunchedEffect
         }
@@ -282,7 +292,7 @@ fun PostDetailScreen(
                 kind = DraftStore.COMMENT_POST,
                 targetId = postId,
                 targetTitle = post?.title.orEmpty(),
-                body = draft,
+                body = draft.text,
                 imageUrl = draftImage,
                 replyToId = replyTo?.id,
                 replyToNickname = replyTo?.authorName,
@@ -697,9 +707,9 @@ fun PostDetailScreen(
                             uploadProgress = uploadProgress,
                             onDraftChange = { new ->
 
-                                if (new.length <= 2000) {
-                                    insertedAt(draft, new)?.let { at ->
-                                        if (new[at] == '@') {
+                                if (new.text.length <= 2000) {
+                                    insertedAt(draft.text, new.text)?.let { at ->
+                                        if (new.text[at] == '@') {
                                             mentionAt = at
                                             showMention = true
                                         }
@@ -728,7 +738,7 @@ fun PostDetailScreen(
                             },
                             onRemoveImage = { draftImage = null },
                             onSend = {
-                                val text = draft.trim()
+                                val text = draft.text.trim()
                                 if (text.isNotEmpty() && !sending && !uploadingImage) {
                                     sending = true
                                     scope.launch {
@@ -740,7 +750,7 @@ fun PostDetailScreen(
                                                 imageUrl = draftImage?.takeIf { it.isNotBlank() },
                                             )
 
-                                            draft = ""
+                                            draft = TextFieldValue("")
                                             draftImage = null
                                             replyTo = null
                                             Shrine.me.value?.id?.let {
@@ -977,7 +987,7 @@ fun PostDetailScreen(
 
         if (showEmoji) {
             EmojiSheet(
-                onSelect = { draft += it },
+                onSelect = { draft = insertMark(draft, MdMark(it)) },
 
                 onSticker = { sticker -> draftImage = sticker.url },
                 onDismiss = { showEmoji = false },
@@ -992,11 +1002,13 @@ fun PostDetailScreen(
                     mentionAt = -1
                 },
                 onPick = { u ->
-                    val at = mentionAt.takeIf { it in draft.indices && draft[it] == '@' }
+                    val at = mentionAt.takeIf { it in draft.text.indices && draft.text[it] == '@' }
                     draft = if (at != null) {
-                        draft.replaceRange(at, at + 1, "@${u.id} ")
+
+                        draft.replaceRangeWith(at, at + 1, "@${u.id} ")
                     } else {
-                        draft.dropLast(1) + "@${u.id} "
+                        val insert = "@${u.id} "
+                        TextFieldValue(draft.text + insert, TextRange(draft.text.length + insert.length))
                     }
                     mentionAt = -1
                     showMention = false
@@ -1566,18 +1578,18 @@ private fun ReplyBanner(nickname: String, onCancel: () -> Unit) {
 
 @Composable
 private fun CommentInputBar(
-    draft: String,
+    draft: TextFieldValue,
     draftImage: String?,
     uploading: Boolean,
 
     uploadProgress: Float,
-    onDraftChange: (String) -> Unit,
+    onDraftChange: (TextFieldValue) -> Unit,
     onEmoji: () -> Unit,
     onPickImage: (android.net.Uri) -> Unit,
     onRemoveImage: () -> Unit,
     onSend: () -> Unit,
 ) {
-    val canSend = draft.isNotBlank() && !uploading
+    val canSend = draft.text.isNotBlank() && !uploading
     val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) onPickImage(uri) }

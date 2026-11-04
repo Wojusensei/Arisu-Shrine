@@ -27,6 +27,7 @@ import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
 import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.FormatBold
 import androidx.compose.material.icons.rounded.FormatItalic
+import androidx.compose.material.icons.rounded.FormatQuote
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.Link
@@ -51,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
@@ -63,8 +65,8 @@ import dev.arisu.shrine.core.components.accentRaised
 import dev.arisu.shrine.core.components.neuInset
 import dev.arisu.shrine.core.components.softCard
 import dev.arisu.shrine.core.design.NeuInset
-import dev.arisu.shrine.core.markdown.MdMark
-import dev.arisu.shrine.core.markdown.insertMark
+import dev.arisu.shrine.core.markdown.MdAction
+import dev.arisu.shrine.core.markdown.applyMarkdownAction
 import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
 import dev.arisu.shrine.data.local.Draft
@@ -74,21 +76,20 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import dev.arisu.shrine.data.model.EmaTag
 
-private data class MarkdownAction(
+private data class MdTool(
     val icon: ImageVector,
     val label: String,
-    val format: String,
-
-    val block: Boolean = false,
+    val action: MdAction,
 )
 
-private val MarkdownActions = listOf(
-    MarkdownAction(Icons.Rounded.FormatBold, "加粗", "**%s**"),
-    MarkdownAction(Icons.Rounded.FormatItalic, "斜体", "*%s*"),
-    MarkdownAction(Icons.Rounded.FormatSize, "标题", "## %s", block = true),
-    MarkdownAction(Icons.AutoMirrored.Rounded.FormatListBulleted, "列表", "- %s", block = true),
-    MarkdownAction(Icons.Rounded.Code, "代码块", "```\n%s\n```", block = true),
-    MarkdownAction(Icons.Rounded.Link, "链接", "[%s](https://)"),
+private val MdTools = listOf(
+    MdTool(Icons.Rounded.FormatBold, "加粗", MdAction.Bold),
+    MdTool(Icons.Rounded.FormatItalic, "斜体", MdAction.Italic),
+    MdTool(Icons.Rounded.FormatSize, "标题", MdAction.Heading),
+    MdTool(Icons.AutoMirrored.Rounded.FormatListBulleted, "列表", MdAction.List),
+    MdTool(Icons.Rounded.Code, "代码", MdAction.Code),
+    MdTool(Icons.Rounded.FormatQuote, "引用", MdAction.Quote),
+    MdTool(Icons.Rounded.Link, "链接", MdAction.Link),
 )
 
 @Composable
@@ -116,7 +117,7 @@ fun NewEmaScreen(
 
     fun keepDraft(saved: Draft) {
         title = saved.title
-        body = TextFieldValue(saved.body)
+        body = TextFieldValue(saved.body, TextRange(saved.body.length))
         tags.clear()
         saved.tags.mapNotNullTo(tags) { wire -> EmaTag.entries.firstOrNull { it.label == wire } }
         draftLoaded = true
@@ -174,11 +175,9 @@ fun NewEmaScreen(
     var confirmDiscard by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler(enabled = hasDraft && !submitting) { confirmDiscard = true }
 
-    fun wrap(action: MarkdownAction) {
-        val snippet = action.format.replace("%s", "")
-        val caret = action.format.indexOf("%s").takeIf { it >= 0 }
+    fun applyAction(action: MdAction) {
 
-        body = insertMark(body, MdMark(snippet, caret = caret, block = action.block))
+        body = applyMarkdownAction(body, action)
         runCatching { bodyField.requestFocus() }
         keyboard?.show()
     }
@@ -292,7 +291,7 @@ fun NewEmaScreen(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(Modifier.height(9.dp))
-                    MarkdownToolbar(onAction = { wrap(it) })
+                    MarkdownToolbar(onAction = { applyAction(it) })
                     Spacer(Modifier.height(10.dp))
                     BodyField(
                         value = body,
@@ -373,7 +372,7 @@ private fun SubmitAction(enabled: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun MarkdownToolbar(onAction: (MarkdownAction) -> Unit) {
+private fun MarkdownToolbar(onAction: (MdAction) -> Unit) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -387,7 +386,7 @@ private fun MarkdownToolbar(onAction: (MarkdownAction) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MarkdownActions.forEach { action ->
+            MdTools.forEach { action ->
                 val interaction = remember { MutableInteractionSource() }
                 val pressed by interaction.collectIsPressedAsState()
                 Row(
@@ -403,7 +402,7 @@ private fun MarkdownToolbar(onAction: (MarkdownAction) -> Unit) {
                         .clickable(
                             interactionSource = interaction,
                             indication = null,
-                        ) { onAction(action) }
+                        ) { onAction(action.action) }
                         .padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
