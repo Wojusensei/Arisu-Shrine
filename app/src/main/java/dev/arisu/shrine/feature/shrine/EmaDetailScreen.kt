@@ -236,6 +236,7 @@ fun EmaDetailScreen(
                                                     body = ShareCard.plainText(e.body),
                                                     author = e.authorName,
                                                     time = e.createdAt,
+                                                    images = ShareCard.images(e.body),
                                                 ),
                                             )
                                         } catch (ex: Exception) {

@@ -1,11 +1,15 @@
 package dev.arisu.shrine.core.util
 
-fun markdownPlainText(markdown: String): String {
+fun markdownPlainText(markdown: String, keepImages: Boolean = true): String {
     var s = markdown
     s = s.replace(Regex("```[\\s\\S]*?```")) { m ->
         m.value.removePrefix("```").removeSuffix("```").substringAfter('\n', "")
     }
-    s = s.replace(Regex("!\\[([^]]*)]\\([^)]*\\)"), "$1")
+    s = if (keepImages) {
+        s.replace(Regex("!\\[([^]]*)]\\([^)]*\\)"), "$1")
+    } else {
+        s.replace(Regex("!\\[([^]]*)]\\([^)]*\\)"), "")
+    }
     s = s.replace(Regex("\\[([^]]*)]\\([^)]*\\)"), "$1")
     s = s.replace(Regex("(?m)^\\s{0,3}#{1,6}\\s*"), "")
     s = s.replace(Regex("(?m)^\\s*>\\s?"), "")

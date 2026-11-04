@@ -463,6 +463,10 @@ fun PostDetailScreen(
                                     val p = post ?: return@DropdownMenuItem
                                     scope.launch {
                                         try {
+                                            val images = (
+                                                listOfNotNull(p.coverUrl?.takeIf { it.isNotBlank() }) +
+                                                    ShareCard.images(p.body)
+                                                ).distinct()
                                             ShareCard.share(
                                                 context,
                                                 ShareCardData(
@@ -473,6 +477,7 @@ fun PostDetailScreen(
                                                     body = ShareCard.plainText(p.body),
                                                     author = p.authorName,
                                                     time = p.createdAt,
+                                                    images = images,
                                                 ),
                                             )
                                         } catch (e: Exception) {
