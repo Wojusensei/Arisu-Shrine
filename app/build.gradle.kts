@@ -16,8 +16,8 @@ android {
         applicationId = "dev.arisu.shrine"
         minSdk = 26
         targetSdk = 35
-        versionCode = 61
-        versionName = "1.1.1.2"
+        versionCode = 62
+        versionName = "1.1.2.0"
 
         val prodBaseUrl = "https://arisushrine.com"
         val baseUrlOverride = (project.findProperty("arisuBaseUrl") as String?)?.trimEnd('/')

@@ -1,5 +1,6 @@
 package dev.arisu.shrine.feature.share
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -67,8 +68,20 @@ object ShareCard {
 
     suspend fun share(context: Context, data: ShareCardData) {
         val bitmap = withContext(Dispatchers.Default) { render(context, data) }
-        val file = withContext(Dispatchers.IO) { save(context, bitmap, data.id) }
-        bitmap.recycle()
+        try {
+            shareBitmap(context, bitmap, data.id)
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    suspend fun shareBitmap(
+        context: Context,
+        bitmap: Bitmap,
+        id: String,
+        chooserTitle: String = "分享卡片",
+    ) {
+        val file = withContext(Dispatchers.IO) { save(context, bitmap, id) }
         withContext(Dispatchers.Main) {
             val uri = FileProvider.getUriForFile(
                 context, context.packageName + ".fileprovider", file,
@@ -76,11 +89,18 @@ object ShareCard {
             val intent = Intent(Intent.ACTION_SEND).apply {
                 type = "image/png"
                 putExtra(Intent.EXTRA_STREAM, uri)
+                clipData = ClipData.newRawUri("", uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            context.startActivity(Intent.createChooser(intent, "分享卡片"))
+            context.startActivity(chooserWithPreviewGrant(intent, chooserTitle))
         }
     }
+
+    internal fun chooserWithPreviewGrant(intent: Intent, chooserTitle: String): Intent =
+        Intent.createChooser(intent, chooserTitle).apply {
+            clipData = intent.clipData
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
 
     internal fun render(context: Context, data: ShareCardData): Bitmap {
         val serif = Typeface.create(ResourcesCompat.getFont(context, R.font.noto_serif_400), Typeface.NORMAL)

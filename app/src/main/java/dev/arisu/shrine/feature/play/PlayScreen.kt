@@ -1,5 +1,9 @@
 package dev.arisu.shrine.feature.play
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,7 +23,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.Mail
+import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -38,6 +45,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.buildAnnotatedString
@@ -48,6 +57,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import dev.arisu.shrine.core.components.BoardMemory
 import dev.arisu.shrine.core.components.NeuSurface
 import dev.arisu.shrine.core.components.ScrollTopOrb
@@ -62,6 +72,7 @@ import dev.arisu.shrine.core.components.NeuSurface
 import dev.arisu.shrine.core.components.ScrollTopOrb
 import dev.arisu.shrine.core.components.SectionLabel
 import dev.arisu.shrine.core.components.ShrineIcons
+import dev.arisu.shrine.core.components.ShrineNoticeBar
 import dev.arisu.shrine.core.components.ShrinePullRefreshBox
 import dev.arisu.shrine.core.components.ShrineStaleBanner
 import dev.arisu.shrine.core.components.SoftPill
@@ -83,6 +94,10 @@ import dev.arisu.shrine.core.design.OnAccent
 import dev.arisu.shrine.core.design.Vermilion
 import dev.arisu.shrine.core.design.VermilionButton
 import dev.arisu.shrine.core.components.ScrollTopBus
+import dev.arisu.shrine.core.media.needsLegacyGalleryPermission
+import dev.arisu.shrine.feature.share.FortuneCard
+import dev.arisu.shrine.feature.share.FortuneCardData
+import dev.arisu.shrine.feature.share.fortuneCardData
 import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
 import dev.arisu.shrine.nav.Routes
@@ -90,6 +105,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -98,6 +114,9 @@ import dev.arisu.shrine.data.model.OmikujiDraw
 import dev.arisu.shrine.data.model.OmikujiFortune
 import dev.arisu.shrine.data.model.OmikujiLeaderRow
 import dev.arisu.shrine.data.model.accent
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 private sealed interface LuckState {
     data object Unknown : LuckState
@@ -123,8 +142,10 @@ fun PlayScreen(
     modifier: Modifier = Modifier,
 ) {
 
-    val memo = remember { playMemory.get(PLAY_KEY, Shrine.me.value?.id) }
-    var luckState by remember {
+    val me by Shrine.me.collectAsStateWithLifecycle()
+
+    val memo = remember(me?.id) { playMemory.get(PLAY_KEY, me?.id) }
+    var luckState by remember(me?.id) {
         mutableStateOf(
             memo?.luck ?: when (val cached = Shrine.peekOmikujiToday()) {
                 null -> LuckState.Unknown
@@ -138,11 +159,11 @@ fun PlayScreen(
     var drawing by remember { mutableStateOf(false) }
 
     var drawFailed by remember { mutableStateOf(false) }
-    var leader by remember { mutableStateOf(memo?.leader ?: Shrine.peekOmikujiLeaderboard()) }
+    var leader by remember(me?.id) { mutableStateOf(memo?.leader ?: Shrine.peekOmikujiLeaderboard()) }
     var reloadKey by remember { mutableStateOf(0) }
 
-    LaunchedEffect(luckState, leader, stats) {
-        val id = Shrine.me.value?.id ?: return@LaunchedEffect
+    LaunchedEffect(luckState, leader, stats, me?.id) {
+        val id = me?.id ?: return@LaunchedEffect
         playMemory.put(PLAY_KEY, id, PlaySnapshot(luckState, leader, stats))
     }
 
@@ -153,6 +174,75 @@ fun PlayScreen(
         }
     }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var notice by remember { mutableStateOf<String?>(null) }
+    var exporting by remember { mutableStateOf(false) }
+    var pendingSaveLuck by remember { mutableStateOf<Int?>(null) }
+
+    fun fortuneData(value: Int): FortuneCardData = fortuneCardData(
+        user = me,
+        luck = value,
+        band = luckBand(value).first,
+        date = LocalDate.now(ZoneId.of("Asia/Shanghai"))
+            .format(DateTimeFormatter.ofPattern("yyyy.MM.dd")),
+    )
+
+    fun shareFortune(value: Int) {
+        if (exporting) return
+
+        val payload = fortuneData(value)
+        exporting = true
+        scope.launch {
+            try {
+                FortuneCard.share(context, payload)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                notice = e.toApiMessage()
+            }
+            exporting = false
+        }
+    }
+
+    fun saveFortune(value: Int) {
+        if (exporting) return
+        val payload = fortuneData(value)
+        exporting = true
+        scope.launch {
+            try {
+                FortuneCard.save(context, payload)
+                notice = "已保存到相册"
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                notice = e.toApiMessage()
+            }
+            exporting = false
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val value = pendingSaveLuck
+        pendingSaveLuck = null
+        if (granted && value != null) {
+            saveFortune(value)
+        } else if (!granted) {
+            notice = "没有存储权限，存不进相册"
+        }
+    }
+
+    fun requestSave(value: Int) {
+        if (needsLegacyGalleryPermission() &&
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.WRITE_EXTERNAL_STORAGE,
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingSaveLuck = value
+            permissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        } else {
+            saveFortune(value)
+        }
+    }
     val animatedLuck by animateIntAsState(
         targetValue = luck ?: 0,
         animationSpec = tween(durationMillis = 900, easing = LinearOutSlowInEasing),
@@ -175,7 +265,8 @@ fun PlayScreen(
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(me?.id) {
+        if (me == null) return@LaunchedEffect
         try {
             val today = Shrine.omikujiToday()
             luckState = if (today > 0) LuckState.Drawn(today) else LuckState.NotDrawn
@@ -183,7 +274,9 @@ fun PlayScreen(
         }
     }
 
-    LaunchedEffect(Unit) { refreshLeader() }
+    LaunchedEffect(me?.id) {
+        if (me != null) refreshLeader()
+    }
 
     val playScroll = rememberScrollState()
 
@@ -199,6 +292,14 @@ fun PlayScreen(
             large = true,
             subtitle = "求签 · 看板 · 全端统计",
             actions = {
+
+                luck?.let { current ->
+                    TopBarIcon(
+                        icon = Icons.Rounded.Share,
+                        contentDescription = "分享御签",
+                        onClick = { shareFortune(current) },
+                    )
+                }
                 TopBarIcon(
                     icon = Icons.Rounded.Mail,
                     contentDescription = "社务箱",
@@ -209,6 +310,7 @@ fun PlayScreen(
         )
 
         ShrineStaleBanner()
+        ShrineNoticeBar(text = notice, onDismiss = { notice = null })
 
         ShrinePullRefreshBox(
             onRefresh = {
@@ -346,6 +448,29 @@ fun PlayScreen(
                             color = InkMuted,
                             textAlign = TextAlign.Center,
                         )
+                        Spacer(Modifier.height(14.dp))
+                        HairlineDivider()
+                        Spacer(Modifier.height(2.dp))
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            FortuneAction(
+                                icon = Icons.Rounded.Share,
+                                text = "分享御签",
+                                enabled = !exporting,
+                                modifier = Modifier.weight(1f),
+                            ) { shareFortune(currentLuck) }
+                            Box(
+                                Modifier
+                                    .width(1.dp)
+                                    .height(18.dp)
+                                    .background(PaperSunken)
+                            )
+                            FortuneAction(
+                                icon = Icons.Rounded.Download,
+                                text = "保存到相册",
+                                enabled = !exporting,
+                                modifier = Modifier.weight(1f),
+                            ) { requestSave(currentLuck) }
+                        }
                     }
                 }
             }
@@ -767,6 +892,37 @@ private fun luckBand(v: Int): Pair<String, Color> = when {
     v <= 70 -> "中吉" to InkTitle
     v <= 90 -> "吉" to InkTitle
     else -> "大吉" to Gold
+}
+
+@Composable
+private fun FortuneAction(
+    icon: ImageVector,
+    text: String,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(enabled = enabled) { onClick() }
+            .padding(vertical = 10.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (enabled) MaterialTheme.colorScheme.primary else InkFaint,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelMedium,
+            color = if (enabled) InkTitle else InkFaint,
+        )
+    }
 }
 
 @Composable

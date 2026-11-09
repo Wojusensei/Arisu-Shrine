@@ -305,3 +305,55 @@ suspend fun saveImageToGallery(context: Context, url: String): Boolean = withCon
     android.media.MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf(mime), null)
     true
 }
+
+suspend fun saveBitmapToGallery(context: Context, bitmap: Bitmap, prefix: String): Boolean =
+    withContext(Dispatchers.IO) {
+        val safe = prefix.replace(Regex("[^A-Za-z0-9_-]"), "_")
+        val name = "${safe}_${System.currentTimeMillis()}.png"
+        val mime = "image/png"
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.Images.Media.DISPLAY_NAME, name)
+                put(MediaStore.Images.Media.MIME_TYPE, mime)
+                put(
+                    MediaStore.Images.Media.RELATIVE_PATH,
+                    Environment.DIRECTORY_PICTURES + "/ArisuShrine",
+                )
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+            val target = context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+                ?: throw ApiError("存相册失败，请稍后再试")
+            runCatching {
+                context.contentResolver.openOutputStream(target)?.use { stream ->
+                    if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) {
+                        throw ApiError("存相册失败，请稍后再试")
+                    }
+                } ?: throw ApiError("存相册失败，请稍后再试")
+            }.onFailure {
+                context.contentResolver.delete(target, null, null)
+                throw if (it is ApiError) it else ApiError("存相册失败，请稍后再试")
+            }
+            val done = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+            context.contentResolver.update(target, done, null, null)
+            return@withContext true
+        }
+
+        val dir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES),
+            "ArisuShrine",
+        )
+        if (!dir.exists() && !dir.mkdirs()) throw ApiError("存相册失败，请稍后再试")
+        val file = File(dir, name)
+        runCatching {
+            file.outputStream().use { stream ->
+                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream)) {
+                    throw ApiError("存相册失败，请稍后再试")
+                }
+            }
+        }.onFailure {
+            throw if (it is ApiError) it else ApiError("存相册失败，请检查存储权限后再试")
+        }
+        android.media.MediaScannerConnection.scanFile(context, arrayOf(file.absolutePath), arrayOf(mime), null)
+        true
+    }
