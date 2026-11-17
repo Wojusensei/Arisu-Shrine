@@ -2,6 +2,7 @@ package store
 
 import "testing"
 
+// 每日求签算 1 分：只抽了一签的那天也要亮第一格。
 func TestTileLevelCountsOmikuji(t *testing.T) {
 	cases := []struct {
 		name                          string

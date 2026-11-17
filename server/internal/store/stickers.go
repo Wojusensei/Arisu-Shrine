@@ -8,8 +8,10 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// StickerLimit 每人表情夹上限（产品定值，客户端同值画「n/64」）
 const StickerLimit = 64
 
+// Stickers 某人的表情夹：按自定义顺序排（sort_order 小的在前），同值按 id 兜底
 func (s *Store) Stickers(ctx context.Context, ownerID int64) ([]model.Sticker, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT id, url, animated, created_at FROM stickers
 		WHERE owner_id=$1 ORDER BY sort_order, id`, ownerID)
@@ -30,6 +32,8 @@ func (s *Store) Stickers(ctx context.Context, ownerID int64) ([]model.Sticker, e
 	return out, rows.Err()
 }
 
+// AddSticker 收一张表情（自己的，或从别人那儿存下来的）。到上限返回 ErrTooMany。
+// 上限校验与插入同锁同事务：并发连点不会突破 64
 func (s *Store) AddSticker(ctx context.Context, ownerID int64, url string, animated bool) (*model.Sticker, error) {
 	var st model.Sticker
 	var created time.Time
@@ -44,7 +48,8 @@ func (s *Store) AddSticker(ctx context.Context, ownerID int64, url string, anima
 		if n >= StickerLimit {
 			return ErrTooMany
 		}
-
+		// 新收的排在最前：sort_order 比现有最小值再小一格（0 是「没排过序」的哨兵，
+		// 所以从 -1 起步往下走），用户拖拽过顺序后仍然保持「新收的先看见」
 		return tx.QueryRow(ctx, `INSERT INTO stickers(owner_id, url, animated, sort_order)
 			VALUES($1,$2,$3, COALESCE((SELECT MIN(sort_order) FROM stickers WHERE owner_id=$1), 0) - 1)
 			RETURNING id, url, animated, created_at`, ownerID, url, animated).
@@ -60,6 +65,7 @@ func (s *Store) AddSticker(ctx context.Context, ownerID int64, url string, anima
 	return &st, nil
 }
 
+// DeleteSticker 只能删自己的；不是本人的返回 ErrNotFound
 func (s *Store) DeleteSticker(ctx context.Context, ownerID, stickerID int64) error {
 	tag, err := s.Pool.Exec(ctx, `DELETE FROM stickers WHERE id=$1 AND owner_id=$2`, stickerID, ownerID)
 	if err != nil {
@@ -71,6 +77,9 @@ func (s *Store) DeleteSticker(ctx context.Context, ownerID, stickerID int64) err
 	return nil
 }
 
+// ReorderStickers 按给定顺序重写 sort_order（拖拽排序落库）。
+// 只认自己的表情；ids 里出现别人的 id 直接 ErrNotFound，不做半截写入。
+// 列表可能落后于服务端（比如刚在别处收了一张）：只重排给到的这些，其余保持原序号
 func (s *Store) ReorderStickers(ctx context.Context, ownerID int64, ids []int64) error {
 	if len(ids) == 0 {
 		return ErrBadRequest

@@ -1,0 +1,173 @@
+{{template "top" .}}
+<div class="tabs-u">
+  <a href="/shrine?tab=ema"{{if eq .Tab "ema"}} class="on"{{end}}><b>绘马</b><span class="bar"></span></a>
+  <a href="/shrine?tab=staff"{{if eq .Tab "staff"}} class="on"{{end}}><b>奉仕会</b><span class="bar"></span></a>
+  <a href="/shrine?tab=log"{{if eq .Tab "log"}} class="on"{{end}}><b>神社日志</b><span class="bar"></span></a>
+</div>
+
+{{if eq .Tab "ema"}}
+{{/* 筛选面板（ShrineBoardScreen.kt:560-660）：ModalBottomSheet、28dp 顶圆角、
+   标题「筛选绘马」+ 副题「按状态筛选，或切换时间排序。」+ 关闭钮；
+   状态 4 枚 FilterPill、时间排序 2 枚，底部「重置 / 应用」等宽两钮。
+   网页用原生 <dialog> + GET 表单，无 JS。 */}}
+<dialog class="ema-filter" id="ema-filter">
+  <form method="get" action="/shrine" class="ema-filter-body">
+    <input type="hidden" name="tab" value="ema">
+    <input type="hidden" name="tag" value="{{.Tag}}">
+    <div class="sha-head">
+      <div>
+        <b class="sha-title">筛选绘马</b>
+        <span class="sha-sub">按状态筛选，或切换时间排序。</span>
+      </div>
+      <button type="button" class="sha-close" data-close-filter aria-label="关闭">{{template "i-close"}}</button>
+    </div>
+    <div class="sha-section">
+      <div class="section-label">状态</div>
+      <div class="sha-card">
+        <div class="sha-pills">
+          <label class="sha-pill t-open"><input type="checkbox" name="states" value="open"{{if hasState .States "open"}} checked{{end}}><span>open</span></label>
+          <label class="sha-pill t-in_progress"><input type="checkbox" name="states" value="in_progress"{{if hasState .States "in_progress"}} checked{{end}}><span>in progress</span></label>
+          <label class="sha-pill t-resolved"><input type="checkbox" name="states" value="resolved"{{if hasState .States "resolved"}} checked{{end}}><span>resolved</span></label>
+          <label class="sha-pill t-closed"><input type="checkbox" name="states" value="closed"{{if hasState .States "closed"}} checked{{end}}><span>closed</span></label>
+        </div>
+      </div>
+    </div>
+    <div class="sha-section">
+      <div class="section-label">时间排序</div>
+      <div class="sha-card">
+        <div class="sha-pills">
+          <label class="sha-pill t-sort"><input type="radio" name="sort" value="new"{{if ne .Sort "old"}} checked{{end}}><span>最新</span></label>
+          <label class="sha-pill t-sort"><input type="radio" name="sort" value="old"{{if eq .Sort "old"}} checked{{end}}><span>最旧</span></label>
+        </div>
+      </div>
+    </div>
+    <div class="sha-actions">
+      <a class="btn-ghost" href="/shrine?tab=ema&tag={{.Tag}}&sort=new">重置</a>
+      <button class="btn" type="submit">应用</button>
+    </div>
+  </form>
+</dialog>
+<div class="filter-bar"><button type="button" class="fb-open" data-open-filter>筛选</button></div>
+<div class="tabs-u compact">
+  <a href="{{.FilterURL ""}}"{{if eq .Tag ""}} class="on"{{end}}><b>全部</b><span class="bar"></span></a>
+  {{range .AllTags}}<a href="{{$.FilterURL .}}"{{if eq $.Tag .}} class="on"{{end}}><b>{{.}}</b><span class="bar"></span></a>{{end}}
+</div>
+{{/* 已生效的筛选条件（ShrineBoardScreen.kt:504-540）：点胶囊移除；分类走页签不在此列 */}}
+{{if .States}}
+<div class="filter-bar"><span class="fb-label">筛选：</span>
+  {{range .States}}<a class="pill" href="{{$.StateURL .}}">{{webEmaStateLabel .}} ×</a>{{end}}
+</div>
+{{end}}
+{{if not .Emas}}
+{{template "empty" "没有绘马"}}
+{{end}}
+<div class="ema-list">
+{{range .Emas}}
+<a class="ema-card" href="/ema/{{.ID}}">
+  <span class="avatar ring" data-role="{{.Author.Role}}">{{initial .Author.Nickname}}</span>
+  <span class="ec-main">
+    <span class="ec-head"><b class="no">#{{.ID}}</b> <span class="ec-title">{{.Title}}</span> <span class="stpill t-{{.State}}">{{webEmaStateLabel .State}}</span></span>
+    {{/* 标签行恒渲染（Cards.kt:361-374）：无（可识别）标签时放一枚隐形胶囊占位，卡高才齐 */}}
+    <span class="ec-tags">{{$tags := webKnownTags .Tags}}{{if $tags}}{{range $tags}}<span class="tagpill tt-{{.}}"><i></i>{{.}}</span>{{end}}{{else}}<span class="tagpill tt-enhance ph" aria-hidden="true"><i></i>enhance</span>{{end}}</span>
+    <span class="ec-sum">{{.Excerpt}}</span>
+    <span class="ec-foot"><span class="ec-name">{{.Author.Nickname}}</span><span class="role-tag" data-role="{{.Author.Role}}">{{rolename .Author.Role}}</span><span class="ec-time">{{.TimeText}}</span><span class="ec-gap"></span><span class="icount">{{template "i-comment"}}{{.ReplyCount}}</span></span>
+  </span>
+</a>
+{{end}}
+</div>
+{{if .Emas}}
+{{/* 滚动加载（ShrineBoardScreen.kt:450-472 PrefetchOnApproach + loadMore）：
+   收尾行四态「上滑加载更多 / 少女祈祷中…… / 加载更多失败，点击重试 /
+   已经到底了 · 共 N 条」。分页器保留为无 JS 兜底。 */}}
+<div data-infinite data-kind="ema" data-board="shrine" data-page="{{.PageNum}}" data-total="{{.Total}}"
+     data-qs="tag={{.Tag}}&states={{range .States}}{{.}},{{end}}&sort={{.Sort}}">
+<div class="pager">
+  {{if .PrevOn}}<a class="btn-ghost" href="{{.PrevURL}}">上一页</a>{{else}}<span class="btn-ghost dis">上一页</span>{{end}}
+  <span class="pill">共 {{.Total}} 条</span>
+  {{if .NextOn}}<a class="btn-ghost" href="{{.NextURL}}">下一页</a>{{else}}<span class="btn-ghost dis">下一页</span>{{end}}
+</div>
+</div>
+<p class="page-end" data-role="list-end">{{if .NextOn}}上滑加载更多{{else}}已经到底了 · 共 {{.Total}} 条{{end}}</p>
+{{end}}
+<a class="fab" href="/ema/new" aria-label="发绘马">+</a>
+
+{{else if eq .Tab "staff"}}
+<div class="staff-list">
+<div class="neu-surface duty-card">
+  <h3>临时奉仕的职责</h3>
+  <div class="duty-lines">
+    <p>每日巡阅各板块的帖子，维持殿内秩序。</p>
+    <p>甄别引战、营利广告、色情与政治等违禁之言。</p>
+    <p>记录帖子编号，附上 tips 标签，呈至社务箱。</p>
+    <p>静候奉仕、宫司与神主裁决，自身不作定夺。</p>
+  </div>
+  <p class="form-hint">临时奉仕无删除之权，唯司上报。</p>
+</div>
+{{if .CanCurate}}
+<div class="neu-surface pending-card">
+  <h3>申请批阅</h3>
+  <p class="form-hint">临时奉仕的入会申请，一周内完成批阅</p>
+  {{if not .Pending}}<p class="page-end">暂时没有待批阅的申请</p>{{end}}
+  {{range .Pending}}
+  <div class="pending-row" data-app-id="{{.ID}}" data-nick="{{.User.Nickname}}">
+    <div class="pn-name">{{.User.Nickname}} · {{.User.No}}</div>
+    <p class="pn-reason">{{.Reason}}</p>
+    <p class="form-hint">每周可奉仕 {{.WeeklyHours}}</p>
+    <div class="pn-btns">
+      <button class="pn-ok" data-approve="1">通过</button>
+      <button class="pn-no" data-approve="0">婉拒</button>
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{if not .Staff}}
+{{template "empty" "暂无神社维护人员信息"}}
+{{end}}
+{{range .Staff}}
+<div class="section-label">{{.RoleName}} · {{len .Members}} 人</div>
+<div class="neu-surface staff-card">
+  {{range $i, $m := .Members}}
+  {{if $i}}<hr class="hairline">{{end}}
+  <a class="staff-row" href="/u/{{.No}}">
+    <span class="avatar ring av38" data-role="{{.Role}}">{{initial .Nickname}}</span>
+    <span class="sr-main">
+      <span class="name">{{.Nickname}}</span>
+      {{if .Signature}}<span class="sr-sig">{{.Signature}}</span>{{end}}
+      <span class="sr-joined">任职时间 {{webTime .JoinedAt}}</span>
+    </span>
+    <span class="role-tag" data-role="{{.Role}}">{{rolename .Role}}</span>
+  </a>
+  {{end}}
+</div>
+{{end}}
+<div class="apply-block">
+  <button class="btn btn-full" data-role="apply" {{if ne .ApplyState "ok"}}disabled{{end}}>{{.ApplyLabel}}</button>
+  {{if eq .ApplyState "pending"}}<p class="form-hint center">宫司审核后会通过社务箱通知您</p>{{end}}
+</div>
+</div>
+
+{{else}}
+<div class="neu-surface current-version">
+  <span class="form-label">当前版本</span>
+  <div class="cv-row">
+    <span class="cv-num">{{.Version}}</span>
+    <button class="btn-ghost" data-role="checkup">检查更新</button>
+  </div>
+</div>
+<div class="section-label">更新日志 · {{len .Releases}} 条</div>
+{{if not .Releases}}
+{{template "empty" "没有日志"}}
+{{end}}
+{{/* 日志卡（ReleaseNoteCard，ShrineBoardScreen.kt:1324-1400）：
+   版本 titleLarge + 10dp + 渠道胶囊 + 弹性 + 日期 labelSmall；
+   类型胶囊行（10dp 上、6dp 间）；12dp 后正文 Markdown（最高 220dp 渐隐）。 */}}
+{{range .Releases}}
+<a class="neu-surface release-card" href="/log/{{.Version}}">
+  <div class="rc-head"><b class="rc-ver">{{.Version}}</b><span class="pill {{if eq .Channel "beta"}}t-beta{{else}}t-stable{{end}}">{{if eq .Channel "beta"}}测试版{{else}}稳定版{{end}}</span><span class="rc-time">{{webTime .CreatedAt}}</span></div>
+  {{if .Kinds}}<div class="rc-kinds">{{range .Kinds}}<span class="pill kind k-{{.}}">{{.}}</span>{{end}}</div>{{end}}
+  <div class="rc-body md">{{.BodyHTML}}</div>
+</a>
+{{end}}
+{{end}}
+{{template "bottom" .}}

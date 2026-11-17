@@ -1,3 +1,8 @@
+-- 021: 赛钱（奉纳）系统。
+-- 每人初始 100 円；每日首次上线 +50（Asia/Shanghai 日界，与求签同一把尺）；
+-- 给帖子奉纳任意整数金额（不得超出余额），作者收取 10%（向下取整），
+-- 其余沉没——只进不出的部分是通缩阀，防经济通胀。
+
 ALTER TABLE users ADD COLUMN balance BIGINT NOT NULL DEFAULT 100;
 ALTER TABLE users ADD COLUMN offer_day DATE;
 

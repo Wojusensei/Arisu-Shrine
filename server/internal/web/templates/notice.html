@@ -1,0 +1,51 @@
+{{template "top" .}}
+{{/* 通知详情（NoticeDetailScreen.kt:186-300）：
+   正文卡 20dp 圆角 + h18/v18：KindBadge 30dp 圆（图标 16dp，色同列表）
+   + 10dp + 类型名 titleSmall + 弹性 + 编号 CodeLabel（InkFaint）
+   → 6dp → 时间 labelSmall（未读再跟 6dp 红点）→ 14dp → 内容 bodyLarge 16/30。
+   功能区 SectionCard：收藏通知（开关）/ 标为未读 / 删除通知（朱色）。 */}}
+<div class="neu-surface notice-card">
+  <div class="notice-head">
+    <span class="kind-badge" data-kind="{{.NoticeItem.Kind}}"></span>
+    <b class="kind-name">{{.Sub}}</b>
+    <span class="notice-id">{{.NoticeItem.ID}}</span>
+  </div>
+  <div class="notice-time">{{webTime .NoticeItem.CreatedAt}}</div>
+  <p class="notice-body">{{.NoticeItem.Content}}</p>
+</div>
+
+<div class="entry-card notice-actions">
+  {{/* 收藏通知（NoticeDetailScreen.kt:228-245）：SettingSwitchRow 带星标图标 */}}
+  <button class="entry star" data-role="star-notice" data-id="{{.NoticeItem.ID}}" data-on="{{if .NoticeItem.Starred}}1{{else}}0{{end}}">
+    <span class="lbl">收藏通知</span>
+    <span class="switch{{if .NoticeItem.Starred}} on{{end}}"></span>
+  </button>
+  {{if .NoticeItem.Read}}
+  <hr class="hairline">
+  <a class="entry" href="#" data-api="POST /api/notices/{{.NoticeItem.ID}}/unread" data-toast="已标为未读" data-noreload="1">
+    <span class="lbl">标为未读</span>
+  </a>
+  {{end}}
+  <hr class="hairline">
+  <a class="entry danger" href="#" data-confirm='{"title":"删除这条通知？","body":"删除后无法恢复。","confirm":"删除","danger":true}' data-api="DELETE /api/notices/{{.NoticeItem.ID}}" data-after="back">
+    <span class="lbl">删除通知</span>
+  </a>
+</div>
+{{if .RouteURL}}
+<a class="btn btn-full notice-goto" href="{{.RouteURL}}">{{.RouteLabel}}</a>
+{{end}}
+
+{{/* 快捷回复（NoticeDetailScreen.kt:290-330）：仅「回复」类通知且目标是帖子时给。
+   上限 2000 字、占位「回复这篇帖子…」、成功后提示「回复已发送」并收起。 */}}
+{{if .ReplyPostNo}}
+<div class="notice-reply" data-role="notice-reply" data-post="{{.ReplyPostNo}}">
+  <button class="notice-reply-toggle" type="button" data-role="reply-toggle">快捷回复</button>
+  <div class="notice-reply-box" data-role="reply-box" hidden>
+    <div class="well">
+      <textarea class="field" data-role="reply-input" maxlength="2000" rows="2" placeholder="回复这篇帖子…"></textarea>
+    </div>
+    <button class="notice-reply-send" type="button" data-role="reply-send" aria-label="发送">{{template "i-send"}}</button>
+  </div>
+</div>
+{{end}}
+{{template "bottom" .}}

@@ -9,6 +9,8 @@ import (
 	"go.uber.org/zap"
 )
 
+// Mailer 邮件发送。SMTP 未配置时回落到日志打印（开发模式），
+// 收件邮箱不限服务商（Outlook/Hotmail/QQ/163/Gmail/edu 等任意地址均可）。
 type Mailer struct {
 	Host     string
 	Port     int
@@ -22,6 +24,7 @@ func (m *Mailer) Configured() bool {
 	return m.Host != "" && m.From != ""
 }
 
+// SendCode 发送验证码邮件。收件地址只做基本清理，不做域名白名单。
 func (m *Mailer) SendCode(to, code string) error {
 	if !m.Configured() {
 		m.Log.Warn("SMTP 未配置，验证码仅打印到日志（开发模式）", zap.String("to", to), zap.String("code", code))
@@ -44,18 +47,19 @@ func (m *Mailer) SendCode(to, code string) error {
 	if err != nil {
 		return err
 	}
-
+	// 465 直连 SSL 的常见配置（QQ/163 等授权码端口）
 	if m.Port == 465 {
 		c.SetTLSPolicy(mail.TLSMandatory)
 		c.SetSSLPort(true, false)
 	} else {
-
+		// 587/25：STARTTLS 必须成功，拒绝降级明文（验证码防中间人截获）
 		c.SetTLSPolicy(mail.TLSMandatory)
 		c.SetTLSConfig(&tls.Config{ServerName: m.Host, MinVersion: tls.VersionTLS12})
 	}
 	return c.DialAndSend(msg)
 }
 
+// NormalizeEmail 邮箱规范化：去空白、转小写（Gmail 视角域名统一）
 func NormalizeEmail(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }

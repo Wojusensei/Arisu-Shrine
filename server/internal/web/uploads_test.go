@@ -22,6 +22,7 @@ func TestThumbWidthOfWhitelist(t *testing.T) {
 	}
 }
 
+// 面积平均：2×2 四个像素缩成 1×1 时取其均值
 func TestScaleDownAreaAverages(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	src.SetRGBA(0, 0, color.RGBA{R: 0, G: 0, B: 0, A: 255})
@@ -38,6 +39,7 @@ func TestScaleDownAreaAverages(t *testing.T) {
 	}
 }
 
+// 长边按 target 收，短边等比，不超界
 func TestScaleDownAreaKeepsRatio(t *testing.T) {
 	src := image.NewRGBA(image.Rect(0, 0, 1200, 600))
 	out := scaleDownArea(src, 400)
@@ -46,6 +48,7 @@ func TestScaleDownAreaKeepsRatio(t *testing.T) {
 	}
 }
 
+// 端到端：JPEG 进 → 缩小后的 JPEG 出，且可正常解码
 func TestBuildThumbJPEG(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "big.jpg")
@@ -78,6 +81,7 @@ func TestBuildThumbJPEG(t *testing.T) {
 	}
 }
 
+// PNG 源出 PNG：透明像素保留 alpha，不会被压成黑底
 func TestBuildThumbPNGKeepsAlpha(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "avatar.png")
@@ -121,6 +125,7 @@ func TestBuildThumbPNGKeepsAlpha(t *testing.T) {
 	}
 }
 
+// gif/webp 等不做缩略（动图不能被拍成静帧），由调用方原样下发
 func TestThumbSkipsAnimatedFormats(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"a.gif", "b.webp", "c.apk"} {
@@ -135,19 +140,20 @@ func TestThumbSkipsAnimatedFormats(t *testing.T) {
 	}
 }
 
+// 像素数上限：小体积、大尺寸的图必须被拦下（体积闸只看字节数拦不住它）
 func TestThumbTooLargeByPixelCount(t *testing.T) {
 	cases := []struct {
 		w, h int
 		want bool
 	}{
-		{2048, 2048, false},
-		{8000, 5000, false},
-		{8192, 5120, false},
-		{8193, 5120, true},
-		{20000, 20000, true},
-		{60000, 60000, true},
-		{0, 100, true},
-		{-1, -1, true},
+		{2048, 2048, false},  // App 上传的长边上限（≈4MP）
+		{8000, 5000, false},  // 40.0MP，在 40Mi 像素以内
+		{8192, 5120, false},  // 正好等于上限
+		{8193, 5120, true},   // 过线一格
+		{20000, 20000, true}, // 400MP：落盘不到 0.5MB，解码要 380MB、1.7 秒
+		{60000, 60000, true}, // 3.4GB 级
+		{0, 100, true},       // 尺寸读不出来
+		{-1, -1, true},       //
 	}
 	for _, c := range cases {
 		if got := thumbTooLarge(image.Config{Width: c.w, Height: c.h}); got != c.want {

@@ -2,12 +2,13 @@ package model
 
 import "fmt"
 
+// 角色与权限等级（数值越大权限越高）
 const (
-	RoleMember     = "member"
-	RoleTempHoushi = "temp_houshi"
-	RoleHoushi     = "houshi"
-	RoleGuuji      = "guuji"
-	RoleKannushi   = "kannushi"
+	RoleMember     = "member"      // 社员
+	RoleTempHoushi = "temp_houshi" // 临时奉仕
+	RoleHoushi     = "houshi"      // 奉仕
+	RoleGuuji      = "guuji"       // 宫司
+	RoleKannushi   = "kannushi"    // 神主
 )
 
 var roleRank = map[string]int{
@@ -21,27 +22,32 @@ var roleNames = map[string]string{
 
 func RoleRank(role string) int    { return roleRank[role] }
 func RoleName(role string) string { return roleNames[role] }
-func IsAdmin(role string) bool    { return roleRank[role] >= roleRank[RoleHoushi] }
-func IsGuuji(role string) bool    { return roleRank[role] >= roleRank[RoleGuuji] }
+func IsAdmin(role string) bool    { return roleRank[role] >= roleRank[RoleHoushi] } // 奉仕及以上（可删帖/处理举报/警告）
+func IsGuuji(role string) bool    { return roleRank[role] >= roleRank[RoleGuuji] }  // 宫司及以上（置顶精华/禁言/封禁/发日志）
 func IsKannushi(role string) bool { return role == RoleKannushi }
 
 func FormatUserNo(id int64) string { return fmt.Sprintf("User_%06d", id) }
 func FormatPostNo(id int64) string { return fmt.Sprintf("arisu_%06d", id) }
 
+// FormatPostNo2 通知路由用（与客户端路由 post/{postId} 对齐）。
+// 历史教训：这里曾返回 arisu_%06d 帖号，客户端按 post/ 前缀分发，
+// 社务箱所有回复/追踪通知点了都没反应。
 func FormatPostNo2(id int64) string { return fmt.Sprintf("post/%d", id) }
+
+// ---- 用户 ----
 
 type UserBrief struct {
 	ID        int64  `json:"id"`
 	No        string `json:"no"`
 	Nickname  string `json:"nickname"`
 	Role      string `json:"role"`
-	Avatar    string `json:"avatar"`
-	Following bool   `json:"following"`
+	Avatar    string `json:"avatar"`    // 展示用头像 URL（活跃头像开且有时用活跃，否则固定）
+	Following bool   `json:"following"` // 查看者是否已关注该社员（列表场景）
 }
 
 type User struct {
 	UserBrief
-
+	// 邮箱仅在社员自行公开时下发
 	Email          string `json:"email,omitempty"`
 	Signature      string `json:"signature"`
 	StatusEmoji    string `json:"status_emoji"`
@@ -54,10 +60,11 @@ type User struct {
 	FollowingCount int64  `json:"following_count"`
 	FollowerCount  int64  `json:"follower_count"`
 	PostCount      int64  `json:"post_count"`
-
+	// 账面（单位 0.1 円）：每日上线 +50 円、初始 100 円，奉纳支出、被奉纳收 10%（零头不丢）
 	BalanceTenths int64 `json:"balance_tenths"`
 }
 
+// Me 自有视角（多出仅本人可见字段）
 type Me struct {
 	User
 	Email               string          `json:"email"`
@@ -66,14 +73,16 @@ type Me struct {
 	ActiveAvatarEnabled bool            `json:"active_avatar_enabled"`
 	ShowFields          map[string]bool `json:"show_fields"`
 	NotifyScope         map[string]bool `json:"notify_scope"`
-	MutedUntil          *int64          `json:"muted_until"`
+	MutedUntil          *int64          `json:"muted_until"` // nil=未禁言
 	DeactivatedAt       *int64          `json:"deactivated_at"`
 }
+
+// ---- 帖子 ----
 
 type Post struct {
 	ID           int64     `json:"id"`
 	No           string    `json:"no"`
-	Board        string    `json:"board"`
+	Board        string    `json:"board"` // main|gensokyo|dev
 	Title        string    `json:"title"`
 	Body         string    `json:"body"`
 	Intro        string    `json:"intro"`
@@ -93,7 +102,7 @@ type Post struct {
 	UpdatedAt    int64     `json:"updated_at"`
 	Edited       bool      `json:"edited"`
 	Deleted      bool      `json:"deleted"`
-
+	// 正文里 @User_编号 提到的社员（读时解析），客户端渲染时用昵称顶替编号展示
 	Mentions []UserBrief `json:"mentions,omitempty"`
 }
 
@@ -104,15 +113,17 @@ type Comment struct {
 	ReplyToUser *UserBrief `json:"reply_to_user"`
 	Author      UserBrief  `json:"author"`
 	Content     string     `json:"content"`
-
+	// 评论附图（可空串）：本站图床的相对/绝对 URL，见 CommentImageURL 校验
 	ImageURL  string `json:"image_url"`
 	LikeCount int64  `json:"like_count"`
 	Liked     bool   `json:"liked"`
 	Mine      bool   `json:"mine"`
 	CreatedAt int64  `json:"created_at"`
-
+	// 评论内容里 @User_编号 提到的社员（读时解析），渲染时顶替编号展示
 	Mentions []UserBrief `json:"mentions,omitempty"`
 }
+
+// ---- 绘马 ----
 
 type Ema struct {
 	ID         int64     `json:"id"`
@@ -134,6 +145,8 @@ type EmaReply struct {
 	CreatedAt int64     `json:"created_at"`
 }
 
+// ---- 收藏 ----
+
 type Collection struct {
 	ID        int64  `json:"id"`
 	Name      string `json:"name"`
@@ -142,6 +155,8 @@ type Collection struct {
 	CoverURL  string `json:"cover_url"`
 }
 
+// ---- 表情包 ----
+
 type Sticker struct {
 	ID        int64  `json:"id"`
 	URL       string `json:"url"`
@@ -149,29 +164,35 @@ type Sticker struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
+// ---- 通知（社务箱） ----
+
 type Notice struct {
 	ID          int64  `json:"id"`
 	Kind        string `json:"kind"`
-	Category    string `json:"category"`
+	Category    string `json:"category"` // reply|system|report
 	Content     string `json:"content"`
-	TargetRoute string `json:"target_route"`
+	TargetRoute string `json:"target_route"` // post/13、ema/3、user/5、staff、changelog
 	Read        bool   `json:"read"`
 	Starred     bool   `json:"starred"`
 	CreatedAt   int64  `json:"created_at"`
 }
 
+// ---- 版本日志 ----
+
 type Release struct {
 	ID         int64  `json:"id"`
 	Version    string `json:"version"`
-	Channel    string `json:"channel"`
-	ChangeType string `json:"change_type"`
+	Channel    string `json:"channel"`     // stable|beta
+	ChangeType string `json:"change_type"` // feature|fix|improvement|breaking
 	Body       string `json:"body"`
 	CreatedAt  int64  `json:"created_at"`
 }
 
+// ---- 游会 ----
+
 type Omikuji struct {
 	Luck      int    `json:"luck"`
-	Result    string `json:"result"`
+	Result    string `json:"result"` // daikichi|kichi|chuukichi|shoukichi|suekichi|kyou
 	Character string `json:"character"`
 	Series    string `json:"series"`
 	Fortune   string `json:"fortune"`
@@ -187,14 +208,18 @@ type OnlineStats struct {
 	TotalMinutes int64 `json:"total_minutes"`
 }
 
+// ---- 参拜热度（仿 GitHub 绿瓷砖） ----
+
 type Tile struct {
-	Date     string `json:"date"`
-	Score    int    `json:"score"`
+	Date     string `json:"date"`  // 2006-01-02
+	Score    int    `json:"score"` // 0~4 级（0 空）
 	Posts    int    `json:"posts"`
 	Comments int    `json:"comments"`
 	Minutes  int    `json:"minutes"`
-	Omikuji  int    `json:"omikuji"`
+	Omikuji  int    `json:"omikuji"` // 当日是否求过签（0/1）
 }
+
+// ---- 奉仕会 ----
 
 type StaffGroup struct {
 	Role     string        `json:"role"`
@@ -217,6 +242,8 @@ type StaffApplication struct {
 	CreatedAt   int64     `json:"created_at"`
 }
 
+// ---- 举报 ----
+
 type Report struct {
 	ID             int64     `json:"id"`
 	Reporter       UserBrief `json:"reporter"`
@@ -229,16 +256,22 @@ type Report struct {
 	CreatedAt      int64     `json:"created_at"`
 }
 
+// ---- 成就 ----
+
 type Achievement struct {
 	Code       string `json:"code"`
 	UnlockedAt int64  `json:"unlocked_at"`
 }
+
+// ---- 认证 ----
 
 type AuthResult struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	Me           *Me    `json:"me"`
 }
+
+// ---- 分页 ----
 
 type Page struct {
 	Page     int   `json:"page"`

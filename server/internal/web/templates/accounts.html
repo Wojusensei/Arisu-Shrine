@@ -1,0 +1,30 @@
+{{template "top" .}}
+<div class="section-label">本机账号</div>
+<div class="entry-card">
+  {{if not .Accounts}}
+  <span class="entry sub">还没有保存过账号，登录过的账号会出现在这里</span>
+  {{end}}
+  {{range $i, $a := .Accounts}}
+  {{if $i}}<hr class="hairline">{{end}}
+  {{/* 行（AccountManageScreen.kt:116-176）：头像 42 无环 + 12 + 昵称 bodyMedium /
+       邮箱 labelSmall + 尾部；当前账号给「使用中」胶囊，其余给朱色「移除」；
+       点行本身 = 免密切换（安卓同款：整行 clickable，非当前且无在途切换时可用）。 */}}
+  <div class="acct-row{{if not $a.Current}} tappable{{end}}" data-role="swap" data-id="{{$a.UserID}}">
+    <span class="avatar av42" data-role="{{$a.Role}}">{{initial $a.Nickname}}</span>
+    <span class="acct-main">
+      <span class="acct-name">{{$a.Nickname}}</span>
+      <span class="acct-mail">{{$a.Email}}</span>
+    </span>
+    {{if $a.Current}}
+    <span class="pill accent">使用中</span>
+    {{else}}
+    <button class="acct-act danger" data-role="remove" data-id="{{$a.UserID}}" data-name="{{$a.Nickname}}">移除</button>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+
+<div class="entry-card">
+  <a class="entry" href="/login?park=1">添加账号 <span class="sub">保留当前登录状态，去登录新的账号</span></a>
+</div>
+{{template "bottom" .}}

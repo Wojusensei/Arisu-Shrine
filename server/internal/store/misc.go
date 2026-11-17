@@ -15,6 +15,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 )
 
+// ---- 搜索（标题 ILIKE / 正则；编号精确直达） ----
+
+// escapeLike 转义 ILIKE 通配符与转义符本身（默认转义符是反斜杠）
 func escapeLike(q string) string {
 	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 	return r.Replace(q)
@@ -30,11 +33,11 @@ func (s *Store) SearchPosts(ctx context.Context, viewerID int64, q string, useRe
 		cond = ` p.title ~ $2`
 		args = append(args, q)
 	} else {
-
+		// ILIKE 通配符转义：输入 %/_ 会被当通配符，搜「%」等于全表匹配
 		cond = ` p.title ILIKE '%' || $2 || '%'`
 		args = append(args, escapeLike(q))
 	}
-
+	// 编号精确匹配：arisu_000013 / 纯数字
 	if id, ok := parsePostNo(q); ok {
 		rows, err := s.Pool.Query(ctx, postSelect+` WHERE p.id=$2 AND p.deleted_at IS NULL`+blockFilter("p.author_id"), viewerID, id)
 		if err != nil {
@@ -88,6 +91,9 @@ func parsePostNo(q string) (int64, bool) {
 	return n, true
 }
 
+// SearchMentionUsers 提及选择器专用：只查社员，不搜帖子。
+// 通用搜索每 2 秒一次限频、还要顺带查 30 篇帖子，逐键补全时又慢又容易被挡；
+// 这里只扫 users 表，权重按「编号精确 > 昵称全等 > 昵称前缀 > 去空格前缀 > 包含」排。
 func (s *Store) SearchMentionUsers(ctx context.Context, viewerID int64, q string, limit int) ([]model.UserBrief, error) {
 	if limit <= 0 || limit > 20 {
 		limit = 8
@@ -96,7 +102,7 @@ func (s *Store) SearchMentionUsers(ctx context.Context, viewerID int64, q string
 	if raw == "" {
 		return nil, nil
 	}
-
+	// 编号只认 User_000012 与纯数字；昵称里夹的数字不当编号，免得搜「灵梦2」冒出 User_000002
 	idText := ""
 	lower := strings.ToLower(raw)
 	if strings.HasPrefix(lower, "user_") {
@@ -105,12 +111,12 @@ func (s *Store) SearchMentionUsers(ctx context.Context, viewerID int64, q string
 		idText = raw
 	}
 	if n, err := strconv.ParseInt(idText, 10, 64); err == nil && n > 0 {
-
+		// 前导零归一：User_000012 与 12 查到同一个
 		idText = strconv.FormatInt(n, 10)
 	} else {
 		idText = ""
 	}
-
+	// 相册式的「雾雨 魔理沙」与「雾雨魔理沙」互相认得：比较前去掉半角/全角空格
 	norm := strings.NewReplacer(" ", "", "　", "").Replace(raw)
 	if norm == "" {
 		norm = raw
@@ -167,7 +173,7 @@ func (s *Store) SearchUsers(ctx context.Context, viewerID int64, q string, limit
 	if limit <= 0 || limit > 50 {
 		limit = 20
 	}
-
+	// 编号直达：User_000001（与昵称分支同一把尺：匿名化与被拉黑者都当不存在）
 	if strings.HasPrefix(strings.ToLower(q), "user_") {
 		n, err := strconv.ParseInt(strings.TrimPrefix(strings.ToLower(q), "user_"), 10, 64)
 		if err == nil && n > 0 {
@@ -206,6 +212,8 @@ func (s *Store) SearchUsers(ctx context.Context, viewerID int64, q string, limit
 	return out, rows.Err()
 }
 
+// ---- 版本日志 ----
+
 func (s *Store) Releases(ctx context.Context) ([]model.Release, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT id, version, channel, change_type, body, created_at FROM releases ORDER BY created_at DESC`)
 	if err != nil {
@@ -226,7 +234,8 @@ func (s *Store) Releases(ctx context.Context) ([]model.Release, error) {
 }
 
 func (s *Store) CreateRelease(ctx context.Context, r model.Release, creatorID int64) error {
-
+	// 同版本同渠道重复发布=更新既有记录（迁移 011 唯一约束）：
+	// 重复行会让客户端更新日志按 version+channel 做 key 直接崩
 	_, err := s.Pool.Exec(ctx, `INSERT INTO releases(version, channel, change_type, body, created_by) VALUES($1,$2,$3,$4,$5)
 		ON CONFLICT (version, channel) DO UPDATE SET change_type=EXCLUDED.change_type, body=EXCLUDED.body, created_by=EXCLUDED.created_by, created_at=now()`,
 		r.Version, sanitizeEnum(r.Channel, []string{"stable", "beta"}),
@@ -234,6 +243,9 @@ func (s *Store) CreateRelease(ctx context.Context, r model.Release, creatorID in
 	return err
 }
 
+// ---- 御神签（每日一签） ----
+
+// luckBand 幸运值 1-100 → 吉凶档位
 func luckBand(v int) string {
 	switch {
 	case v <= 10:
@@ -251,6 +263,9 @@ func luckBand(v int) string {
 	}
 }
 
+// 每日幸运值取截断正态（均值 68、标准差 25，范围 1-100）。
+// 均匀抽取时凶与末吉合计占三成；正态化后约 0.8% 与 6.2%，
+// 中吉与吉合计约六成，大吉仍接近一成。档位占比由 drawLuck 的测试锁定。
 const (
 	omikujiLuckMean   = 68.0
 	omikujiLuckStdDev = 25.0
@@ -265,8 +280,13 @@ func drawLuck() int {
 	}
 }
 
+// 「今天」按社员的时区（Asia/Shanghai）判定：数据库容器跑在 UTC，
+// CURRENT_DATE 会在北京时间 0 点到 8 点之间给出前一天的日期，
+// 造成「明明没求过签却提示今日已求」。全项目统一用同一表达式。
 const OmikujiTodayExpr = `(now() AT TIME ZONE 'Asia/Shanghai')::date`
 
+// shanghaiLoc 时区敏感的本地判定（成就、瓷砖）一律用它，与 SQL 侧的
+// OmikujiTodayExpr 保持同一时区，别再用服务器本地时间
 var shanghaiLoc = mustShanghai()
 
 func mustShanghai() *time.Location {
@@ -277,15 +297,22 @@ func mustShanghai() *time.Location {
 	return loc
 }
 
-func (s *Store) OmikujiToday(ctx context.Context, userID int64) (bool, int64) {
+// OmikujiToday 只查今日是否已抽，绝不落库（供客户端进页时判断，不消耗当日签）。
+// 只有「无记录」返回未抽；查询故障原样上抛——把一切错误当成未抽会让客户端
+// 把「今日已抽」覆盖成可点的「今日求签」，与 DrawOmikuji 的幂等回读叠加后观感反复横跳
+func (s *Store) OmikujiToday(ctx context.Context, userID int64) (bool, int64, error) {
 	var luck int64
 	err := s.Pool.QueryRow(ctx, `SELECT luck FROM omikuji_draws WHERE user_id=$1 AND day=`+OmikujiTodayExpr, userID).Scan(&luck)
-	if err != nil {
-		return false, 0
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, 0, nil
 	}
-	return true, luck
+	if err != nil {
+		return false, 0, err
+	}
+	return true, luck, nil
 }
 
+// OmikujiLeaderRow 御签榜条目；rank 在服务端算好，客户端只管展示
 type OmikujiLeaderRow struct {
 	Nickname string `json:"nickname"`
 	Role     string `json:"role"`
@@ -295,22 +322,35 @@ type OmikujiLeaderRow struct {
 	IsMe     bool   `json:"is_me"`
 }
 
+// OmikujiStanding 自己的今日名次；未求签时榜单里没有这一行
 type OmikujiStanding struct {
 	Rank int `json:"rank"`
 	Luck int `json:"luck"`
 }
 
+// OmikujiBoard 今日御签榜：前十名次 + 自己附近的名次。
+// Items 保持旧字段名，老客户端忽略 Nearby/Me 也能照常显示前十。
 type OmikujiBoard struct {
 	Items  []OmikujiLeaderRow `json:"items"`
 	Nearby []OmikujiLeaderRow `json:"nearby"`
 	Me     *OmikujiStanding   `json:"me,omitempty"`
 }
 
+// 榜单永远只展示前 10 名；自己的小榜是「我 + 前后各 2 人」，共 5 人。
+// 小榜允许与前十重复：第 11、12 名的上方邻居也在十强榜里，两处都摆，
+// 保证小榜任何时候都是完整的 5 行（榜首/榜尾按实际人数收缩）。
 const (
 	leaderboardTopRanks  = 10
 	leaderboardNeighbors = 2
 )
 
+// OmikujiLeaderboard 今日御签榜：幸运值前 10 名 + 自己前后各 2 人。
+// 同分按抽签先后严格排位（先抽在前，最后以 user_id 兜底保证确定性），
+// 名次 1..N 唯一——「我的第 30 名」才有确定含义。
+// 排名先在全量有效社员上算好，再隐藏拉黑的行：名次是当日的公共属性，
+// 不因谁屏蔽了谁而变，代价是榜单里偶尔缺一行。
+// 自己在前十时不再返回 Nearby（本人已在高亮的前十里）；前十之外则返回完整
+// 五人小榜，落在前十内的邻居允许在 Items/Nearby 里各出现一次。
 func (s *Store) OmikujiLeaderboard(ctx context.Context, viewerID int64) (*OmikujiBoard, error) {
 	rows, err := s.Pool.Query(ctx, `
 		WITH ranked AS (
@@ -366,6 +406,7 @@ func (s *Store) OmikujiLeaderboard(ctx context.Context, viewerID int64) (*Omikuj
 	return board, rows.Err()
 }
 
+// DrawOmikuji 每日运势：幸运值 1-100，当天已抽直接返回
 func (s *Store) DrawOmikuji(ctx context.Context, userID int64) (*model.Omikuji, error) {
 	var o model.Omikuji
 	var day time.Time
@@ -386,7 +427,8 @@ func (s *Store) DrawOmikuji(ctx context.Context, userID int64) (*model.Omikuji, 
 		RETURNING drawn_at`,
 		userID, luckBand(luck), luck).Scan(&day)
 	if err != nil {
-
+		// 双端同秒首抽：第二个 INSERT 撞 (user_id, day) 主键会 500，
+		// 而且当日签其实已被先到的请求落库——回读直接返回那一签
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return s.DrawOmikuji(ctx, userID)
@@ -424,6 +466,8 @@ func (s *Store) OmikujiHistory(ctx context.Context, userID int64, limit int) ([]
 	}
 	return out, rows.Err()
 }
+
+// ---- 举报 ----
 
 func (s *Store) CreateReport(ctx context.Context, reporterID int64, postID, commentID, emaID, userID *int64, reason string) (int64, error) {
 	var id int64
@@ -475,6 +519,12 @@ func (s *Store) Reports(ctx context.Context, status string, limit, offset int) (
 	return out, total, nil
 }
 
+// ResolveReport 处理举报；deleteTarget=true 时联动删除目标内容（管理删除，通知作者）
+// ReportTargetAuthorRole 举报目标的作者身份（处置删除的层级校验用）。
+// 第二个返回值=目标是否评论；第三个=false 表示没有可删除的内容目标（举报用户等场景）。
+// 评论举报的 post_id 里存的是父帖 id（仅作「前往查看」路由），
+// 层级必须按评论作者算——post 子查询放后面会被父帖作者抢走。
+// 评论删除适用「下不能管上」；帖子/绘马整体删除任何维护人员可执行（用户裁决）
 func (s *Store) ReportTargetAuthorRole(ctx context.Context, reportID int64) (string, bool, bool, error) {
 	var role *string
 	var isComment bool
@@ -508,9 +558,13 @@ func (s *Store) ResolveReport(ctx context.Context, reportID, handlerID int64, ap
 	if err != nil {
 		return err
 	}
-
+	// 先删内容再结案：删除失败时举报保持待处理可重试。
+	// 此前顺序相反，删除绘马报错（占位符 bug）会把举报错误终结成「已处理」，
+	// 内容却没删、举报人也收不到结果通知，且状态机不允许再来一次
 	if approve && deleteTarget {
-
+		// 目标已不存在（作者自行删除等）则跳过删除，处置照常结案。
+		// 只删举报真正指向的那一个目标：评论举报的 post_id 是父帖 id（路由参考），
+		// 一并删除会把整篇帖子连同其他评论一起带走
 		if commentID != nil {
 			if err := s.DeleteComment(ctx, *commentID, handlerID, true, reason); err != nil && !errors.Is(err, ErrNotFound) {
 				return err
@@ -532,11 +586,12 @@ func (s *Store) ResolveReport(ctx context.Context, reportID, handlerID int64, ap
 	if err != nil {
 		return err
 	}
-
+	// 并发处置同一举报时只有一方成功
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-
+	// 通知举报人处理结果；未删除内容时附上原内容路由，「前往查看」才能直达
+	// （此前结果通知不带路由，举报人只能干看文案）
 	statusText := "已驳回"
 	if approve {
 		statusText = "已处理"
@@ -561,8 +616,10 @@ func (s *Store) ResolveReport(ctx context.Context, reportID, handlerID int64, ap
 	return s.CreateNotice(ctx, input)
 }
 
-func (s *Store) SaveUpload(ctx context.Context, userID int64, file, kind string) error {
+// ---- 上传记录 ----
 
+func (s *Store) SaveUpload(ctx context.Context, userID int64, file, kind string) error {
+	// 005 里这张表的列叫 name——此前写成 file，每次都静默失败，审计表永远是空的
 	_, err := s.Pool.Exec(ctx, `INSERT INTO uploads(user_id, name, kind) VALUES($1,$2,$3)`, userID, file, kind)
 	return err
 }

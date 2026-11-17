@@ -1,0 +1,19 @@
+{{template "top" .}}
+{{/* 浏览足迹（HistoryScreen.kt）：安卓存 filesDir/history.json，网页对应
+     localStorage 的 arisu:history（app.js 的 window.historyStore 维护）。
+     按今天/昨天/更早分组，帖子与绘马共用一套条目。 */}}
+<div class="history-page" data-role="history-page">
+  <p class="page-end" data-role="history-loading">读取中…</p>
+</div>
+
+<div class="modal" data-role="history-clear-modal" hidden>
+  <div class="modal-box neu-surface">
+    <h3>清除全部浏览足迹？</h3>
+    <p class="modal-body">清除后不可恢复。</p>
+    <div class="dialog-actions">
+      <button class="btn-ghost" data-role="history-clear-cancel">取消</button>
+      <button class="btn" data-role="history-clear-ok" data-danger>清除</button>
+    </div>
+  </div>
+</div>
+{{template "bottom" .}}

@@ -1,3 +1,5 @@
+# 本机开发 / 上云部署共用的容器编排
+# 用法：docker compose up -d
 services:
   postgres:
     image: postgres:16-alpine
@@ -37,20 +39,23 @@ services:
       redis:
         condition: service_healthy
     ports:
-
+      # 只绑回环：对外暴露由宿主反代承担，容器不直接裸奔公网
       - "127.0.0.1:8080:8080"
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - uploads:/app/uploads
     environment:
-
+      # 生产覆盖示例（也可直接改 config.yaml）：
+      # ARISU_BASE_URL: "https://shrine.example.com"
+      # ARISU_DB_DSN: "postgres://arisu:arisu@postgres:5432/arisu?sslmode=disable"
       ARISU_DB_DSN: "postgres://arisu:arisu@postgres:5432/arisu?sslmode=disable"
       ARISU_REDIS_ADDR: "redis:6379"
-
+      # 必填：config.yaml 里只保留占位符，不注入真实密钥启动会直接退出。
+      # 本机开发把密钥写进 server/.env（已被 gitignore）
       ARISU_JWT_SECRET: "${JWT_SECRET:?缺 JWT_SECRET，写进 server/.env}"
-
+      # config.yaml 的 dev_mode 回显验证码，只允许本机开发打开（生产 compose 压成 false）
       ARISU_ALLOW_DEV_MODE: "1"
-
+      # 图片等对外 URL 的拼装前缀：模拟器视角的宿主回环是 10.0.2.2
       ARISU_BASE_URL: "${DEV_BASE_URL:-http://10.0.2.2:8080}"
     restart: unless-stopped
 

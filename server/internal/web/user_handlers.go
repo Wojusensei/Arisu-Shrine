@@ -13,6 +13,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// userDetail 他人主页：资料 + 关注关系 + 计数
 func (w *Web) userDetail(c *gin.Context) {
 	v := w.viewer(c)
 	id, ok := pathID(c, "id")
@@ -33,9 +34,9 @@ func (w *Web) userDetail(c *gin.Context) {
 	_ = w.St.FillUserCounts(c.Request.Context(), pub, v.ID)
 	following, _ := w.St.IsFollowing(c.Request.Context(), v.ID, id)
 	followsMe, _ := w.St.IsFollowing(c.Request.Context(), id, v.ID)
-
+	// 只回「我有没有拉黑 TA」；TA 有没有拉黑我绝不下发（静默）
 	blocked, _ := w.St.Blocks(c.Request.Context(), v.ID, id)
-
+	// 禁言与封禁状态仅本人与管理角色可见，不对访客暴露
 	muted := v.ID == id || model.IsAdmin(v.Role)
 	banned := v.ID == id || model.IsAdmin(v.Role)
 	c.JSON(http.StatusOK, gin.H{
@@ -54,7 +55,7 @@ func (w *Web) userTiles(c *gin.Context) {
 		w.bad(c, "参数错误")
 		return
 	}
-
+	// 拉黑某人后不再展示对方的参拜热度（与「看不到对方的内容」同一把尺）
 	if blocked, _ := w.St.Blocks(c.Request.Context(), w.viewer(c).ID, id); blocked {
 		c.JSON(http.StatusOK, gin.H{"tiles": []model.Tile{}})
 		return
@@ -76,7 +77,7 @@ func (w *Web) userPosts(c *gin.Context) {
 	}
 	tab := c.DefaultQuery("tab", "posts")
 	if tab != "posts" && id != v.ID {
-
+		// 追踪/喜欢/收藏列表仅本人可见
 		w.err(c, http.StatusForbidden, "仅本人可见")
 		return
 	}
@@ -123,7 +124,7 @@ func (w *Web) follow(c *gin.Context) {
 		w.notFound(c)
 		return
 	}
-
+	// 拉黑是静默的：对方拉黑了您 → 照常回成功但不落库；您拉黑了对方 → 不做任何事
 	if blocked, _ := w.St.Blocks(c.Request.Context(), id, v.ID); blocked {
 		c.JSON(http.StatusOK, gin.H{"following": true})
 		return
@@ -136,7 +137,7 @@ func (w *Web) follow(c *gin.Context) {
 		w.err(c, 500, "操作失败")
 		return
 	}
-
+	// 关注通知防轰炸：按「目标+发起人」聚合去重，取关再关注不再反复刷对方社务箱
 	_ = w.St.CreateNotice(c.Request.Context(), store.NoticeInput{
 		UserID: id, Kind: "follow", Category: "system",
 		Content:     w.viewer(c).User.Nickname + " 关注了您",
@@ -181,6 +182,7 @@ func (w *Web) myFollowers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": list})
 }
 
+// myRoom 我的客房聚合数据
 func (w *Web) myRoom(c *gin.Context) {
 	v := w.viewer(c)
 	ctx := c.Request.Context()
@@ -190,7 +192,7 @@ func (w *Web) myRoom(c *gin.Context) {
 	st, _ := w.St.OnlineStats(ctx)
 	achievements, _ := w.St.Achievements(ctx, v.ID)
 	today := gin.H{"minutes": 0, "posts": 0, "comments": 0}
-
+	// 今日三项
 	var minutes, posts, comments int
 	_ = w.St.Pool.QueryRow(ctx, `SELECT COALESCE(sum(minutes),0), COALESCE(sum(posts),0), COALESCE(sum(comments),0)
 		FROM activity_days WHERE user_id=$1 AND day=`+store.OmikujiTodayExpr+``, v.ID).Scan(&minutes, &posts, &comments)
@@ -234,6 +236,9 @@ func (w *Web) myPosts(c *gin.Context) {
 
 func (w *Web) myCollections(c *gin.Context) {
 	v := w.viewer(c)
+	// 读列表前先保证默认收藏夹存在：安卓的收藏面板里总有一枚「默认收藏夹」，
+	// 网页若只靠「收藏动作」去建，从没收藏过的社员打开面板会看到空列表。
+	_, _ = w.St.EnsureDefaultCollection(c.Request.Context(), v.ID)
 	list, err := w.St.Collections(c.Request.Context(), v.ID)
 	if err != nil {
 		w.err(c, 500, "查询失败")
@@ -258,12 +263,14 @@ func (w *Web) newCollection(c *gin.Context) {
 		w.bad(c, "收藏夹名需为 1~20 个字符")
 		return
 	}
-
+	// 「默认收藏夹」是保留名：首藏时 EnsureDefaultCollection 按 (user_id, name)
+	// 冲突收敛，用户手动占了这个名，不带 collection_id 的收藏会永久落进这只非默认夹
 	if name == "默认收藏夹" {
 		w.bad(c, "已有同名收藏夹")
 		return
 	}
-
+	// 建夹上限：无限建夹会变成另一种垃圾内容（2026-10-02 用户裁决，20 个）
+	// 上限校验在 CreateCollection 的锁内事务里做，这里只兜并发外的友好提示
 	n, err := w.St.CollectionCount(c.Request.Context(), v.ID)
 	if err == nil && n >= 20 {
 		w.bad(c, "收藏夹最多 20 个")
@@ -285,6 +292,7 @@ func (w *Web) newCollection(c *gin.Context) {
 	c.JSON(http.StatusOK, col)
 }
 
+// deleteCollection 删除自建收藏夹（默认收藏夹不可删）：夹内帖子移回默认收藏夹
 func (w *Web) deleteCollection(c *gin.Context) {
 	v := w.viewer(c)
 	id, ok := pathID(c, "id")
@@ -308,6 +316,8 @@ func (w *Web) deleteCollection(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// ---- 管理：警告 / 禁言 / 封禁 / 角色 ----
+
 type warnReq struct {
 	Content string `json:"content"`
 }
@@ -322,12 +332,12 @@ func (w *Web) warnUser(c *gin.Context) {
 		w.bad(c, "参数错误")
 		return
 	}
-
+	// 与 muteUser 同一套保护：不能警告自己、对方身份不得高于自己
 	if id == v.ID {
 		w.bad(c, "不能对您自己执行该操作")
 		return
 	}
-
+	// 目标先确认存在：此前不存在时短路了层级比较，warning 的通知 FK 直接 500
 	tgt, uerr := w.St.UserByID(c.Request.Context(), id)
 	if uerr != nil {
 		w.notFound(c)
@@ -357,7 +367,7 @@ func (w *Web) warnUser(c *gin.Context) {
 }
 
 type muteReq struct {
-	Hours  int    `json:"hours"`
+	Hours  int    `json:"hours"` // 1|24|168|720|0=永久
 	Reason string `json:"reason"`
 }
 
@@ -375,7 +385,7 @@ func (w *Web) muteUser(c *gin.Context) {
 		w.bad(c, "不能对您自己执行该操作")
 		return
 	}
-
+	// 目标先确认存在：此前不存在时短路了层级比较，warning 的通知 FK 直接 500
 	tgt, uerr := w.St.UserByID(c.Request.Context(), id)
 	if uerr != nil {
 		w.notFound(c)
@@ -402,7 +412,7 @@ func (w *Web) muteUser(c *gin.Context) {
 	label := ""
 	if req.Hours > 0 {
 		hours := req.Hours
-
+		// 10 年封顶：hours 过大时 Duration 溢出为负，禁言会静默失效
 		if hours > 87600 {
 			hours = 87600
 		}
@@ -410,7 +420,9 @@ func (w *Web) muteUser(c *gin.Context) {
 		until = &t
 		label = strconv.Itoa(hours) + " 小时"
 	} else {
-
+		// 永久禁言写哨兵年份（mutedErr 按 Year>9000 识别）。
+		// 此前 hours=0 落成 muted_until=NULL——NULL 的语义是「未禁言」，
+		// 点「永久」会发一条永久禁言通知然后把人解禁
 		t := time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
 		until = &t
 		label = "永久"
@@ -440,7 +452,7 @@ func (w *Web) banUser(c *gin.Context) {
 		w.bad(c, "参数错误")
 		return
 	}
-
+	// 目标先确认存在：此前不存在时短路了层级比较，warning 的通知 FK 直接 500
 	tgt, uerr := w.St.UserByID(c.Request.Context(), id)
 	if uerr != nil {
 		w.notFound(c)
@@ -475,6 +487,8 @@ type roleReq struct {
 	Role string `json:"role"`
 }
 
+// unmuteUser 解除禁言：与禁言同权限（宫司+、目标级别低于操作者），幂等——
+// 对未禁言的人调用同样返回成功，客户端不必先查状态
 func (w *Web) unmuteUser(c *gin.Context) {
 	if !w.requireGuuji(c) {
 		return
@@ -505,6 +519,7 @@ func (w *Web) unmuteUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// unbanUser 解除封禁：与封禁同权限（宫司+、目标级别低于操作者），幂等
 func (w *Web) unbanUser(c *gin.Context) {
 	if !w.requireGuuji(c) {
 		return
@@ -550,7 +565,8 @@ func (w *Web) setRole(c *gin.Context) {
 		w.bad(c, "不能调整自己的身份")
 		return
 	}
-
+	// 层级校验与 warn/mute/ban 同规：不能动平级及以上，
+	// 否则神主可被另一神主降级、member 可被直提 kannushi 造成权限自我复制
 	var targetRole string
 	if err := w.St.Pool.QueryRow(c.Request.Context(),
 		`SELECT role FROM users WHERE id=$1`, id).Scan(&targetRole); err != nil {
@@ -603,7 +619,8 @@ func (w *Web) reportUser(c *gin.Context) {
 		w.bad(c, "举报理由过长")
 		return
 	}
-
+	// 目标必须真实存在，且不能举报自己——
+	// 此前目标连存在性都不校验，举报记录里也丢了被举报对象，只能空驳
 	var exists bool
 	if err := w.St.Pool.QueryRow(c.Request.Context(),
 		`SELECT EXISTS(SELECT 1 FROM users WHERE id=$1 AND anonymized=false)`, id).Scan(&exists); err != nil || !exists {

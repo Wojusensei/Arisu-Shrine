@@ -13,15 +13,32 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// postBoards 帖子板块白名单（与 store.postsWhere 同一份名单）
 var postBoards = []string{"main", "gensokyo", "dev"}
 
 type postBodyReq struct {
-	Board  string  `json:"board"`
-	Title  string  `json:"title"`
-	Body   string  `json:"body"`
-	Intro  string  `json:"intro"`
+	Board string `json:"board"`
+	Title string `json:"title"`
+	Body  string `json:"body"`
+	// Intro 用指针：编辑时客户端会显式发空串表示「清空介绍语」，
+	// 值类型会把空串当成「未提供」跳过，介绍语一旦设置就永远删不掉
+	Intro  *string `json:"intro"`
 	Cover  *string `json:"cover"`
 	Reason string  `json:"reason"`
+}
+
+// boardValid 板块白名单：非法值直接 400，不走 sanitizeEnum 的静默回落——
+// 那会把坏请求的帖子悄悄挪进 main 板块
+func boardValid(b string) bool {
+	if b == "" {
+		return true // 空=默认 main
+	}
+	for _, x := range postBoards {
+		if b == x {
+			return true
+		}
+	}
+	return false
 }
 
 func (w *Web) listPosts(c *gin.Context) {
@@ -65,10 +82,17 @@ func (w *Web) createPost(c *gin.Context) {
 		w.bad(c, "正文最多 32000 字")
 		return
 	}
-	intro := strings.TrimSpace(req.Intro)
-	if len([]rune(intro)) > 60 {
-		w.bad(c, "介绍语最多 60 字")
+	if !boardValid(req.Board) {
+		w.bad(c, "参数错误")
 		return
+	}
+	intro := ""
+	if req.Intro != nil {
+		intro = strings.TrimSpace(*req.Intro)
+		if len([]rune(intro)) > 60 {
+			w.bad(c, "介绍语最多 60 字")
+			return
+		}
 	}
 	var cover string
 	if req.Cover != nil {
@@ -77,14 +101,15 @@ func (w *Web) createPost(c *gin.Context) {
 			w.bad(c, "封面地址过长")
 			return
 		}
-
+		// 封面会下发进收藏夹封面等公开位置，与博客/头像地址同规：仅 http(s)
 		lower := strings.ToLower(cover)
 		if cover != "" && !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
 			w.bad(c, "参数错误")
 			return
 		}
 	}
-
+	// 限频在参数校验全部通过后才开始计时：
+	// 此前提交非法 JSON/超长正文也会烧掉整个窗口，合法用户被自己的失败请求限频
 	if !w.postingRateLimit(c, v, true) {
 		return
 	}
@@ -121,7 +146,7 @@ func (w *Web) getPost(c *gin.Context) {
 
 func (w *Web) updatePost(c *gin.Context) {
 	v := w.viewer(c)
-
+	// 禁言者改自己旧帖绕过 mutedErr 的发布拦截，禁言就形同虚设
 	if w.mutedErr(c, v) {
 		return
 	}
@@ -164,8 +189,9 @@ func (w *Web) updatePost(c *gin.Context) {
 		}
 		up.Body = &req.Body
 	}
-	if req.Intro != "" {
-		intro := strings.TrimSpace(req.Intro)
+	if req.Intro != nil {
+		// 空串=清空介绍语（客户端编辑页清掉输入框后显式发 ""）
+		intro := strings.TrimSpace(*req.Intro)
 		if len([]rune(intro)) > 60 {
 			w.bad(c, "介绍语最多 60 字")
 			return
@@ -173,7 +199,8 @@ func (w *Web) updatePost(c *gin.Context) {
 		up.Intro = &intro
 	}
 	if req.Board != "" {
-
+		// 板块白名单：store 的 sanitizeEnum 会把非法值静默回落成 main，
+		// 编辑走那条路等于一条坏请求就把帖子挪了板块
 		valid := false
 		for _, b := range postBoards {
 			if req.Board == b {
@@ -193,7 +220,7 @@ func (w *Web) updatePost(c *gin.Context) {
 			w.bad(c, "封面地址过长")
 			return
 		}
-
+		// 与 createPost 同规：仅 http(s)
 		lower := strings.ToLower(cover)
 		if cover != "" && !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
 			w.bad(c, "参数错误")
@@ -201,7 +228,8 @@ func (w *Web) updatePost(c *gin.Context) {
 		}
 		up.Cover = &cover
 	}
-
+	// 编辑也要限频（评论级间隔）：追踪通知已按天聚合，这里拦的是端点本身
+	// 被脚本化反复编辑打写库
 	if !w.intervalRateLimit(c, v, w.Cfg.Limits.CommentInterval) {
 		return
 	}
@@ -216,7 +244,9 @@ func (w *Web) updatePost(c *gin.Context) {
 		c.JSON(http.StatusOK, np)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"ok": true})
+	// 重取失败但保存已成功：回更新前的帖子保住 id——客户端契约要拿编号做跳转，
+	// 回 {"ok":true} 会被解析成零值帖、跳到 post/0 的 404；旧内容随后会被详情页重取覆盖
+	c.JSON(http.StatusOK, p)
 }
 
 func (w *Web) deletePost(c *gin.Context) {
@@ -240,7 +270,8 @@ func (w *Web) deletePost(c *gin.Context) {
 		if !w.requireAdmin(c) {
 			return
 		}
-
+		// 帖子是整体：违规帖连同里面所有人的评论一起删，任何维护人员可执行（2026-10-02 用户裁决）。
+		// 「下不能管上」只约束单条评论的删除
 		var req postBodyReq
 		_ = c.ShouldBindJSON(&req)
 		if strings.TrimSpace(req.Reason) == "" {
@@ -275,6 +306,7 @@ type flagResp struct {
 	Count   int64 `json:"count"`
 }
 
+// offerPost 向帖子奉纳赛钱：整数、不超余额、不能给自己；作者收 10%
 func (w *Web) offerPost(c *gin.Context) {
 	v := w.viewer(c)
 	id, ok := pathID(c, "id")
@@ -289,7 +321,7 @@ func (w *Web) offerPost(c *gin.Context) {
 		w.bad(c, "奉纳金额需为 1 到 100 万之间的整数")
 		return
 	}
-
+	// 奉纳间隔限频：连点是手滑，不是心意
 	if !w.intervalRateLimitMsg(c, v, 2*time.Second, "奉纳太频繁，稍候片刻") {
 		return
 	}
@@ -431,7 +463,7 @@ func (w *Web) reportPost(c *gin.Context) {
 		w.bad(c, "举报理由过长")
 		return
 	}
-
+	// 目标必须存在且未删（否则 FK 违反变 500）
 	var alive bool
 	if err := w.St.Pool.QueryRow(c.Request.Context(),
 		`SELECT deleted_at IS NULL FROM posts WHERE id=$1`, id).Scan(&alive); err != nil || !alive {
@@ -458,6 +490,7 @@ func (w *Web) reportPost(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// reportComment 举报单条评论（与帖子举报分流，处理者能看到具体对象）
 func (w *Web) reportComment(c *gin.Context) {
 	v := w.viewer(c)
 	id, ok := pathID(c, "id")
@@ -474,7 +507,7 @@ func (w *Web) reportComment(c *gin.Context) {
 		w.bad(c, "举报理由过长")
 		return
 	}
-
+	// 目标必须存在且未删，所属帖子也得活着；顺带记录评论所属帖子，「前往查看」才能直达
 	var parentPost int64
 	var cAlive bool
 	err := w.St.Pool.QueryRow(c.Request.Context(),
@@ -533,6 +566,8 @@ type commentReq struct {
 	ImageURL      string `json:"image_url"`
 }
 
+// commentImageOK 校验评论附图：只收本站图床产物（相对 /uploads/ 或本站 base_url 前缀的绝对地址），
+// 外链一律拒绝——评论区不做任意图床的转发板。空串 = 没附图。
 func (w *Web) commentImageOK(u string) bool {
 	if u == "" {
 		return true
@@ -579,7 +614,7 @@ func (w *Web) createComment(c *gin.Context) {
 		w.bad(c, "参数错误")
 		return
 	}
-
+	// 限频在参数校验通过后才开始计时（同 createPost）
 	if !w.intervalRateLimit(c, v, w.Cfg.Limits.CommentInterval) {
 		return
 	}
@@ -634,7 +669,7 @@ func (w *Web) deleteComment(c *gin.Context) {
 		w.bad(c, "参数错误")
 		return
 	}
-
+	// 查作者
 	var authorID int64
 	var authorRole string
 	err := w.St.Pool.QueryRow(c.Request.Context(),

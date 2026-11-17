@@ -1,0 +1,28 @@
+{{template "top" .}}
+<div class="tabs-u">
+  <a href="/b/main"{{if eq .Board "main"}} class="on"{{end}}><b>正殿</b><span class="bar"></span></a>
+  <a href="/b/gensokyo"{{if eq .Board "gensokyo"}} class="on"{{end}}><b>幻想乡闻</b><span class="bar"></span></a>
+  <a href="/b/dev"{{if eq .Board "dev"}} class="on"{{end}}><b>/dev.</b><span class="bar"></span></a>
+</div>
+{{/* 排序栏（SortBar：Tabs.kt:93-137）——等宽三格 + 右侧总数；
+     左右内边距 20/14dp 与安卓一致，选中格短下划线 22×2dp */}}
+<div class="sortbar">
+  <a href="{{.SortURL "new"}}"{{if eq .Sort "new"}} class="on"{{end}}><b>最新</b><span class="bar"></span></a>
+  <a href="{{.SortURL "hot"}}"{{if eq .Sort "hot"}} class="on"{{end}}><b>最热</b><span class="bar"></span></a>
+  <a href="{{.SortURL "essence"}}"{{if eq .Sort "essence"}} class="on"{{end}}><b>精华</b><span class="bar"></span></a>
+  <span class="count">共 {{.Pager.Total}} 篇</span>
+</div>
+{{if not .Posts}}
+{{template "empty" "没有帖子"}}
+{{end}}
+<div class="board-list">
+{{range .Posts}}{{template "postcard" .}}{{end}}
+</div>
+{{/* 滚动加载（ChatBoardScreen.kt:291-320 PrefetchOnApproach + loadMore）：
+   安卓是滚到接近底部自动拉下一页，页面不跳；网页用 JS 追加。
+   分页器保留为无障碍/无 JS 兜底，[data-infinite] 让 JS 接管。 */}}
+<div data-infinite data-board="{{.Board}}" data-sort="{{.Sort}}" data-page="{{.Pager.Page}}" data-total="{{.Pager.Total}}">
+{{template "pager" .Pager}}
+</div>
+<p class="page-end" data-role="list-end">{{if .Pager.NextOn}}上滑加载更多{{else}}已经到底了{{end}}</p>
+{{template "bottom" .}}

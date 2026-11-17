@@ -1,0 +1,51 @@
+{{template "top" .}}
+{{/* 品牌区与登录/注册同构（AuthScreens.kt:496-497 的 AuthBrandHeader，
+     副标题逐字取源码） */}}
+<div class="auth-hero">
+  <span class="brand-orb">{{template "i-torii"}}</span>
+  <h2 class="brand-name">有栖神社</h2>
+  <p class="brand-sub">验证码寄到邮箱，重设即可</p>
+</div>
+<form method="post" action="/reset" data-confirm-pw>
+  <div class="auth-card neu-surface">
+    <div class="form-row">
+      <span class="form-label">邮箱</span>
+      <div class="well">
+        <span class="well-ic">{{template "i-mail"}}</span>
+        <input class="field" type="email" name="email" value="{{.Email}}" required autocomplete="email" placeholder="outlook / qq / gmail / 163 等任意邮箱">
+      </div>
+    </div>
+    <div class="form-row">
+      <span class="form-label">验证码</span>
+      <div class="code-row">
+        <div class="well grow">
+          <input class="field" type="text" name="code" required inputmode="numeric" maxlength="6" placeholder="6 位数字">
+        </div>
+        <button class="btn-ghost" type="submit" formaction="/reset/code" formnovalidate data-role="send-code" data-purpose="reset">发送验证码</button>
+      </div>
+      <p class="form-note" data-role="code-note"{{if not .CodeSent}} hidden{{end}}>{{.CodeSent}}</p>
+      <p class="form-error" data-role="code-err" hidden></p>
+    </div>
+    <div class="form-row">
+      <span class="form-label">新密码</span>
+      <div class="well">
+        <span class="well-ic">{{template "i-lock"}}</span>
+        <input class="field" id="pw1" type="password" name="password" required minlength="8" autocomplete="new-password" placeholder="至少 8 位">
+        <button class="well-act" type="button" data-eye="pw1" aria-label="显示密码">{{template "i-eye"}}</button>
+      </div>
+    </div>
+    <div class="form-row">
+      <span class="form-label">确认新密码</span>
+      <div class="well">
+        <span class="well-ic">{{template "i-lock"}}</span>
+        <input class="field" id="pw2" type="password" name="password_confirm" required minlength="8" autocomplete="new-password" data-confirm="pw1" placeholder="再输入一次新密码">
+        <button class="well-act" type="button" data-eye="pw2" aria-label="显示密码">{{template "i-eye"}}</button>
+      </div>
+      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+      <p class="form-error pw-mismatch" style="display:none"></p>
+    </div>
+  </div>
+  <button class="btn btn-full" type="submit">重置密码</button>
+</form>
+<p class="auth-links">想起来密码了？<a href="/login">去登录</a></p>
+{{template "bottom" .}}

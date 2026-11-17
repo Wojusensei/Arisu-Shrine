@@ -8,14 +8,21 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// 拉黑（静默）：拉黑者看不到对方的内容与通知；对方仍能看到拉黑者，
+// 但关注/回复/提及对拉黑者不生效。管理侧没有任何查看「谁拉黑了谁」的接口。
+
+// blockFilter 列表过滤片段：排除被 viewer 拉黑的作者。
+// 约定查询里 $1 = viewer id；authorExpr 只允许本包内的列表达式。
 func blockFilter(authorExpr string) string {
 	return ` AND NOT EXISTS (SELECT 1 FROM blocks bl WHERE bl.blocker_id=$1 AND bl.blocked_id=` + authorExpr + `)`
 }
 
+// actorBlockFilter 通知过滤：排除触发者被 viewer 拉黑的通知（历史行 actor_id 为空，不过滤）
 func actorBlockFilter() string {
 	return ` AND (actor_id IS NULL OR NOT EXISTS (SELECT 1 FROM blocks bl WHERE bl.blocker_id=$1 AND bl.blocked_id=actor_id))`
 }
 
+// Blocks blocker 是否拉黑了 blocked
 func (s *Store) Blocks(ctx context.Context, blockerID, blockedID int64) (bool, error) {
 	if blockerID == 0 || blockedID == 0 || blockerID == blockedID {
 		return false, nil
@@ -42,6 +49,7 @@ func (s *Store) UnblockUser(ctx context.Context, blockerID, blockedID int64) err
 	return err
 }
 
+// BlockedUsers 我拉黑的人（只给本人看；按拉黑时间倒序，最近拉黑的在最前）
 func (s *Store) BlockedUsers(ctx context.Context, viewerID int64) ([]model.UserBrief, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+userBriefCols+` FROM users u
 		JOIN blocks b ON b.blocked_id=u.id

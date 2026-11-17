@@ -1,0 +1,77 @@
+{{template "top" .}}
+<div class="section-label">外观</div>
+<div class="entry-card">
+  <button class="entry" data-role="dark-mode"><span class="txt"><span class="lbl">黑夜模式</span> <span class="sub">开启后界面变为暗色</span></span>
+    <span class="switch{{if .Dark}} on{{end}}" data-role="dark-switch"></span>
+  </button>
+</div>
+
+{{/* 阅读（SettingsScreen.kt:200-208 + ReadingSizeRow:568-600）：
+     四档正文字号滑杆，仅影响正文，落 localStorage（安卓对应 ReadingPrefs） */}}
+<div class="section-label">阅读</div>
+<div class="entry-card">
+  <div class="reading-row">
+    <span class="reading-ic">{{template "i-format-size"}}</span>
+    <span class="reading-text">
+      <b>正文字号</b>
+      <span class="sub">仅影响正文阅读，不改变界面字号</span>
+    </span>
+  </div>
+  <div class="reading-slider" data-role="reading-slider">
+    <div class="rs-track"><span class="rs-fill"></span></div>
+    <div class="rs-dots"><i></i><i></i><i></i><i></i></div>
+    <div class="rs-thumb"></div>
+    <div class="rs-labels"><span>小</span><span>标准</span><span>大</span><span>特大</span></div>
+  </div>
+</div>
+
+<div class="section-label">个人主页展示</div>
+<div class="entry-card">
+  <span class="entry sub">关闭后，该项不会出现在您的个人主页上</span>
+  {{range .ShowFields}}
+  <button class="entry" data-role="toggle-field" data-key="{{.Key}}" data-on="{{if .On}}1{{else}}0{{end}}"><span class="txt"><span class="lbl">{{.Label}}</span></span><span class="switch{{if .On}} on{{end}}"></span></button>
+  <hr class="hairline">
+  {{end}}
+</div>
+
+<div class="section-label">账号安全</div>
+<div class="entry-card">
+  <button class="entry" data-role="pw"><span class="lbl">改密码</span> <span class="sub">修改后其他设备需要重新登录</span></button>
+  <hr class="hairline">
+  <a class="entry" href="/me/sessions"><span class="lbl">登录设备</span> <span class="sub">查看与下线正在登录该账号的设备</span></a>
+  <hr class="hairline">
+  <a class="entry" href="/me/blocks"><span class="lbl">拉黑名单</span> <span class="sub">查看与解除您拉黑的社员</span></a>
+  <hr class="hairline">
+  <a class="entry" href="/me/accounts"><span class="lbl">切换账号</span> <span class="sub">本机保存的账号可免密快速切换</span></a>
+  <hr class="hairline">
+  <form method="post" action="/logout"><input type="hidden" name="next" value="/login">
+    <button class="entry" type="submit"><span class="lbl">退出登录</span></button>
+  </form>
+  <hr class="hairline">
+  <button class="entry danger" data-role="deact1"><span class="lbl">注销账号</span> <span class="sub">注销后帖子保留，冷静期 24 小时，期间登录即可取消</span></button>
+</div>
+
+<div class="section-label">通知范围</div>
+<div class="entry-card">
+  {{range .NotifyScopes}}
+  <button class="entry" data-role="toggle-scope" data-key="{{.Key}}" data-on="{{if .On}}1{{else}}0{{end}}">
+    <span class="txt"><span class="lbl">{{.Label}}</span></span><span class="switch{{if .On}} on{{end}}"></span>
+  </button>
+  <hr class="hairline">
+  {{end}}
+</div>
+
+<div class="section-label">数据</div>
+<div class="entry-card">
+  {{/* 数据导出（SettingsScreen.kt 数据组）：说明文案逐字取源码 */}}
+  <button class="entry" data-role="export-posts"><span class="lbl">导出我的帖子</span> <span class="sub">生成 Markdown 文件，可分享给其他应用</span></button>
+</div>
+
+<div class="section-label">关于</div>
+<div class="entry-card">
+  <span class="entry about-row"><span class="lbl">有栖神社</span>
+    <span class="sub">建造于人间之里外的飘渺存在</span>
+    <span class="val">{{.Version}}</span>
+  </span>
+</div>
+{{template "bottom" .}}

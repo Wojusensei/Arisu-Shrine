@@ -1,0 +1,66 @@
+{{template "top" .}}
+{{/* 搜索页头和安卓一样只有一行（SearchScreen.kt:305-345）：
+   返回钮 48 → 凹槽输入框（放大镜 18 + 占位「搜索帖子标题 / 编号 / 社员」+ 尾部正则胶囊）
+   → 2dp → 朱色「搜索」。没有标题行。 */}}
+<form method="get" action="/search" class="search-bar">
+  <a class="top-ic back" href="/b/main" aria-label="返回">{{template "i-back"}}</a>
+  <label class="well grow">
+    {{template "i-search"}}
+    <input class="field" type="text" name="q" value="{{.Query}}" placeholder="搜索帖子标题 / 编号 / 社员" maxlength="100" required>
+    {{/* 正则开关（RegexToggle，SearchScreen.kt:351-380）：点一下切模式并立即按新模式搜索；
+         formnovalidate 让空关键词时也能先切模式，不被 required 拦下 */}}
+    <button class="regex-chip{{if .Regex}} on{{end}}" type="submit" name="regex" value="{{if .Regex}}0{{else}}1{{end}}" formnovalidate aria-pressed="{{if .Regex}}true{{else}}false{{end}}">正则</button>
+  </label>
+  {{/* 「搜索」在后：输入框回车走隐式提交，浏览器取第一个 submit 按钮的值，
+       回车因此永远按当前模式搜索，不会误触正则开关 */}}
+  <button class="top-txt" type="submit" name="regex" value="{{if .Regex}}1{{else}}0{{end}}">搜索</button>
+</form>
+{{/* 错误行（SearchScreen.kt:201-225）：Clear 13dp + 5dp + labelSmall error，
+     左右 20 上下 6。网络类错误整行可点重试，正则不合法那行不可点。 */}}
+{{if .Notice}}
+{{if .NoticeRetry}}<a class="search-err" href="/search?q={{urlquery .Query}}&regex={{if .Regex}}1{{else}}0{{end}}">{{template "i-close"}}<span>{{.Notice}}</span></a>
+{{else}}<div class="search-err">{{template "i-close"}}<span>{{.Notice}}</span></div>{{end}}
+{{end}}
+{{/* 历史搜索（SearchScreen.kt:382-460）：最多 12 条、同词去重后置顶、
+     点一项即按该词搜索、右侧「清空」。安卓只存在进程内存里，网页落 localStorage，
+     刷新不丢（同一套交互，持久化更强）。列表由 app.js 渲染。 */}}
+{{if and (not .Searched) (not .Notice)}}
+<div class="search-history" data-role="search-history">
+  <div class="sh-head">
+    <span class="section-label">历史搜索</span>
+    <button type="button" class="sh-clear" data-role="search-history-clear">清空</button>
+  </div>
+  <div class="sh-list" data-role="search-history-list"></div>
+</div>
+<p class="form-hint">支持正则表达式搜索标题，也可以直接输入编号</p>
+{{end}}
+{{if .Searched}}
+  {{/* 区块名与计数照 SearchScreen.kt:250,266：「帖子结果 N 条」「社员结果 N 条」 */}}
+  {{if .Posts}}
+  <div class="section-label">帖子结果 <span class="trailing">{{len .Posts}} 条</span></div>
+  {{range .Posts}}
+  {{if and $.ExactPost (eq .No $.ExactPost)}}
+  {{/* 编号精确匹配（SearchScreen.kt:255-259）：胶囊挂在卡上方，左缩 4、下 5 */}}
+  <div class="exact-badge"><span class="pill accent">编号精确匹配</span></div>
+  {{end}}
+  {{template "postcard" .}}
+  {{end}}
+  {{end}}
+  {{if .Users}}
+  <div class="section-label">社员结果 <span class="trailing">{{len .Users}} 条</span></div>
+  {{range .Users}}
+  {{if and $.ExactUser (eq .No $.ExactUser)}}
+  <div class="exact-badge"><span class="pill accent">编号精确匹配</span></div>
+  {{end}}
+  <a class="user-row" href="/u/{{.No}}">
+    <span class="avatar sm" data-role="{{.Role}}">{{initial .Nickname}}</span>
+    <span class="name">{{.Nickname}}</span>
+    <span class="mono">{{.No}}</span>
+  </a>
+  {{end}}
+  {{end}}
+  {{if and (not .Posts) (not .Users)}}
+  <p class="page-end">没有搜索结果</p>
+  {{end}}
+{{end}}
+{{template "bottom" .}}

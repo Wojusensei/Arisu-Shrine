@@ -1,3 +1,4 @@
+-- 自定义表情包：一人一夹，存的是本站图床地址（与评论附图同源，外链不收）
 CREATE TABLE IF NOT EXISTS stickers (
     id         BIGSERIAL PRIMARY KEY,
     owner_id   BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

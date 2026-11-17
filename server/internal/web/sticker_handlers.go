@@ -11,10 +11,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ---- 表情包 ----
+
+// stickerAnimated 动图判定：只认 gif（webp 动图要解码才看得出，不值当）
 func stickerAnimated(u string) bool {
 	return strings.HasSuffix(strings.ToLower(u), ".gif")
 }
 
+// myStickers 自己的表情夹；带 limit 让客户端直接画「n/64」，不用硬编码
 func (w *Web) myStickers(c *gin.Context) {
 	v := w.viewer(c)
 	items, err := w.St.Stickers(c.Request.Context(), v.ID)
@@ -25,12 +29,14 @@ func (w *Web) myStickers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"limit": store.StickerLimit, "total": len(items), "items": items})
 }
 
+// userStickers 别人的表情夹：可以整夹翻看，挑着存进自己的
 func (w *Web) userStickers(c *gin.Context) {
 	id, ok := pathID(c, "id")
 	if !ok {
+		w.bad(c, "参数错误")
 		return
 	}
-
+	// 拉黑后不再翻得到对方的表情夹（与 tiles 同一把尺）
 	if blocked, _ := w.St.Blocks(c.Request.Context(), w.viewer(c).ID, id); blocked {
 		c.JSON(http.StatusOK, gin.H{"limit": store.StickerLimit, "total": 0, "items": []model.Sticker{}})
 		return
@@ -43,6 +49,7 @@ func (w *Web) userStickers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"limit": store.StickerLimit, "total": len(items), "items": items})
 }
 
+// addSticker 收一张表情。只收本站图床产物（与评论附图同一条规矩：不做外链转发板）
 func (w *Web) addSticker(c *gin.Context) {
 	v := w.viewer(c)
 	var req struct {
@@ -74,6 +81,7 @@ func (w *Web) deleteSticker(c *gin.Context) {
 	v := w.viewer(c)
 	id, ok := pathID(c, "id")
 	if !ok {
+		w.bad(c, "参数错误")
 		return
 	}
 	err := w.St.DeleteSticker(c.Request.Context(), v.ID, id)
@@ -87,6 +95,7 @@ func (w *Web) deleteSticker(c *gin.Context) {
 	}
 }
 
+// reorderStickers 拖拽排序落库：按提交的顺序重写序号
 func (w *Web) reorderStickers(c *gin.Context) {
 	v := w.viewer(c)
 	var req struct {

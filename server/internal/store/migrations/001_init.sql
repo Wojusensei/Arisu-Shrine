@@ -1,9 +1,12 @@
+-- 有栖神社 初始库表
+-- 编号规则：社员 User_%06d（=id）、帖子 arisu_%06d（=id）、绘马 #%d（=id）、日志 v 版本号
+
 CREATE TABLE users (
     id                   BIGSERIAL PRIMARY KEY,
     email                TEXT UNIQUE NOT NULL,
     password_hash        TEXT NOT NULL,
     nickname             TEXT NOT NULL,
-    role                 TEXT NOT NULL DEFAULT 'member',
+    role                 TEXT NOT NULL DEFAULT 'member', -- member|temp_houshi|houshi|guuji|kannushi
     signature            TEXT NOT NULL DEFAULT '',
     status_emoji         TEXT NOT NULL DEFAULT '',
     status_text          TEXT NOT NULL DEFAULT '',
@@ -35,7 +38,7 @@ CREATE INDEX refresh_tokens_user_idx ON refresh_tokens(user_id);
 CREATE TABLE posts (
     id            BIGSERIAL PRIMARY KEY,
     author_id     BIGINT NOT NULL REFERENCES users(id),
-    board         TEXT NOT NULL,
+    board         TEXT NOT NULL, -- main|gensokyo|dev
     title         TEXT NOT NULL,
     body          TEXT NOT NULL,
     pinned        BOOLEAN NOT NULL DEFAULT FALSE,
@@ -89,8 +92,8 @@ CREATE TABLE emas (
     author_id   BIGINT NOT NULL REFERENCES users(id),
     title       TEXT NOT NULL,
     body        TEXT NOT NULL,
-    tags        TEXT[] NOT NULL DEFAULT '{}',
-    state       TEXT NOT NULL DEFAULT 'open',
+    tags        TEXT[] NOT NULL DEFAULT '{}', -- enhance|bug|questions|tips
+    state       TEXT NOT NULL DEFAULT 'open', -- open|in_progress|resolved|closed
     reply_count INT NOT NULL DEFAULT 0,
     deleted_at  TIMESTAMPTZ,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -134,8 +137,8 @@ CREATE INDEX follows_followee_idx ON follows(followee_id);
 CREATE TABLE notices (
     id           BIGSERIAL PRIMARY KEY,
     user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    kind         TEXT NOT NULL,
-    category     TEXT NOT NULL,
+    kind         TEXT NOT NULL, -- reply|tracking|follow|application|report|system|mute|warn|achievement
+    category     TEXT NOT NULL, -- reply|system|report
     content      TEXT NOT NULL,
     target_route TEXT NOT NULL DEFAULT '',
     dedupe_key   TEXT,
@@ -152,7 +155,7 @@ CREATE TABLE reports (
     comment_id  BIGINT REFERENCES comments(id) ON DELETE SET NULL,
     ema_id      BIGINT REFERENCES emas(id) ON DELETE SET NULL,
     reason      TEXT NOT NULL,
-    status      TEXT NOT NULL DEFAULT 'pending',
+    status      TEXT NOT NULL DEFAULT 'pending', -- pending|resolved|rejected
     handled_by  BIGINT REFERENCES users(id),
     handled_at  TIMESTAMPTZ,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -163,7 +166,7 @@ CREATE TABLE staff_applications (
     user_id      BIGINT NOT NULL REFERENCES users(id),
     reason       TEXT NOT NULL,
     weekly_hours TEXT NOT NULL,
-    status       TEXT NOT NULL DEFAULT 'pending',
+    status       TEXT NOT NULL DEFAULT 'pending', -- pending|approved|rejected
     decided_by   BIGINT REFERENCES users(id),
     decided_at   TIMESTAMPTZ,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -172,8 +175,8 @@ CREATE TABLE staff_applications (
 CREATE TABLE releases (
     id          BIGSERIAL PRIMARY KEY,
     version     TEXT NOT NULL,
-    channel     TEXT NOT NULL DEFAULT 'stable',
-    change_type TEXT NOT NULL,
+    channel     TEXT NOT NULL DEFAULT 'stable', -- stable|beta
+    change_type TEXT NOT NULL,                  -- feature|fix|improvement|breaking
     body        TEXT NOT NULL,
     created_by  BIGINT REFERENCES users(id),
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -182,7 +185,7 @@ CREATE TABLE releases (
 CREATE TABLE omikuji_draws (
     user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     day         DATE NOT NULL,
-    result      TEXT NOT NULL,
+    result      TEXT NOT NULL, -- daikichi|kichi|chuukichi|shoukichi|suekichi|kyou
     character   TEXT NOT NULL,
     series      TEXT NOT NULL DEFAULT '东方Project',
     fortune     TEXT NOT NULL,
@@ -193,7 +196,7 @@ CREATE TABLE omikuji_draws (
 
 CREATE TABLE achievements (
     user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    code        TEXT NOT NULL,
+    code        TEXT NOT NULL, -- founder|first_post|hot_author|...
     unlocked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, code)
 );

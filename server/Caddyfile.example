@@ -1,6 +1,12 @@
+# 有栖神社 · Caddy 反代模板（自建最小版）
+# 用法：把 shrine.example.com 换成你的域名，Caddy 会自动签发 Let's Encrypt 证书。
+#
+# 全部路径都反代给后端：论坛自己提供首页（未登录 302 到 /login）、文档与下载页在
+# 后端反代不到时会 404 —— 自建部署不包含运维侧的静态站（/srv/web），这是预期行为。
+# 需要「论坛接管首页 + 静态落地页/文档」这套分工时，照 Caddyfile.prod 的 handle 分组。
 shrine.example.com {
     reverse_proxy 127.0.0.1:8080
-
+    # 帖子图片直传，放宽请求体限制
     request_body {
         max_size 12MB
     }

@@ -15,9 +15,10 @@ import (
 
 type authCodeReq struct {
 	Email   string `json:"email"`
-	Purpose string `json:"purpose"`
+	Purpose string `json:"purpose"` // register | reset
 }
 
+// sendCode 发送邮箱验证码。收件邮箱不做任何域名限制（Outlook/Hotmail/QQ/163/Gmail 等均可）。
 func (w *Web) sendCode(c *gin.Context) {
 	var req authCodeReq
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -29,7 +30,8 @@ func (w *Web) sendCode(c *gin.Context) {
 	if purpose != "register" && purpose != "reset" {
 		purpose = "register"
 	}
-
+	// 生产模式 SMTP 未配置时直接拒绝：验证码只进日志、用户永远收不到，
+	// 接口却返回成功，问题无从排查。开发模式继续走 dev_code 通路
 	if !w.Cfg.DevMode && !w.Mailer.Configured() {
 		w.err(c, http.StatusServiceUnavailable, "邮件服务暂不可用，请稍后再试")
 		return
@@ -45,7 +47,7 @@ func (w *Web) sendCode(c *gin.Context) {
 		return
 	}
 	resp := gin.H{"ok": true}
-
+	// 开发模式（dev_mode: true）时把验证码带回，方便本机联调；生产必须关闭
 	if w.Cfg.DevMode {
 		resp["dev_code"] = code
 	}
@@ -126,7 +128,7 @@ func (w *Web) login(c *gin.Context) {
 	}
 	u, err := w.St.UserByEmail(c.Request.Context(), email)
 	if errors.Is(err, store.ErrNotFound) {
-
+		// 对不存在账号做一次等价 bcrypt 比较，拉平响应时间，防账号枚举
 		svc.DummyBcrypt()
 		w.loginFailRecord(c, email)
 		w.err(c, http.StatusUnauthorized, "邮箱或密码不正确")
@@ -142,7 +144,9 @@ func (w *Web) login(c *gin.Context) {
 		return
 	}
 	if u.PasswordHash == "" {
-
+		// 已注销账号（哈希已清空）：不验密码就回「账号已注销」会泄露账号状态；
+		// 计数要跟上——不然连试 9 次后，429 的是不存在账号、持续 401 的是已注销账号，
+		// 登录接口就成了可区分账号状态的弱枚举 oracle
 		svc.DummyBcrypt()
 		w.loginFailRecord(c, email)
 		w.err(c, http.StatusUnauthorized, "邮箱或密码不正确")
@@ -152,12 +156,12 @@ func (w *Web) login(c *gin.Context) {
 		w.err(c, http.StatusForbidden, "账号已被封禁")
 		return
 	}
-
+	// 冷静期内登录 = 取消注销
 	if u.DeactivatedAt != nil {
 		_ = w.St.CancelDeactivation(c.Request.Context(), u.ID)
 		u.DeactivatedAt = nil
 	}
-
+	// 成就：参拜者（入社满 100 天）
 	if time.Since(u.CreatedAt) >= 100*24*time.Hour {
 		w.St.GrantAchievement(c.Request.Context(), u.ID, "veteran")
 	}
@@ -208,7 +212,7 @@ func (w *Web) resetPassword(c *gin.Context) {
 		w.err(c, 500, "重置失败")
 		return
 	}
-
+	// 重置成功后踢掉所有旧会话
 	_ = w.St.RevokeRefreshTokens(c.Request.Context(), u.ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
@@ -228,11 +232,14 @@ func (w *Web) refresh(c *gin.Context) {
 		w.err(c, 500, "签发凭证失败")
 		return
 	}
-
+	// 原子轮换：删旧插新一条语句完成。旧的「查→删→插」三步无事务，并发双刷
+	// 同一 token 的窗口内可克隆出多个并行会话；现在第二个并发请求与重放都拿不到行
 	userID, err := w.St.RotateRefreshToken(c.Request.Context(), req.RefreshToken, refresh,
 		deviceNameFromHeader(c), int64(w.Cfg.JWT.RefreshTTL.Seconds()))
 	if err != nil {
-
+		// 只有「这枚令牌确实不存在」才算会话失效。数据库抖动等一等一过的错误
+		// 也回 401 的话，客户端只会照 401 的约定把用户踢回登录页（2026-10-17
+		// 事故：任何一次续签失败都等于当场登出），所以这里分开报错并留痕
 		if !errors.Is(err, store.ErrNotFound) {
 			w.Log.Error("refresh 轮换失败", zap.Error(err))
 			w.err(c, http.StatusServiceUnavailable, "服务暂时不可用，请稍后再试")
@@ -267,6 +274,9 @@ func (w *Web) logout(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// issueTokens 注册/登录/刷新共用的发 token 出口。
+// 轮换会删旧行插新行，所以设备名必须每次签发都随 X-Device-Name 头带上，
+// 否则一台设备只要续签过一次，设备管理里就变回「未知设备」
 func (w *Web) issueTokens(c *gin.Context, u *store.UserRow) {
 	access, err := svc.MakeAccessToken(w.Cfg.JWT.Secret, u.ID, u.Role, w.Cfg.JWT.AccessTTL)
 	if err != nil {
@@ -290,6 +300,7 @@ func (w *Web) issueTokens(c *gin.Context, u *store.UserRow) {
 	})
 }
 
+// deviceNameFromHeader 取客户端自报设备名，超长截断；空串由客户端兜底显示
 func deviceNameFromHeader(c *gin.Context) string {
 	d := strings.TrimSpace(c.GetHeader("X-Device-Name"))
 	if r := []rune(d); len(r) > 60 {
@@ -297,6 +308,8 @@ func deviceNameFromHeader(c *gin.Context) string {
 	}
 	return d
 }
+
+// ---- 会话设备管理：查看/踢出当前登录该账号的设备 ----
 
 type sessionItem struct {
 	ID       int64  `json:"id"`
@@ -343,11 +356,13 @@ func (w *Web) kickSession(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// ---- 我的信息 ----
+
 func (w *Web) getMe(c *gin.Context) {
 	v := w.viewer(c)
 	me := v.User.ToMe()
 	_ = w.St.FillUserCounts(c.Request.Context(), &me.User, v.ID)
-
+	// 每日赛钱挂在这：冷启动第一个 /me 顺手把今天的 50 円领了（幂等）
 	if b, err := w.St.GrantDailyOffer(c.Request.Context(), v.ID); err == nil {
 		me.User.BalanceTenths = b
 	}
@@ -376,7 +391,9 @@ func (w *Web) patchMe(c *gin.Context) {
 		w.bad(c, "参数错误")
 		return
 	}
-
+	// 禁言拦「他人可见」的资料内容：签名/状态/自定义区域/头像/博客都渲染在公开主页上，
+	// 此前只拦了帖子区，禁言形同虚设；展示开关与通知范围等隐私设置不禁。
+	// active_avatar_enabled 是头像生效开关，禁言前存好的 URL 也能靠它亮出来，所以一并拦
 	mutedContent := req.Nickname != nil || req.Signature != nil || req.StatusEmoji != nil ||
 		req.StatusText != nil || req.BlogURL != nil || req.CustomMarkdown != nil ||
 		req.CustomCSS != nil || req.FixedAvatarURL != nil || req.ActiveAvatarURL != nil ||
@@ -408,13 +425,14 @@ func (w *Web) patchMe(c *gin.Context) {
 		w.bad(c, "状态文字最多 10 字")
 		return
 	}
-
+	// 此前除昵称/签名/状态文字外的字段全部直通：单用户可存数 MB 的 CSS/Markdown
+	// 原样下发，blog_url 也不校验 scheme（可存 javascript: 伪协议）
 	checkURL := func(p *string, what string) bool {
 		if p == nil {
 			return true
 		}
 		u := strings.TrimSpace(*p)
-
+		// 空串=清空该栏；非空才要求 http(s) 与长度
 		if u == "" {
 			*p = ""
 			return true
@@ -466,7 +484,7 @@ func (w *Web) patchMe(c *gin.Context) {
 		w.err(c, 500, "保存失败")
 		return
 	}
-
+	// 关注通知：昵称/头像变更
 	if req.Nickname != nil && *req.Nickname != oldNickname {
 		_ = w.St.NotifyFollowersProfileChange(c.Request.Context(), v.ID, "nickname")
 	}
@@ -513,7 +531,7 @@ func (w *Web) changePassword(c *gin.Context) {
 		w.err(c, 500, "修改失败")
 		return
 	}
-
+	// 其他设备的会话全部吊销；当前设备换发新 token 保持登录
 	_ = w.St.RevokeRefreshTokens(c.Request.Context(), v.ID)
 	w.issueTokens(c, v.User)
 }
@@ -523,6 +541,7 @@ type emailChangeReq struct {
 	Code     string `json:"code"`
 }
 
+// emailChangeRequest 向「新邮箱」发送换绑验证码
 func (w *Web) emailChangeRequest(c *gin.Context) {
 	v := w.viewer(c)
 	var req struct {
@@ -541,12 +560,14 @@ func (w *Web) emailChangeRequest(c *gin.Context) {
 		w.bad(c, "新邮箱与当前邮箱相同")
 		return
 	}
-
+	// 生产模式 SMTP 未配置时直接拒绝：验证码只进日志、用户永远收不到，
+	// 接口却返回成功，问题无从排查。开发模式继续走 dev_code 通路
 	if !w.Cfg.DevMode && !w.Mailer.Configured() {
 		w.err(c, http.StatusServiceUnavailable, "邮件服务暂不可用，请稍后再试")
 		return
 	}
-
+	// 先走验证码配额（60s 冷却 + 每日上限）再做存在性检查：反过来时本端点
+	// 没有任何消耗，登录用户可高速枚举任意邮箱是否已注册
 	code, err := svc.SendVerificationCode(c.Request.Context(), w.RDB, w.Mailer, w.Log,
 		"email_change", newEmail, w.clientIP(c), w.Cfg.Limits.CodePerEmailPerDay, w.Cfg.Limits.CodePerIPPerDay)
 	if err != nil {
@@ -601,7 +622,9 @@ func (w *Web) emailChange(c *gin.Context) {
 		w.err(c, 500, "查询失败")
 		return
 	}
-
+	// 邮箱是找回密码的通道，换绑成功后必须吊销会话（与改密码对齐）。
+	// 宁全踢勿漏：带头且属于本人 → 保当前设备踢其余；不带头（旧客户端）
+	// 或带头但 token 不属于本人 → 全部吊销，所有设备重新登录
 	if token := c.GetHeader("X-Refresh-Token"); token != "" {
 		_ = w.St.RevokeRefreshTokensExcept(c.Request.Context(), v.ID, token)
 	} else {
@@ -618,7 +641,7 @@ func (w *Web) deactivate(c *gin.Context) {
 		w.err(c, 500, "操作失败")
 		return
 	}
-
+	// 吊销全部 refresh token：注销后的设备不能再用旧令牌续命 30 天
 	_ = w.St.RevokeRefreshTokens(c.Request.Context(), v.ID)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "cooldown_hours": int(w.Cfg.Limits.DeactivateCooldown.Hours())})
 }
@@ -652,14 +675,14 @@ func (w *Web) heartbeat(c *gin.Context) {
 	v := w.viewer(c)
 	var req heartbeatReq
 	_ = c.ShouldBindJSON(&req)
-
+	// 每次心跳都计时（应用户决定：在线时长不做防刷，有用户是好事）
 	if err := w.St.Heartbeat(c.Request.Context(), v.ID, req.ActiveSeconds); err != nil {
 		w.err(c, 500, "上报失败")
 		return
 	}
-
+	// 未读数搭心跳的车：客户端只保留心跳一条轮询，角标随每跳刷新
 	unread, _ := w.St.UnreadNoticeCount(c.Request.Context(), v.ID)
-
+	// 余额同车：被奉纳的收入也能在一分钟内反映到界面上
 	balanceTenths, _ := w.St.GrantDailyOffer(c.Request.Context(), v.ID)
 	st, _ := w.St.OnlineStats(c.Request.Context())
 	c.JSON(http.StatusOK, gin.H{"ok": true, "online_now": st.OnlineNow, "server_time": time.Now().Unix(), "unread": unread, "balance_tenths": balanceTenths})

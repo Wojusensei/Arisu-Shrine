@@ -1,5 +1,8 @@
 #!/bin/sh
-
+# 生成生产部署的 .env：域名/邮箱来自命令行参数，三个密钥现场随机生成。
+# 用法：./scripts/init_server_env.sh <域名> <ACME邮箱>
+#   例：./scripts/init_server_env.sh shrine.example.com you@example.com
+# .env 已存在时拒绝覆盖（里面有真密钥），要重来请先手动删掉它。
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -25,6 +28,11 @@ ARISU_SMTP_USERNAME=
 ARISU_SMTP_PASSWORD=
 ARISU_SMTP_FROM=
 
+# 前置 Cloudflare 等会重写来源地址的 CDN 时打开：
+# 限频、登录防爆破、洪泛闸门才按真实来访地址计数（不填则按代理地址计数）
+# CLIENT_IP_HEADER=CF-Connecting-IP
+
+# BACKUP_KEEP_DAYS=14
 EOF
 chmod 600 .env
 

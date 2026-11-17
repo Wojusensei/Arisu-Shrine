@@ -1,3 +1,16 @@
+# 生产反代：域名与 Let's Encrypt 邮箱来自 .env，compose 注入 {$DOMAIN}/{$ACME_EMAIL}，
+# 本文件不需要随部署改动。Caddy 首次启动自动签发证书，之后自动续期。
+#
+# 路由分工（2026-11-17 起「论坛接管首页」）：
+#   /             → 反代后端，后端按登录态 302 到 /b/main 或 /login
+#   /b/* /post/* /me/* /play /shrine /inbox …（论坛全部页面）→ 反代后端
+#   /api/* /uploads/* /app-assets/* /logo_red.png /favicon.ico  → 反代后端
+#   /home         → 静态落地页（下载/介绍），保留旧 URL 观感
+#   /notes/*      → 文档站静态页
+#   /site-assets/* /fonts/* → 文档站与落地页的静态资产
+#
+# 为什么不用「兜底反代 + 白名单静态」：兜底反代会把论坛 404 也变成后端 404，
+# 而静态目录是运维侧文件（不在开源镜像里）。这里两边都显式列出，谁都不兜底。
 {
 	email {$ACME_EMAIL}
 }
@@ -5,17 +18,55 @@
 {$DOMAIN} {
 	encode gzip
 
+	# 帖子图片直传：与后端 multipart 上限（12MB）对齐
 	request_body {
 		max_size 12MB
 	}
 
+	# ── 论坛后端 ────────────────────────────────────────────────
 	handle /api/* {
 		reverse_proxy arisu:8080
 	}
 	handle /uploads/* {
 		reverse_proxy arisu:8080
 	}
+	handle /app-assets/* {
+		reverse_proxy arisu:8080
+	}
+	handle /logo_red.png {
+		reverse_proxy arisu:8080
+	}
+	handle /favicon.ico {
+		reverse_proxy arisu:8080
+	}
 	handle {
+		reverse_proxy arisu:8080
+	}
+
+	# ── 静态站（落地页 + 文档）─────────────────────────────────
+	# handle 的匹配顺序：Caddy 取「最具体」的路径，所以这些会先于上面的兜底。
+	handle /home {
+		redir /home /home/ 301
+	}
+	handle_path /home/* {
+		root * /srv/web
+		rewrite * /index.html
+		file_server
+	}
+	# 文档首页的无斜杠形态：站点自己生成的导航就是 /notes，file_server 只对
+	# 子目录（/notes/install → 308）做补斜杠，裸 /notes 会 404。显式补一条。
+	handle /notes {
+		redir /notes /notes/ 301
+	}
+	handle /notes/* {
+		root * /srv/web
+		file_server
+	}
+	handle /site-assets/* {
+		root * /srv/web
+		file_server
+	}
+	handle /fonts/* {
 		root * /srv/web
 		file_server
 	}
@@ -27,6 +78,9 @@
 		-Server
 	}
 
+	# 访问日志：被刷时用来看谁在打（含请求头，CF-Connecting-IP 在里面）；
+	# 容器侧日志轮转由 compose 的 logging 配置兜底。
+	# 凭据头必须删掉：Authorization 就是登录令牌，落进日志等于把活令牌留在盘上
 	log {
 		output stdout
 		format filter {

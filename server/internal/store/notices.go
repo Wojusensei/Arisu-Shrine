@@ -15,19 +15,22 @@ import (
 
 type NoticeInput struct {
 	UserID      int64
-	Kind        string
-	Category    string
+	Kind        string // reply|tracking|follow|application|report|system|mute|warn
+	Category    string // reply|system|report
 	Content     string
 	TargetRoute string
 	DedupeKey   string
-
+	// ActorID 触发者；对方拉黑了触发者时整条通知不落库（拉黑是静默的，不报错）
 	ActorID int64
 }
 
+// rowQuerier pgx.Tx 与 *pgxpool.Pool 共有的最小接口
 type rowQuerier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 }
 
+// blockedFrom target 是否拉黑了 actor。查询失败按「未拉黑」处理：
+// 宁可多出一条通知，也不能因为一条 blocks 查询把发帖/评论主流程拖死
 func blockedFrom(ctx context.Context, q rowQuerier, target, actor int64) bool {
 	if actor == 0 || target == actor {
 		return false
@@ -40,12 +43,13 @@ func blockedFrom(ctx context.Context, q rowQuerier, target, actor int64) bool {
 	return true
 }
 
+// createNoticeDirect 事务外落一条通知（编辑/删除等事件用）
 func createNoticeDirect(ctx context.Context, pool *pgxpool.Pool, n NoticeInput) error {
 	if blockedFrom(ctx, pool, n.UserID, n.ActorID) {
 		return nil
 	}
 	if n.DedupeKey != "" {
-
+		// 带去重键的直插也要走聚合：普通 INSERT 撞唯一索引会整体报错，通知凭空丢失
 		_, err := pool.Exec(ctx, `INSERT INTO notices(user_id, kind, category, content, target_route, dedupe_key, actor_id)
 			VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,0))
 			ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO UPDATE SET content=EXCLUDED.content, created_at=now(), read_at=NULL, actor_id=EXCLUDED.actor_id`,
@@ -63,7 +67,7 @@ func createNotice(tx pgx.Tx, ctx context.Context, n NoticeInput) error {
 		return nil
 	}
 	if n.DedupeKey != "" {
-
+		// 聚合去重：同键当日只留一条（Discourse 式不轰炸）
 		_, err := tx.Exec(ctx, `INSERT INTO notices(user_id, kind, category, content, target_route, dedupe_key, actor_id)
 			VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,0))
 			ON CONFLICT (user_id, dedupe_key) WHERE dedupe_key IS NOT NULL DO UPDATE SET content=EXCLUDED.content, created_at=now(), read_at=NULL, actor_id=EXCLUDED.actor_id`,
@@ -75,10 +79,13 @@ func createNotice(tx pgx.Tx, ctx context.Context, n NoticeInput) error {
 	return err
 }
 
+// CreateNotice 非事务场景的通知写入
 func (s *Store) CreateNotice(ctx context.Context, n NoticeInput) error {
 	return s.ExecTx(ctx, func(tx pgx.Tx) error { return createNotice(tx, ctx, n) })
 }
 
+// UnreadNoticeCount 社务箱未读数（与 Notices 同一把拉黑过滤尺）；
+// 心跳响应搭车下发，客户端角标不再单独轮询
 func (s *Store) UnreadNoticeCount(ctx context.Context, userID int64) (int64, error) {
 	var n int64
 	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM notices WHERE user_id=$1 AND read_at IS NULL`+actorBlockFilter(), userID).Scan(&n)
@@ -93,6 +100,8 @@ func nicknameOf(tx pgx.Tx, ctx context.Context, userID int64) string {
 	return nickname
 }
 
+// notifyTrackers 追踪该帖的用户：每次互动都通知（应用户决定，不做每日聚合）。
+// skipID 是触发互动的评论作者——自己追踪自己的帖时不给自己发
 func notifyTrackers(tx pgx.Tx, ctx context.Context, postID int64, title, actor, preview string, skipID, actorID int64) error {
 	rows, err := tx.Query(ctx, `SELECT user_id FROM post_tracks WHERE post_id=$1`, postID)
 	if err != nil {
@@ -114,7 +123,7 @@ func notifyTrackers(tx pgx.Tx, ctx context.Context, postID int64, title, actor, 
 		if id == skipID {
 			continue
 		}
-
+		// 每次互动都通知（应用户决定：不做每日聚合）
 		if err := createNotice(tx, ctx, NoticeInput{
 			UserID: id, Kind: "tracking", Category: "reply",
 			Content:     fmt.Sprintf("%s 在您追踪的帖子《%s》发表了新评论：%s", actor, title, preview),
@@ -127,6 +136,7 @@ func notifyTrackers(tx pgx.Tx, ctx context.Context, postID int64, title, actor, 
 	return nil
 }
 
+// NotifyTrackersEvent 帖子事件（编辑/删除）通知追踪者，事务外执行
 func NotifyTrackersEvent(ctx context.Context, pool *pgxpool.Pool, postID int64, title, event string, authorID int64) {
 	rows, err := pool.Query(ctx, `SELECT user_id FROM post_tracks WHERE post_id=$1`, postID)
 	if err != nil {
@@ -141,7 +151,9 @@ func NotifyTrackersEvent(ctx context.Context, pool *pgxpool.Pool, postID int64, 
 		}
 	}
 	rows.Close()
-
+	// 编辑类事件按「帖:事件:天」去重：脚本化反复编辑不再给每个追踪者刷屏，
+	// 当天再编辑时原通知会被 upsert 刷新内容与未读。
+	// 事件名必须进键——否则后到的删帖通知会把编辑通知 upsert 成删帖
 	day := time.Now().Format("20060102")
 	for _, id := range ids {
 		_ = createNoticeDirect(ctx, pool, NoticeInput{
@@ -154,6 +166,7 @@ func NotifyTrackersEvent(ctx context.Context, pool *pgxpool.Pool, postID int64, 
 	}
 }
 
+// notifyFollowersOfNewPost 关注通知：受关注者的「关注更新」通知范围控制
 func notifyFollowersOfNewPost(tx pgx.Tx, ctx context.Context, authorID int64, postID int64, title string) error {
 	rows, err := tx.Query(ctx, `SELECT f.follower_id, u.notify_scope
 		FROM follows f JOIN users u ON u.id=f.follower_id WHERE f.followee_id=$1
@@ -198,6 +211,7 @@ func notifyFollowersOfNewPost(tx pgx.Tx, ctx context.Context, authorID int64, po
 	return nil
 }
 
+// NotifyFollowersProfileChange 关注者收到昵称/头像变更通知（scope 控制）
 func (s *Store) NotifyFollowersProfileChange(ctx context.Context, userID int64, what string) error {
 	return s.ExecTx(ctx, func(tx pgx.Tx) error {
 		rows, err := tx.Query(ctx, `SELECT f.follower_id, u.notify_scope
@@ -230,7 +244,7 @@ func (s *Store) NotifyFollowersProfileChange(ctx context.Context, userID int64, 
 		for _, f := range list {
 			allow, ok := f.scope[key]
 			if !ok {
-				allow = key == "nickname"
+				allow = key == "nickname" // 默认：改昵称通知、改头像不通知
 			}
 			if !allow {
 				continue
@@ -253,6 +267,7 @@ func (s *Store) NotifyFollowersProfileChange(ctx context.Context, userID int64, 
 	})
 }
 
+// NotifyStaff 给所有奉仕及以上发通知（举报/申请）；封禁/冷静期/已注销的收不到也处理不了
 func (s *Store) NotifyStaff(ctx context.Context, n NoticeInput) error {
 	rows, err := s.Pool.Query(ctx,
 		`SELECT id FROM users WHERE role IN ('houshi','guuji','kannushi')
@@ -274,7 +289,7 @@ func (s *Store) NotifyStaff(ctx context.Context, n NoticeInput) error {
 	}
 	return s.ExecTx(ctx, func(tx pgx.Tx) error {
 		for _, staffID := range ids {
-			n.UserID = staffID
+			n.UserID = staffID // 通知对象是每一位奉仕及以上
 			if err := createNotice(tx, ctx, n); err != nil {
 				return err
 			}
@@ -283,6 +298,8 @@ func (s *Store) NotifyStaff(ctx context.Context, n NoticeInput) error {
 	})
 }
 
+// NotifyMentions @提及通知：目标里过滤掉封禁/注销/匿名化账号与自己，
+// 同帖同被提及者按天聚合（与编辑通知同一把尺，不轰炸）
 func (s *Store) NotifyMentions(ctx context.Context, actorID int64, ids []int64, content, route string) error {
 	if len(ids) == 0 {
 		return nil
@@ -326,6 +343,9 @@ func (s *Store) NotifyMentions(ctx context.Context, actorID int64, ids []int64, 
 	})
 }
 
+// ---- 社务箱查询 ----
+
+// Notices 分页取通知。only 为空取全部；"unread" 只取未读，"starred" 只取收藏。
 func (s *Store) Notices(ctx context.Context, userID int64, category, only string, limit, offset int) (*model.NoticePage, error) {
 	if limit <= 0 || limit > 50 {
 		limit = 30
@@ -371,6 +391,7 @@ func (s *Store) Notices(ctx context.Context, userID int64, category, only string
 	return page, rows.Err()
 }
 
+// Notice 单条通知（详情页按 id 重取，进程回收后客户端可恢复）
 func (s *Store) Notice(ctx context.Context, userID, noticeID int64) (*model.Notice, error) {
 	var n model.Notice
 	var created time.Time
@@ -392,11 +413,13 @@ func (s *Store) MarkNoticeRead(ctx context.Context, userID, noticeID int64) erro
 	return err
 }
 
+// MarkNoticeUnread 标回未读（右滑/详情页动作）
 func (s *Store) MarkNoticeUnread(ctx context.Context, userID, noticeID int64) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE notices SET read_at=NULL WHERE id=$1 AND user_id=$2 AND read_at IS NOT NULL`, noticeID, userID)
 	return err
 }
 
+// StarNotice 收藏/取消收藏（starred=false 时清除收藏标记）
 func (s *Store) StarNotice(ctx context.Context, userID, noticeID int64, starred bool) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE notices SET starred_at = CASE WHEN $3 THEN now() ELSE NULL END
 		WHERE id=$1 AND user_id=$2`, noticeID, userID, starred)
@@ -412,6 +435,8 @@ func (s *Store) DeleteNotice(ctx context.Context, userID, noticeID int64) error 
 	_, err := s.Pool.Exec(ctx, `DELETE FROM notices WHERE id=$1 AND user_id=$2`, noticeID, userID)
 	return err
 }
+
+// ---- 工具 ----
 
 var imgRe = regexp.MustCompile(`!\[[^\]]*\]\(([^)\s]+)`)
 

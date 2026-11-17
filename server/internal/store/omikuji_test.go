@@ -5,6 +5,7 @@ import (
 	"testing"
 )
 
+// 截断正态(68, 25) 的理论档位占比；二十万次抽样的标准误远小于 1.5 个百分点。
 func TestDrawLuckDistribution(t *testing.T) {
 	const n = 200000
 	want := [6]float64{0.8, 6.2, 19.5, 33.1, 30.7, 9.7}

@@ -1,3 +1,6 @@
+-- 005: 安全加固 —— 上传审计表 + 收藏夹同名约束
+
+-- 上传记录表：SaveUpload 此前写不存在的表（静默失败），补齐审计追踪
 CREATE TABLE IF NOT EXISTS uploads (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id),
@@ -7,6 +10,7 @@ CREATE TABLE IF NOT EXISTS uploads (
 );
 CREATE INDEX IF NOT EXISTS idx_uploads_user ON uploads(user_id, created_at);
 
+-- 收藏夹同名唯一约束（先给历史重名追加后缀去重，保留每组最早一条的原名）
 UPDATE collections c SET name = c.name || '·' || c.id
 FROM (
     SELECT user_id, name, min(id) AS keep_id

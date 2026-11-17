@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// postSelect：帖子 + 作者简报 + 当前用户互动标记。$1 = viewer id
 const postSelect = `SELECT p.id, p.board, p.title, p.body, p.intro, p.cover_url, p.pinned, p.essence,
 	p.up_count, p.comment_count, p.created_at, p.updated_at, (p.updated_at > p.created_at + interval '2 seconds') AS edited,
 	u.id, u.nickname, u.role,
@@ -23,6 +24,7 @@ const postSelect = `SELECT p.id, p.board, p.title, p.body, p.intro, p.cover_url,
 	EXISTS(SELECT 1 FROM offerings o WHERE o.post_id=p.id AND o.user_id=$1)
 	FROM posts p JOIN users u ON u.id=p.author_id`
 
+// commentSelect：$1 = viewer id；追加以 $2 为过滤条件
 const commentSelect = `SELECT c.id, c.post_id, c.parent_id, c.content, c.image_url, c.like_count, c.created_at,
 	u.id, u.nickname, u.role,
 	CASE WHEN u.active_avatar_enabled AND u.active_avatar_url<>'' THEN u.active_avatar_url ELSE u.fixed_avatar_url END,
@@ -63,8 +65,8 @@ func scanPost(row pgx.Row) (*model.Post, error) {
 
 type PostListQuery struct {
 	ViewerID int64
-	Board    string
-	Sort     string
+	Board    string // main|gensokyo|dev|空
+	Sort     string // new|hot|essence
 	AuthorID int64
 	Limit    int
 	Offset   int
@@ -127,6 +129,8 @@ func (s *Store) countPosts(ctx context.Context, board, sort string, authorID, vi
 	return total, err
 }
 
+// PostsByRelation 个人页内容切换：posts|tracked|liked|favorited。
+// offset 支撑翻页——此前固定第一页，超过一页的内容永远看不到（2026-10-03 体检修复）
 func (s *Store) PostsByRelation(ctx context.Context, viewerID int64, relation string, ownerID int64, collectionID int64, limit, offset int) ([]model.Post, int64, error) {
 	if limit <= 0 || limit > 100 {
 		limit = 50
@@ -147,14 +151,15 @@ func (s *Store) PostsByRelation(ctx context.Context, viewerID int64, relation st
 		} else {
 			join = ` JOIN collection_posts r ON r.post_id=p.id JOIN collections c2 ON c2.id=r.collection_id AND c2.user_id=` + fmt.Sprint(ownerID)
 		}
-	default:
+	default: // posts
 		join = ``
 	}
 	where := postsWhere("", "new", 0, true)
 	if relation == "posts" {
 		where = ` WHERE p.deleted_at IS NULL AND p.author_id=` + fmt.Sprint(ownerID) + blockFilter("p.author_id")
 	}
-
+	// 指定收藏夹时把夹子过滤真正拼进查询——此前 collectionID 只换了表别名，
+	// ?collection_id=N 会返回全部收藏，夹子页永远显示所有帖子
 	if relation == "favorited" && collectionID > 0 {
 		where += ` AND c3.id=` + fmt.Sprint(collectionID)
 	}
@@ -175,7 +180,8 @@ func (s *Store) PostsByRelation(ctx context.Context, viewerID int64, relation st
 	if err := rows.Err(); err != nil {
 		return nil, 0, err
 	}
-
+	// total 用同款 join/where 单独数一次，客户端据此判断还有没有下一页。
+	// 该查询没有 viewer 参数（postSelect 才有 $1），不能把 viewerID 传进去
 	var total int64
 	err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM posts p`+join+where, viewerID).Scan(&total)
 	if err != nil {
@@ -236,7 +242,7 @@ type PostUpdate struct {
 }
 
 func (s *Store) UpdatePost(ctx context.Context, id int64, u PostUpdate) error {
-
+	// 多字段编辑包进事务：中途失败会留下改了一半的帖子
 	return s.ExecTx(ctx, func(tx pgx.Tx) error {
 		if u.Title != nil {
 			if _, err := tx.Exec(ctx, `UPDATE posts SET title=$1, updated_at=now() WHERE id=$2`, *u.Title, id); err != nil {
@@ -268,6 +274,7 @@ func (s *Store) UpdatePost(ctx context.Context, id int64, u PostUpdate) error {
 	})
 }
 
+// DeletePost 软删除。mod=true 时通知作者（删帖理由必填）
 func (s *Store) DeletePost(ctx context.Context, id, operatorID int64, mod bool, reason string) error {
 	return s.ExecTx(ctx, func(tx pgx.Tx) error {
 		var authorID int64
@@ -290,6 +297,8 @@ func (s *Store) DeletePost(ctx context.Context, id, operatorID int64, mod bool, 
 	})
 }
 
+// TogglePostFlag 原子翻转置顶/精华并返回翻转后的值。
+// 此前 handler 先读旧值再写反值，并发双击会该落 false 却落 true
 func (s *Store) TogglePostFlag(ctx context.Context, postID int64, flag string) (bool, error) {
 	if flag != "pinned" && flag != "essence" {
 		return false, ErrBadRequest
@@ -305,11 +314,11 @@ func (s *Store) TogglePostFlag(ctx context.Context, postID int64, flag string) (
 
 func (s *Store) ToggleUp(ctx context.Context, postID, userID int64, hotThreshold int) (active bool, count int64, err error) {
 	err = s.ExecTx(ctx, func(tx pgx.Tx) error {
-
+		// 同用户锁：先查后改的窗口在双端同点并发时会让响应与落库态相反（同 ToggleFavorite）
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, userID); err != nil {
 			return err
 		}
-
+		// 软删/不存在的帖子不再收顶（此前照常累加计数）；标题顺手取好，被顶通知要带
 		var alive bool
 		var title string
 		if err := tx.QueryRow(ctx, `SELECT deleted_at IS NULL, title FROM posts WHERE id=$1`, postID).Scan(&alive, &title); err != nil {
@@ -342,7 +351,8 @@ func (s *Store) ToggleUp(ctx context.Context, postID, userID int64, hotThreshold
 				return err
 			}
 		}
-
+		// 被顶通知：只在真正点上时发，取消顶不打扰；自己顶自己不通知。
+		// 去重键固定（不随天变化），同人反复顶/取消只聚合刷新那一条
 		if active && authorID != userID {
 			if err := createNotice(tx, ctx, NoticeInput{
 				UserID: authorID, Kind: "up", Category: "reply",
@@ -362,7 +372,8 @@ func (s *Store) ToggleUp(ctx context.Context, postID, userID int64, hotThreshold
 func (s *Store) ToggleTrack(ctx context.Context, postID, userID int64) (bool, error) {
 	tracked := false
 	err := s.ExecTx(ctx, func(tx pgx.Tx) error {
-
+		// alive 检查与写入同事务+同用户锁：此前检查在事务外，
+		// 窗口内刚被软删的帖也会被落上追踪
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, userID); err != nil {
 			return err
 		}
@@ -393,6 +404,8 @@ func (s *Store) ToggleTrack(ctx context.Context, postID, userID int64) (bool, er
 	return tracked, err
 }
 
+// ---- 收藏 ----
+
 func (s *Store) EnsureDefaultCollection(ctx context.Context, userID int64) (int64, error) {
 	var id int64
 	err := s.Pool.QueryRow(ctx, `SELECT id FROM collections WHERE user_id=$1 AND is_default=TRUE`, userID).Scan(&id)
@@ -402,7 +415,8 @@ func (s *Store) EnsureDefaultCollection(ctx context.Context, userID int64) (int6
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return 0, err
 	}
-
+	// 并发首藏：两个请求同时 miss 后各插一条会出现两个默认收藏夹，
+	// ON CONFLICT 收敛到同一行（DO UPDATE 是为了让冲突方也拿到 id）
 	err = s.Pool.QueryRow(ctx, `INSERT INTO collections(user_id, name, is_default) VALUES($1,'默认收藏夹',TRUE)
 		ON CONFLICT (user_id, name) DO UPDATE SET name=EXCLUDED.name RETURNING id`,
 		userID).Scan(&id)
@@ -410,7 +424,7 @@ func (s *Store) EnsureDefaultCollection(ctx context.Context, userID int64) (int6
 }
 
 func (s *Store) ToggleFavorite(ctx context.Context, userID, postID int64, collectionID *int64) (bool, error) {
-
+	// 此前完全不校验帖子：不存在的 id 也走收藏流程，软删帖也能收
 	var alive bool
 	if err := s.Pool.QueryRow(ctx, `SELECT deleted_at IS NULL FROM posts WHERE id=$1`, postID).Scan(&alive); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -421,9 +435,22 @@ func (s *Store) ToggleFavorite(ctx context.Context, userID, postID int64, collec
 	if !alive {
 		return false, ErrNotFound
 	}
+	// collection_id=0 是「移出收藏」的显式指令：不管当前躺在哪个夹，删掉即成功。
+	// 此前客户端移出只能传默认夹 id，帖子躺在别的夹时会被悄悄搬进默认夹、
+	// 界面却提示「已移出收藏」
+	removeAny := collectionID != nil && *collectionID == 0
 	cid := int64(0)
-	if collectionID != nil {
-
+	switch {
+	case removeAny:
+		// 显式移出不需要目标夹
+	case collectionID == nil:
+		var err error
+		cid, err = s.EnsureDefaultCollection(ctx, userID)
+		if err != nil {
+			return false, err
+		}
+	default:
+		// 属主校验：只能收藏进自己的收藏夹（防横向越权写）
 		var owner int64
 		err := s.Pool.QueryRow(ctx, `SELECT user_id FROM collections WHERE id=$1`, *collectionID).Scan(&owner)
 		if errors.Is(err, pgx.ErrNoRows) || (err == nil && owner != userID) {
@@ -433,17 +460,12 @@ func (s *Store) ToggleFavorite(ctx context.Context, userID, postID int64, collec
 			return false, err
 		}
 		cid = *collectionID
-	} else {
-		var err error
-		cid, err = s.EnsureDefaultCollection(ctx, userID)
-		if err != nil {
-			return false, err
-		}
 	}
-
+	// B 站式：一份内容同一时刻只在一个收藏夹
 	added := false
 	err := s.ExecTx(ctx, func(tx pgx.Tx) error {
-
+		// 用户级咨询锁：并发双击/双端收藏时「先查后写」会各自 INSERT，
+		// 同一帖落进两个收藏夹（PK 是 (collection_id, post_id)，拦不住）
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, userID); err != nil {
 			return err
 		}
@@ -452,6 +474,10 @@ func (s *Store) ToggleFavorite(ctx context.Context, userID, postID int64, collec
 			JOIN collections c ON c.id=cp.collection_id
 			WHERE cp.post_id=$1 AND c.user_id=$2 LIMIT 1`, postID, userID).Scan(&existing)
 		if errors.Is(err, pgx.ErrNoRows) {
+			if removeAny {
+				added = false // 本就没收藏，移出按已达成处理
+				return nil
+			}
 			added = true
 			_, err = tx.Exec(ctx, `INSERT INTO collection_posts(collection_id, post_id) VALUES($1,$2) ON CONFLICT DO NOTHING`, cid, postID)
 			return err
@@ -459,13 +485,14 @@ func (s *Store) ToggleFavorite(ctx context.Context, userID, postID int64, collec
 		if err != nil {
 			return err
 		}
-		if existing == cid {
+		if removeAny || existing == cid {
 			added = false
-			_, err = tx.Exec(ctx, `DELETE FROM collection_posts WHERE collection_id=$1 AND post_id=$2`, cid, postID)
+			_, err = tx.Exec(ctx, `DELETE FROM collection_posts WHERE collection_id=$1 AND post_id=$2`, existing, postID)
 			return err
 		}
 		added = true
-
+		// 目标夹可能因历史双插已含此帖：先清掉目标夹里的旧行再搬，
+		// 否则 UPDATE 直接撞 (collection_id, post_id) 主键 500
 		if _, err := tx.Exec(ctx, `DELETE FROM collection_posts WHERE collection_id=$1 AND post_id=$2`, cid, postID); err != nil {
 			return err
 		}
@@ -498,7 +525,7 @@ func (s *Store) Collections(ctx context.Context, userID int64) ([]model.Collecti
 		if err := rows.Scan(&c.ID, &c.Name, &c.IsDefault, &c.Count, &body, &cover, &authorAvatar); err != nil {
 			return nil, err
 		}
-
+		// 收藏夹封面与帖子封面同一套规则：封面图优先，回落正文首图，再回落作者头像
 		c.CoverURL = cover
 		if c.CoverURL == "" {
 			c.CoverURL = firstImageURL(body)
@@ -516,7 +543,7 @@ func (s *Store) CreateCollection(ctx context.Context, userID int64, name string)
 	var isDefault bool
 	var count int64
 	var cover string
-
+	// 上限校验与插入同锁同事务：count-then-insert 在并发下可突破 20 上限
 	err := s.ExecTx(ctx, func(tx pgx.Tx) error {
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, userID); err != nil {
 			return err
@@ -544,12 +571,15 @@ func (s *Store) CreateCollection(ctx context.Context, userID int64, name string)
 	return &c, nil
 }
 
+// CollectionCount 用户的收藏夹总数（建夹上限用）
 func (s *Store) CollectionCount(ctx context.Context, userID int64) (int, error) {
 	var n int
 	err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM collections WHERE user_id=$1`, userID).Scan(&n)
 	return n, err
 }
 
+// DeleteCollection 删除自建收藏夹：夹内帖子移回默认收藏夹（已在默认夹的映射直接丢弃），
+// 默认收藏夹本身不可删。ErrNotFound=夹不存在或不是本人的
 func (s *Store) DeleteCollection(ctx context.Context, userID, collectionID int64) error {
 	return s.ExecTx(ctx, func(tx pgx.Tx) error {
 		var isDefault bool
@@ -568,7 +598,7 @@ func (s *Store) DeleteCollection(ctx context.Context, userID, collectionID int64
 			return err
 		}
 		if n > 0 {
-
+			// 默认夹可能还不存在（光建夹没收藏过的人），按需补建（同 EnsureDefaultCollection 语义）
 			var defID int64
 			if err := tx.QueryRow(ctx, `INSERT INTO collections(user_id, name, is_default) VALUES($1,'默认收藏夹',TRUE)
 				ON CONFLICT (user_id, name) DO UPDATE SET name=EXCLUDED.name RETURNING id`, userID).Scan(&defID); err != nil {
@@ -587,6 +617,8 @@ func (s *Store) DeleteCollection(ctx context.Context, userID, collectionID int64
 		return err
 	})
 }
+
+// ---- 评论 ----
 
 func scanComment(row pgx.Row) (*model.Comment, error) {
 	var c model.Comment
@@ -617,7 +649,8 @@ func scanComment(row pgx.Row) (*model.Comment, error) {
 }
 
 func (s *Store) CommentsOf(ctx context.Context, viewerID, postID int64) ([]model.Comment, error) {
-
+	// 上限兜底：热帖评论再多也不允许单请求全量拉取（后续按需分页）
+	// JOIN posts 过滤软删帖：此前已知 post id 就能绕过 getPost 的 404 读到全部评论
 	rows, err := s.Pool.Query(ctx, commentSelect+
 		` JOIN posts p ON p.id=c.post_id AND p.deleted_at IS NULL WHERE c.post_id=$2 AND c.deleted_at IS NULL`+
 		blockFilter("c.author_id")+` ORDER BY c.created_at LIMIT 500`,
@@ -654,7 +687,8 @@ type CommentCreate struct {
 func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comment, error) {
 	var id int64
 	err := s.ExecTx(ctx, func(tx pgx.Tx) error {
-
+		// 软删帖子不再可评论：此前删帖后评论照常累加、计数器照常增长、
+		// 通知照常发，已知 post id 即可绕过 getPost 的 404
 		var postAuthor int64
 		var postTitle string
 		var postAlive bool
@@ -665,7 +699,7 @@ func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comm
 		if !postAlive {
 			return ErrNotFound
 		}
-
+		// parent 必须是同一帖子下的评论，否则评论树会跨帖悬挂
 		if c.ParentID != nil {
 			var parentPost int64
 			if err := tx.QueryRow(ctx, `SELECT post_id FROM comments WHERE id=$1 AND deleted_at IS NULL`, *c.ParentID).
@@ -673,7 +707,7 @@ func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comm
 				return ErrBadRequest
 			}
 		}
-
+		// reply_to 必须是真实存在的用户，否则 FK 违反变成 500
 		if c.ReplyToUserID != nil {
 			var exists bool
 			if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)`, *c.ReplyToUserID).Scan(&exists); err != nil || !exists {
@@ -691,7 +725,7 @@ func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comm
 		if err := bumpActivity(tx, ctx, c.AuthorID, "comment"); err != nil {
 			return err
 		}
-
+		// 成就：社务常客（评论数达到 50）
 		var cCount int64
 		if err := tx.QueryRow(ctx, `SELECT count(*) FROM comments WHERE author_id=$1`, c.AuthorID).Scan(&cCount); err != nil {
 			return err
@@ -723,7 +757,7 @@ func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comm
 				return err
 			}
 		}
-
+		// 楼中楼只带 parent_id 时不填 reply_to_user_id，父评论作者会毫无感知——按 parent 补发
 		if c.ReplyToUserID == nil && c.ParentID != nil {
 			var parentAuthor int64
 			if err := tx.QueryRow(ctx, `SELECT author_id FROM comments WHERE id=$1 AND deleted_at IS NULL`,
@@ -738,7 +772,7 @@ func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comm
 				}
 			}
 		}
-
+		// 评论者自己若也追踪本帖，不给自己发「您追踪的帖子有新评论」
 		return notifyTrackers(tx, ctx, c.PostID, postTitle, actor, preview, c.AuthorID, c.AuthorID)
 	})
 	if err != nil {
@@ -764,11 +798,11 @@ func (s *Store) CreateComment(ctx context.Context, c CommentCreate) (*model.Comm
 
 func (s *Store) ToggleCommentLike(ctx context.Context, commentID, userID int64) (active bool, count int64, err error) {
 	err = s.ExecTx(ctx, func(tx pgx.Tx) error {
-
+		// 同用户锁（同 ToggleFavorite/ToggleUp）：先查后改在并发下响应会与落库态相反
 		if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, userID); err != nil {
 			return err
 		}
-
+		// 软删/不存在的评论不再可点赞；所属帖子已删时同样拒掉
 		var alive bool
 		if err := tx.QueryRow(ctx, `SELECT c.deleted_at IS NULL AND p.deleted_at IS NULL
 			FROM comments c JOIN posts p ON p.id=c.post_id WHERE c.id=$1`, commentID).Scan(&alive); err != nil {
@@ -797,6 +831,7 @@ func (s *Store) ToggleCommentLike(ctx context.Context, commentID, userID int64) 
 	return active, count, err
 }
 
+// DeleteComment 作者或奉仕及以上；管理删除需理由并通知作者
 func (s *Store) DeleteComment(ctx context.Context, commentID, operatorID int64, mod bool, reason string) error {
 	return s.ExecTx(ctx, func(tx pgx.Tx) error {
 		var postID, authorID int64
@@ -808,7 +843,8 @@ func (s *Store) DeleteComment(ctx context.Context, commentID, operatorID int64, 
 		if err != nil {
 			return err
 		}
-
+		// 子楼级联软删：父楼没了子楼还挂着 parent 悬空，读出来渲染断裂；
+		// 本楼在上面已置 deleted_at，这里的 RowsAffected 是新删掉的子楼数
 		tag, err := tx.Exec(ctx, `WITH RECURSIVE subtree AS (
 				SELECT id FROM comments WHERE id=$1
 				UNION ALL

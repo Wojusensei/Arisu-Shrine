@@ -1,0 +1,47 @@
+{{define "postcard"}}<a class="post-card" href="/post/{{.No}}">
+  <div class="pc-body">
+    {{/* 无徽标时安卓整行不建（Cards.kt:119-130），留空会给标题白让 21px */}}
+    {{if or .Pinned .Essence}}<div class="pc-badges">{{if .Pinned}}<span class="meta-badge tint-primary">{{template "i-pin"}}置顶</span>{{end}}{{if .Essence}}<span class="meta-badge tint-gold">精华</span>{{end}}</div>{{end}}
+    <div class="pc-spring1"></div>
+    <div class="pc-title-clamp"><h3 class="pc-title">{{.Title}}</h3></div>
+    {{if .Excerpt}}<p class="pc-excerpt{{if or .Pinned .Essence}} one{{end}}">{{.Excerpt}}</p>{{end}}
+    <div class="pc-spring4"></div>
+    <div class="pc-author"><span class="name">{{.Author.Nickname}}</span> <span class="role-tag" data-role="{{.Author.Role}}">{{rolename .Author.Role}}</span></div>
+    <div class="pc-counts">
+      <span class="icount{{if .Upped}} on{{end}}">{{template "i-up"}}{{.UpCount}}</span>
+      <span class="icount">{{template "i-comment"}}{{.CommentCount}}</span>
+      <span class="icount">{{template "i-star"}}{{.SaveCount}}</span>
+      <span class="pc-time">{{.TimeText}}</span>
+    </div>
+  </div>
+  <div class="pc-cover">
+    {{if .CoverThumb}}<img src="{{.CoverThumb}}" alt="" loading="lazy" referrerpolicy="no-referrer">
+    {{else if .AvatarThumb}}<img src="{{.AvatarThumb}}" alt="{{.Author.Nickname}}" loading="lazy" referrerpolicy="no-referrer">
+    {{else}}<span class="pc-silhouette">{{template "i-person"}}</span>{{end}}
+    <div class="pc-no">{{.No}}</div>
+  </div>
+</a>
+{{end}}
+
+{{/* 领奖台一格（PodiumSlot：PlayScreen.kt:860-935）：名次印章 → 头像（首位 52、其余 42）
+     → 昵称（首位 titleSmall，其余 bodyMedium）→ 档位胶囊 → 分数 → 台阶底座 */}}
+{{define "podiumslot"}}<div class="podium-cell{{if eq .Rank 1}} first{{end}}">
+  <span class="rank-seal{{if eq .Rank 1}} filled{{end}}">{{.Rank}}</span>
+  <span class="avatar ring {{if eq .Rank 1}}av52{{else}}av42{{end}}" data-role="{{.Role}}">{{initial .Nickname}}</span>
+  <span class="pod-nm" data-role="{{.Role}}">{{.Nickname}}</span>
+  <span class="pill band">{{.Band}}</span>
+  <span class="pod-score">{{.Luck}}</span>
+  <span class="pod-step{{if eq .Rank 1}} first{{end}}"></span>
+</div>{{end}}
+
+{{/* 榜单行（LeaderRow：PlayScreen.kt:942-1017）：
+    名次印章 24 → 头像 30 → 昵称(+「我」胶囊) 一行、幸运值细条一行 → 分数与档位。 */}}
+{{define "leaderrow"}}<div class="leader-row{{if .IsMe}} me{{end}}">
+  <span class="rank{{if eq .Rank 1}} filled{{end}}">{{.Rank}}</span>
+  <span class="avatar ring av30" data-role="{{.Role}}">{{if .Avatar}}<img src="{{.Avatar}}" alt="" loading="lazy" referrerpolicy="no-referrer">{{else}}{{initial .Nickname}}{{end}}</span>
+  <span class="ln">
+    <span class="ln-top"><span class="nm" data-role="{{.Role}}">{{.Nickname}}</span>{{if .IsMe}}<span class="pill me">我</span>{{end}}</span>
+    <span class="lbar"><i style="width:{{.Luck}}%"></i></span>
+  </span>
+  <span class="tail"><span class="score">{{.Luck}}</span><span class="band">{{.Band}}</span></span>
+</div>{{end}}

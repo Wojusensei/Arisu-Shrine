@@ -1,5 +1,5 @@
 uploads/
-
+# 只忽略 server/ 根下的编译产物二进制：不带锚点的 arisu 会连 cmd/arisu/ 源码目录一起吞掉
 /arisu
 .jwt-secret
 *.log

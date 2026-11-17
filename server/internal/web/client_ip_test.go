@@ -9,6 +9,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// clientIP 是登录锁、验证码配额、洪泛闸门共用的计数维度：头缺失或不是合法 IP
+// 时必须落回对端地址，否则一个畸形头要么让所有人挤进同一个桶，
+// 要么让攻击者每次换桶逃逸出限额
 func TestClientIP(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -41,6 +44,8 @@ func TestClientIP(t *testing.T) {
 	}
 }
 
+// 闸门关闭态（0/负值）不许碰 Redis：配置缺项本意是少一道闸，
+// 要是走到 null 客户端上就是全站 500——小配置失误放大成停机
 func TestFloodGuardDisabledPassesThrough(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	var conf cfg.Config

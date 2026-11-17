@@ -1,0 +1,46 @@
+{{template "top" .}}
+{{/* 表情包设置（StickerSettingsOverlay.kt:170-290）：
+   顶栏「表情包设置 / 长按拖动排序 · 点「添加」收新表情」；
+   网格 4 列、格 64dp、间距 10dp，「添加」格排在最前（上传中画圆环进度）；
+   网格下方一行「N/上限」labelSmall；底部悬浮保存条（与页面同色凸起、
+   20dp 圆角、v6 内边距），顺序没动过时按钮保持禁用；
+   保存成功给「顺序已保存」提示条。返回时若顺序未保存，弹三选确认。
+   上限满了点添加格给「表情夹最多 N 张，先删几张再加」。 */}}
+<div class="stk-page" data-role="sticker-page">
+  <div class="sticker-grid manager" data-role="sticker-grid">
+    <button class="sticker-cell add{{if ge (len .Items) .Limit}} full{{end}}" data-role="add-sticker" data-limit="{{.Limit}}" aria-label="添加表情">
+      <span class="add-ic">{{template "i-plus"}}</span>
+      <span class="add-lb">添加</span>
+    </button>
+    {{range .Items}}
+    <div class="sticker-cell" data-id="{{.ID}}" draggable="true">
+      <img src="{{webLocalUpload .URL}}" alt="表情" loading="lazy">
+      <button class="sticker-del" data-role="del-sticker" data-id="{{.ID}}" aria-label="删除这张表情">{{template "i-close"}}</button>
+    </div>
+    {{end}}
+  </div>
+  <p class="stk-count">{{len .Items}}/{{.Limit}}</p>
+  <div class="stk-gap" aria-hidden="true"></div>
+</div>
+<input type="file" accept="image/jpeg,image/png,image/gif,image/webp" data-role="sticker-file" hidden>
+
+<div class="stk-save-dock" data-role="sticker-dock">
+  <div class="stk-save-inner">
+    <button class="btn btn-full" type="button" data-role="save-order" disabled>保存</button>
+  </div>
+</div>
+
+{{/* 退出确认（StickerSettingsOverlay.kt:153-168）：标题「保存顺序？」+ 正文
+   「尚未保存的排序不会被保留。」+「继续调整」/「不保存」/「保存」 */}}
+<div class="modal" data-role="sticker-exit-modal" hidden>
+  <div class="modal-box neu-surface">
+    <h3>保存顺序？</h3>
+    <p class="modal-body">尚未保存的排序不会被保留。</p>
+    <div class="stk-exit-acts">
+      <button class="stk-exit-btn" data-role="sticker-exit-discard">不保存</button>
+      <button class="stk-exit-btn" data-role="sticker-exit-cancel">继续调整</button>
+      <button class="stk-exit-btn primary" data-role="sticker-exit-save">保存</button>
+    </div>
+  </div>
+</div>
+{{template "bottom" .}}

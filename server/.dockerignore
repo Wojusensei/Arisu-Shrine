@@ -1,0 +1,24 @@
+# 构建上下文过滤：别把宿主垃圾塞进镜像。
+# 2026-11-17 生产事故：从 macOS 用 bsd tar 传代码，tar 会为每个带扩展属性的
+# 文件额外生成 AppleDouble（`._xxx`）伴生文件；迁移器把 `._001_init.sql` 当成
+# 真迁移脚本执行，报 `invalid message format (SQLSTATE 08P01)`，后端反复重启。
+# Dockerfile 是 `COPY . .`，一旦这些文件进了上下文，同样的坑会重演。
+._*
+.DS_Store
+**/._*
+**/.DS_Store
+
+# 本机产物与备份（生产构建不需要）
+uploads/
+backups/
+.prod-backup/
+*.bak-*
+__pycache__/
+*.pyc
+.jwt-secret
+.env
+.env.*
+
+# 构建产物
+arisu
+*.test

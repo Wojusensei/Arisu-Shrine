@@ -1,0 +1,89 @@
+{{template "top" .}}
+<div class="neu-surface omikuji-hero">
+  <span class="torii-mark">{{template "i-torii"}}</span>
+  <h2>御神签</h2>
+  <p>摇出今天属于您的幸运值</p>
+</div>
+
+<button class="btn btn-full" data-role="draw"
+        {{if ne .LuckKnown true}}disabled{{end}}
+        {{if .Luck}}disabled{{end}}
+        data-state="{{if not .LuckKnown}}unknown{{else if .Luck}}drawn{{else}}ready{{end}}">
+  {{if not .LuckKnown}}查签中…{{else if .Luck}}今日已求签，明日再来{{else}}今日求签{{end}}
+</button>
+<p class="form-error center" data-role="draw-err" style="display:none">加载失败，点击重试</p>
+
+{{if .Luck}}
+{{/* 结果卡（PlayScreen.kt:506-563）：labelSmall「今日幸运值」→ 8dp → displayLarge 数字
+   + titleMedium「 / 100」→ 10dp → 档位 SoftPill → 12dp → 说明 labelSmall → 14dp →
+   发丝线 → 2dp → 两出口（分享 / 保存），中间 1dp 竖线。 */}}
+<div class="neu-surface luck-card">
+  <p class="luck-label">今日幸运值</p>
+  <p class="luck-num">{{.Luck}}<small> / 100</small></p>
+  <span class="pill band" data-band="{{.Band}}">{{.Band}}</span>
+  <p class="luck-note">仅代表抽签结果，幸运与否不能由小小签子决定。</p>
+  {{/* 两个出口的图标由 .act::before 的 mask 提供（Share / Download，16dp、primary） */}}
+  <div class="luck-actions">
+    <button class="act" data-role="share">分享御签</button>
+    <span class="act-sep"></span>
+    <button class="act" data-role="save">保存到相册</button>
+  </div>
+</div>
+{{end}}
+
+{{if .Leader}}
+{{if .Leader.HasAny}}
+{{/* 御签榜（PlayScreen.kt:567-660）：装饰头 → 领奖台前 3（2 左 1 中 3 右、
+   中位更高）→ 第 4 起全宽行 → 我的位置（自己在前十之外时附近各 2 人） */}}
+<div class="neu-surface leader-card">
+  <div class="leader-head">
+    <span class="lh-line"></span>
+    <span class="lh-torii">{{template "i-torii"}}</span>
+    <h3 class="leader-title">御签榜</h3>
+    <span class="lh-torii">{{template "i-torii"}}</span>
+    <span class="lh-line"></span>
+  </div>
+
+  <div class="podium">
+    {{with .Leader.Second}}<div class="podium-slot">{{template "podiumslot" .}}</div>{{else}}<div class="podium-slot"></div>{{end}}
+    {{with .Leader.First}}<div class="podium-slot mid">{{template "podiumslot" .}}</div>{{else}}<div class="podium-slot mid"></div>{{end}}
+    {{with .Leader.Third}}<div class="podium-slot">{{template "podiumslot" .}}</div>{{else}}<div class="podium-slot"></div>{{end}}
+  </div>
+
+  {{if .Leader.Rest}}
+  <hr class="hairline">
+  <div class="leader-rest">
+    {{range .Leader.Rest}}{{template "leaderrow" .}}{{end}}
+  </div>
+  {{end}}
+
+  {{if .Leader.ShowNearby}}
+  <hr class="hairline">
+  <p class="leader-sub">我的位置</p>
+  <div class="leader-rest">
+    {{range .Leader.Nearby}}{{template "leaderrow" .}}{{end}}
+  </div>
+  {{end}}
+
+  <p class="form-hint center">同分按求签先后排位</p>
+</div>
+{{end}}
+{{end}}
+
+{{/* 社员统计（PlayScreen.kt:666-710）：Spacer(6) → SectionLabel → NeuSurface 卡 */}}
+<div class="section-label play-gap">社员统计</div>
+<div class="neu-surface stats-mini">
+  <div class="stats-pair">
+    <div class="stat-num"><b class="hi">{{.Stats.OnlineNow}}</b><span>人正在神社内</span></div>
+    <span class="stat-sep"></span>
+    <div class="stat-num"><b>{{.Stats.Registered}}</b><span>注册社员</span></div>
+  </div>
+  <span class="pill gold">今日峰值 {{.Stats.TodayPeak}} 人</span>
+</div>
+
+{{/* 全端总在线时长（PlayScreen.kt:712-760）：开站至今累计 */}}
+<div class="section-label play-gap">全端总在线时长 <span class="trailing">开站至今累计</span></div>
+<div class="neu-surface total-card">
+  <p>神社的灯火，已亮了 <b>{{.TotalDays}}</b> 天 <b>{{.TotalHours}}</b> 小时 <b>{{.TotalMins}}</b> 分</p>
+</div>
+{{template "bottom" .}}

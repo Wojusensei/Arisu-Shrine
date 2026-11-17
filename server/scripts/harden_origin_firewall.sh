@@ -1,5 +1,23 @@
 #!/usr/bin/env bash
-
+# 源站收口：对外 80/443 只接受 Cloudflare 回源网段，其余来源丢包。
+#
+# 为什么要做：源站 IP 在迁移前的 DNS 记录里出现过（历史 DNS 服务查得到），
+# 扫到 IP 就能绕过 Cloudflare 直打源站——既避开边缘防护与缓存，也让应用层
+# 按来源地址计数的闸门（登录锁、验证码配额、洪泛闸门）拿到一堆假来源。
+# 收口之后攻击只剩两条路：打在 Cloudflare（它吃得住）、打在防火墙上（丢包）。
+#
+# 用法：
+#   harden_origin_firewall.sh apply         安装/刷新规则（默认；开机由 systemd 调，幂等）
+#   harden_origin_firewall.sh refresh       先重拉 CF 官方网段再安装（周更定时器调）
+#   harden_origin_firewall.sh status        只打印现状，不改规则
+#   harden_origin_firewall.sh install-units 写 systemd 服务与定时器并启用
+#
+# 规则落在 DOCKER-USER 链：宿主机上发往容器发布端口的过路包都经过它，docker
+# 不会清空它；链内挂一条自有子链，刷新只需 flush 子链。
+# 只匹配 80/443（tcp）与 443（udp，HTTP/3），SSH 等端口不在管辖内，改错也留后路。
+#
+# 证书续期走 CF 转发到 80，放行 CF 网段所以不受影响；万一某次续期失败，
+# 临时 `iptables -F ARISU-CF-ALLOW` 放行（子链清空＝全放行），查完再跑一次 apply。
 set -euo pipefail
 
 CHAIN="ARISU-CF-ALLOW"
@@ -8,6 +26,7 @@ LOG="/var/log/arisu_harden.log"
 SELF_PATH="/opt/arisu/harden_origin_firewall.sh"
 MAX_AGE_DAYS=7
 
+# 明文网段只在这两处出现：现场拉取失败且无本地缓存时的兜底快照
 FALLBACK_V4="173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22"
 FALLBACK_V6="2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32"
 
@@ -15,6 +34,7 @@ log() { printf '%s %s\n' "$(date -Is)" "$*" | tee -a "$LOG"; }
 
 has_v6_global() { ip -6 addr show scope global 2>/dev/null | grep -q "inet6"; }
 
+# 拉取并落盘官方网段。少于 10 条视为残缺（残缺的后果是合法回源被当成攻击丢包）
 fetch_ranges() {
   local v4 v6 n4 tmp
   v4=$(curl -fsS --max-time 15 https://www.cloudflare.com/ips-v4 2>/dev/null || true)
@@ -47,7 +67,7 @@ load_ranges() {
   V4=""
   V6=""
   if [ -f "$RANGE_FILE" ]; then
-
+    # shellcheck disable=SC1090
     . "$RANGE_FILE"
   fi
   V4="${V4:-$FALLBACK_V4}"
@@ -69,11 +89,12 @@ apply() {
   iptables -N "$CHAIN" 2>/dev/null || true
   iptables -F "$CHAIN"
 
+  # 本机自查、容器互访、健康检查都不该被自己的规则误伤
   local net
   for net in 127.0.0.0/8 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16; do
     iptables -A "$CHAIN" -s "$net" -j RETURN
   done
-
+  # 本机发往自己公网地址的流量（源地址就是本机公网 IP）
   local ip
   while read -r ip; do
     [ -n "$ip" ] && iptables -A "$CHAIN" -s "$ip" -j RETURN

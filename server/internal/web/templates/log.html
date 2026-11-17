@@ -1,0 +1,20 @@
+{{template "top" .}}
+{{/* ChangelogDetailScreen.kt:96-160：卡内 v20 内边距；
+     版本号 displaySmall.copy(fontSize=36.sp) → 10dp → Row[渠道胶囊 + 10dp + 「发布于 …」]
+     → 14dp → 变更类型胶囊行（6dp 间隔）→ 14dp → 「当前最新版本」胶囊 */}}
+<div class="neu-surface log-card">
+  <span class="cv-num log">{{.Release.Version}}</span>
+  <div class="log-meta">
+    <span class="pill">{{if eq .Release.Channel "beta"}}测试版{{else}}稳定版{{end}}</span>
+    <span class="log-date">发布于 {{webTime .Release.CreatedAt}}</span>
+  </div>
+  {{if .Kinds}}
+  <div class="log-kinds">{{range .Kinds}}<span class="pill">{{.}}</span>{{end}}</div>
+  {{end}}
+  {{if .Latest}}<div class="log-latest"><span class="pill accent">当前最新版本</span></div>{{end}}
+</div>
+<div class="neu-surface">
+  <div class="md">{{.Release.Body}}</div>
+</div>
+<p class="auth-links"><a href="/shrine?tab=log">返回神社日志</a></p>
+{{template "bottom" .}}

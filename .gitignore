@@ -1,18 +1,31 @@
+# 本机工具链（Android SDK / Gradle / Robolectric jar），不入库
 .tooling/
 local.properties
 
+# 构建产物
 build/
 */build/
 .gradle/
 screenshots/
 
+# IDE
 .idea/
 *.iml
 .DS_Store
 captures/
 
+# ZCode 会话工作区（计划/工作流等本机状态，不属于项目）
 .zcode/
 
+# UI 评审页与本机样图（给用户本人看，不入库）
 docs/design-lab/
 
+# 正式签名密钥与凭据（本机保管，丢了就得换签名重装）
 app/signing/
+
+# Python 缓存（webtools 脚本运行时生成）
+__pycache__/
+*.pyc
+
+# 生产备份（含整库 dump 与上传卷，严禁入库）
+.prod-backup/

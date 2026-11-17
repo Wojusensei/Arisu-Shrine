@@ -1,0 +1,129 @@
+{{define "top"}}<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · 有栖神社</title>
+<link rel="icon" href="/logo_red.png">
+{{/* 首屏正文 400 档（common 子集）提前起跑：与 app.css 并行发现，省掉 CSS 解析后
+     才发起请求的那 300~600ms。只 preload 400——标题 700、摘要 500、人名 600 都在
+     首屏下方，按需排队即可，四份一起 preload 会抢带宽反而拖慢正文。
+     rare 档（生僻字）绝不 preload，见 app.css 分档说明。 */}}
+<link rel="preload" href="/app-assets/fonts/noto-serif-400-common.woff?v=2" as="font" type="font/woff" crossorigin>
+<script src="/app-assets/theme.js?v=2"></script>
+<link rel="stylesheet" href="/app-assets/app.css?v=397">
+{{/* 御签卡二维码：只在游会页需要，且要在 app.js 之前就绪（卡面同步绘制） */}}
+{{if eq .Page "play"}}<script src="/app-assets/qr.js?v=1"></script>{{end}}
+<script src="/app-assets/app.js?v=113" defer></script>
+</head>
+<body data-page="{{.Page}}" class="{{.AuthClass}}">
+{{if .Auth}}
+<div class="auth-decor" aria-hidden="true">
+  <svg viewBox="0 0 24 24"><path d="M0.8 3.7 Q12 1.3 23.2 3.7 L23.2 5.9 Q12 3.5 0.8 5.9 Z M2.7 6.1 H21.3 V7.9 H2.7 Z M10.7 7.9 H13.3 V10.7 H10.7 Z M3.5 10.7 H20.5 V12.5 H3.5 Z M5.7 7.9 H8 V22.2 H5.7 Z M16 7.9 H18.3 V22.2 H16 Z"/></svg>
+  <svg viewBox="0 0 24 24"><path d="M0.8 3.7 Q12 1.3 23.2 3.7 L23.2 5.9 Q12 3.5 0.8 5.9 Z M2.7 6.1 H21.3 V7.9 H2.7 Z M10.7 7.9 H13.3 V10.7 H10.7 Z M3.5 10.7 H20.5 V12.5 H3.5 Z M5.7 7.9 H8 V22.2 H5.7 Z M16 7.9 H18.3 V22.2 H16 Z"/></svg>
+</div>
+{{end}}
+{{if .Me}}
+{{/* 最近登录账号写盘（登录页的「最近登录」卡要用）：CSP 是 script-src 'self'，
+     内联脚本一律被拦，只能挂成 data-* 让 app.js 读走再写。 */}}
+<span hidden data-role="last-account" data-email="{{.Me.Email}}" data-nick="{{.Me.Nickname}}" data-avatar="{{webLocalUpload .Me.DisplayAvatar}}"></span>
+{{/* 底栏只在四个主 tab 页出现：安卓 bottomBar 的门控是「当前路由属于 ArisuTab」
+     （ArisuApp.kt:155-166），帖子/绘马/社务箱/设置这些二级页一律没有底栏。
+     用显式 .Tab 标记而不是 NavOn —— 二级页为了点亮侧栏也会带 NavOn。 */}}
+{{if .Tab}}
+<nav class="bottom-nav">
+  <a class="{{if eq .NavOn "chat"}}on{{end}}" href="/b/main"><b>{{template "i-forum"}}</b><span>有栖茶话</span></a>
+  <a class="{{if eq .NavOn "shrine"}}on{{end}}" href="/shrine"><b>{{template "i-torii"}}</b><span>神社祝部</span></a>
+  <a class="{{if eq .NavOn "play"}}on{{end}}" href="/play"><b>{{template "i-koinobori"}}</b><span>神社游会</span></a>
+  <a class="{{if eq .NavOn "me"}}on{{end}}" href="/me"><b>{{template "i-person"}}</b><span>我的客房</span></a>
+</nav>
+{{end}}
+<nav class="sidebar">
+  <a class="brand" href="/b/main">有栖神社</a>
+  <a class="nav-item{{if eq .NavOn "chat"}} on{{end}}" href="/b/main">{{template "i-forum"}}<span>有栖茶话</span></a>
+  <a class="nav-item{{if eq .NavOn "shrine"}} on{{end}}" href="/shrine">{{template "i-torii"}}<span>神社祝部</span></a>
+  <a class="nav-item{{if eq .NavOn "play"}} on{{end}}" href="/play">{{template "i-koinobori"}}<span>神社游会</span></a>
+  <a class="nav-item{{if eq .NavOn "me"}} on{{end}}" href="/me">{{template "i-person"}}<span>我的客房</span></a>
+  <div class="side-sep"></div>
+  <a class="nav-item" href="/inbox">{{template "i-mail"}}<span>社务箱</span>{{template "unread-badge" .}}</a>
+  <a class="nav-item" href="/search">{{template "i-search"}}<span>搜索</span></a>
+  <a class="nav-item" href="/me/settings">{{template "i-gear"}}<span>设置</span></a>
+  {{/* 侧栏底部用户卡：头像 + 昵称同排（头像点击进我的客房），右侧退出登录 */}}
+  <div class="side-user">
+    <a class="su-id" href="/me" aria-label="我的客房">
+      <span class="avatar sm su-avatar" data-role="{{.Me.Role}}">{{if .Me.DisplayAvatar}}<img src="{{webLocalUpload .Me.DisplayAvatar}}" alt="{{.Me.Nickname}}">{{else}}{{initial .Me.Nickname}}{{end}}</span>
+      <b>{{.Me.Nickname}}</b>
+    </a>
+    <form method="post" action="/logout"><input type="hidden" name="next" value="/login"><button class="btn-ghost" type="submit">退出登录</button></form>
+  </div>
+</nav>
+<div class="topline"><div class="bar">
+  <a class="brand" href="/b/main">有栖神社</a>
+  <a class="nav-item" href="/inbox">{{template "i-mail"}}<span>社务箱</span>{{template "unread-badge" .}}</a>
+  <div class="app-user">
+    <b>{{.Me.Nickname}}</b>
+    <form method="post" action="/logout"><input type="hidden" name="next" value="/login"><button class="chip" type="submit">退出</button></form>
+  </div>
+</div></div>
+{{end}}
+<div class="wrap">
+{{/* 无标题页（搜索页：整行就是输入框，顶栏由页面自己排）不渲染页头 */}}
+{{if .Title}}<div class="page-head{{if not .Tab}} has-back{{end}}">
+  <div class="ph-row">
+    {{/* 二级页左上角返回钮（ArisuTopBar 的 onBack，Scaffold.kt:88-98）：
+         主 tab 页没有返回钮，与安卓一致 */}}
+    {{if not .Tab}}<a class="top-ic back" href="/b/main" data-role="back" aria-label="返回">{{template "i-back"}}</a>{{end}}
+    <div>
+      <h1>{{.Title}}</h1>
+      {{/* 副标题槽常驻：草稿箱/浏览足迹的「共 N 条」由 app.js 回填，
+           空时用 :empty 收掉高度（见 app.css 的 .page-head .sub:empty） */}}
+      <p class="sub">{{.Sub}}</p>
+    </div>
+    {{/* 门控用 .NavOn 而非 .Page：NavOn 在所有页面恒为 string（chat|shrine|play|me），
+         而 .Page 一旦被页面数据结构里的同名字段遮蔽（inboxData 曾是 int 分页号），
+         eq 会因 int/string 类型不符直接中断整页渲染。茶话板（含帖子/搜索）NavOn 恒为 chat。
+         社务箱入口：茶话/祝部/游会三个主 tab 都由页头补这一枚（ChatBoardScreen.kt:210、
+         ShrineBoardScreen.kt:243、PlayScreen.kt:395-399），客房页把它写在 .Actions 里
+         （MyRoomScreen.kt:207-212，顺序是「社务箱在前、设置在后」）。 */}}
+    {{if or .Actions .Me}}<div class="ph-actions">{{.Actions}}{{if and .Tab (ne .NavOn "me")}}<a class="top-ic" href="/inbox" aria-label="社务箱">{{template "i-mail"}}{{template "unread-badge" .}}</a>{{end}}</div>{{end}}
+  </div>
+</div>
+{{if .Notice}}<div class="notice">{{.Notice}}</div>{{end}}
+{{end}}{{end}}
+
+{{define "bottom"}}
+</div>
+{{/* 回到顶部阴阳玉（ScrollTopOrb）：滚过一屏后淡入左下/右下角（规格见 app.css）。
+     安卓在列表页是「首项下标 > 0 或偏移 > 300」、普通滚动页是「> 500px」，
+     网页统一按视口高度的一半判定（见 app.js 的 scroll-top 段）。 */}}
+{{if .Me}}<button class="scroll-top-orb" data-role="scroll-top" type="button" aria-label="回到顶部"></button>{{end}}
+</body>
+</html>
+{{end}}
+
+{{/* 空态（ShrineEmptyState：States.kt:184-262）：76dp 圆槽 + 细线鸟居 + 云樱装饰，
+   20dp、标题「少女祈祷中」titleMedium 16/24、7dp、说明 bodySmall 12.5/19。
+   参数 .note；可选 .onclick 时说明变朱色可点。 */}}
+{{define "empty"}}<div class="empty-state">
+  <span class="es-art" aria-hidden="true"></span>
+  <p class="es-title">少女祈祷中</p>
+  <p class="es-note">{{.}}</p>
+</div>{{end}}
+
+{{define "pager"}}
+{{/* 总数已由排序栏右侧承担（安卓 SortBar 的 trailing），这里只留翻页 */}}
+<nav class="pager">
+  {{if .PrevOn}}<a class="btn-ghost" href="{{.PrevURL}}">上一页</a>{{else}}<span class="btn-ghost dis">上一页</span>{{end}}
+  {{if .NextOn}}<a class="btn-ghost" href="{{.NextURL}}">下一页</a>{{else}}<span class="btn-ghost dis">下一页</span>{{end}}
+</nav>
+{{end}}
+
+{{define "missing"}}
+<p class="page-end">内容不存在或已被删除。</p>
+{{end}}
+
+{{/* 未读角标（三处挂点共用）：服务端已知 .Unread，首帧即正确——
+     >0 渲染数字（>99 收口成 99+，与心跳和安卓 UnreadBadge 同口径），
+     =0 渲染 hidden 空 span。心跳（app.js beat()）随后用 textContent +
+     style.display 接管实时更新；hidden 初始态与内联样式互不冲突。 */}}
+{{define "unread-badge"}}{{if .Unread}}<span class="unread-badge" data-unread-badge>{{if gt .Unread 99}}99+{{else}}{{.Unread}}{{end}}</span>{{else}}<span class="unread-badge" data-unread-badge hidden></span>{{end}}{{end}}

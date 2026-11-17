@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+// parseMentionIDs 是 @提及 的解析口：认错格式会漏通知，放太多会刷屏。
+// 这里把形态边界钉死。
 func TestParseMentionIDs(t *testing.T) {
 	cases := []struct {
 		name string
@@ -28,6 +30,7 @@ func TestParseMentionIDs(t *testing.T) {
 	}
 }
 
+// 封顶：塞 50 个 @ 也只取前 mentionCap 个，防长正文给通知表注水
 func TestParseMentionIDsCap(t *testing.T) {
 	in := ""
 	for i := 1; i <= 50; i++ {

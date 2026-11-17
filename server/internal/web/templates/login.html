@@ -1,0 +1,48 @@
+{{template "top" .}}
+<div class="auth-hero">
+  <span class="brand-orb">{{template "i-torii"}}</span>
+  <h2 class="brand-name">有栖神社</h2>
+  <p class="brand-sub">建造于人间之里外的飘渺存在</p>
+  {{/* 最近登录（AuthScreens.kt:308-365）：标题 labelMedium InkMuted 左缩 4、
+      下方 10 → 一行头像（54dp + 5dp + 昵称 labelSmall，条目间 18、整排居中）
+      → 行后 18。点一下把邮箱填进表单（网页只有单 cookie 罐，无法免密切换）。 */}}
+  {{if .Recent}}
+  <div class="recent-login">
+    <p class="recent-label">最近登录</p>
+    <div class="recent-row">
+      {{range .Recent}}
+      <button class="recent-item" type="button" data-recent-email="{{.Email}}">
+        <span class="recent-avatar" data-role="{{.Role}}">{{if .Avatar}}<img src="{{.Avatar}}" alt="">{{else}}{{initial .Nickname}}{{end}}</span>
+        <span class="recent-name">{{.Nickname}}</span>
+      </button>
+      {{end}}
+    </div>
+  </div>
+  {{end}}
+</div>
+<form method="post" action="/login" data-live-submit>
+  <div class="auth-card neu-surface">
+    <div class="form-row">
+      <span class="form-label">邮箱</span>
+      <div class="well">
+        <span class="well-ic">{{template "i-mail"}}</span>
+        <input class="field" type="email" name="email" value="{{.Email}}" required autocomplete="email" placeholder="注册时使用的邮箱">
+      </div>
+    </div>
+    <div class="form-row">
+      <span class="form-label">密码</span>
+      <div class="well">
+        <span class="well-ic">{{template "i-lock"}}</span>
+        <input class="field" id="pw" type="password" name="password" required autocomplete="current-password" placeholder="请输入密码">
+        <button class="well-act" type="button" data-eye="pw" aria-label="显示密码">{{template "i-eye"}}</button>
+      </div>
+      <div class="auth-forgot"><a href="/reset">忘记密码</a></div>
+    </div>
+    {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+  </div>
+  <input type="hidden" name="next" value="{{.Next}}">
+  <button class="btn btn-full" type="submit">登录</button>
+</form>
+<p class="auth-links">没有账号？<a href="/register">去注册</a></p>
+<p class="form-hint center">社员编号依入社先后发放，自 User_000001 起</p>
+{{template "bottom" .}}

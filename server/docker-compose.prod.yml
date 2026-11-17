@@ -1,3 +1,12 @@
+# 生产部署编排：租好服务器、域名 A 记录指过来之后，
+# 唯一要准备的就是 server/.env（scripts/init_server_env.sh 一键生成）。
+# 用法：cd server && docker compose -f docker-compose.prod.yml up -d --build
+#
+# 与 docker-compose.yml（本机开发）的区别：
+#   * 全部密钥/域名走 .env，缺一项直接拒启（:? 语法），不带默认值裸奔
+#   * postgres/redis/arisu 都不发布任何宿主端口——对外只有 Caddy 的 80/443
+#   * Caddy 自动签发并续期 Let's Encrypt 证书，绑域名即 HTTPS
+#   * dev_mode 强制 false（config.yaml 里的 true 被环境变量压掉）
 name: arisu-prod
 
 services:
@@ -41,14 +50,18 @@ services:
       ARISU_DB_DSN: postgres://arisu:${POSTGRES_PASSWORD}@postgres:5432/arisu?sslmode=disable
       ARISU_REDIS_ADDR: redis:6379
       ARISU_REDIS_PASSWORD: ${REDIS_PASSWORD}
-
+      # config.yaml 的 dev_mode: true 在生产被压掉；闸门在 main.go，漏配直接拒启
       ARISU_DEV_MODE: "false"
       ARISU_BASE_URL: https://${DOMAIN:?缺 DOMAIN，用 scripts/init_server_env.sh 生成 .env}
-
+      # Caddy 在编排内网反代：信任 docker 默认网段，ClientIP（登录防爆破的 IP 维度）才取得到真实来源；
+      # 如需多网段用空格分隔。DB/Redis 无宿主端口，伪造 X-Forwarded-For 只能从 Caddy 进来
       ARISU_TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12}
-
+      # Cloudflare 前置时把来源地址头名给上（.env 里填 CF-Connecting-IP）：
+      # 边缘会覆盖客户端自带的同值，限频/防爆破/洪泛闸门按真实来访地址计数；
+      # 留空则退回 TRUSTED_PROXIES + X-Forwarded-For 的判定（计数维度是 CF 边缘 IP）
       ARISU_CLIENT_IP_HEADER: ${CLIENT_IP_HEADER:-}
-
+      # SMTP 邮箱验证码：五项在 .env 填（QQ 邮箱用授权码）；缺省=只进日志，
+      # 生产模式下注册验证码接口直接 503（闸门在 sendCode）
       ARISU_SMTP_HOST: ${ARISU_SMTP_HOST:-}
       ARISU_SMTP_PORT: ${ARISU_SMTP_PORT:-465}
       ARISU_SMTP_USERNAME: ${ARISU_SMTP_USERNAME:-}
@@ -61,11 +74,11 @@ services:
       redis:
         condition: service_healthy
     volumes:
-
+      # 配置基底文件（git 内跟踪，占位密钥/开发值都被 .env 环境变量压掉）
       - ./config.yaml:/app/config.yaml:ro
       - uploads:/app/uploads
     healthcheck:
-
+      # 迁移在启动时自动跑，start_period 留足首启建表时间
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/api/health | grep -q '\"ok\":true'"]
       interval: 15s
       timeout: 5s
@@ -86,7 +99,7 @@ services:
       ACME_EMAIL: ${ACME_EMAIL:?缺 ACME_EMAIL（Let's Encrypt 通知邮箱），用 scripts/init_server_env.sh 生成 .env}
     volumes:
       - ./Caddyfile.prod:/etc/caddy/Caddyfile:ro
-
+      # 落地页静态目录（开源镜像不含它，自建时留空目录即可）
       - ./web:/srv/web:ro
       - caddydata:/data
       - caddyconfig:/config

@@ -1,0 +1,98 @@
+{{template "top" .}}
+<div class="neu-surface post-detail"
+     data-post-id="{{.Post.IDNum}}"
+     data-post-no="{{.Post.No}}"
+     data-mine="{{if .Post.Mine}}1{{else}}0{{end}}"
+     data-can-delete="{{if .Post.CanDelete}}1{{else}}0{{end}}"
+     data-favorited="{{if .Post.Favorited}}1{{else}}0{{end}}"
+     data-viewer-rank="{{.ViewerRank}}"
+     data-essence="{{if .Post.Essence}}1{{else}}0{{end}}"
+     data-pinned="{{if .Post.Pinned}}1{{else}}0{{end}}"
+     data-balance="{{.BalanceTenths}}"
+     data-title="{{.Post.Title}}"
+     data-board-label="{{.Post.BoardLabel}}"
+     data-author="{{.Post.Author.Nickname}}"
+     data-time="{{.Post.TimeText}}"
+     data-kind="帖子">
+  <div style="margin-bottom:6px;">
+    {{if .Post.Pinned}}<span class="meta-badge tint-primary">{{template "i-pin"}}置顶</span>{{end}}
+    {{if .Post.Essence}}<span class="meta-badge tint-gold">精华</span>{{end}}
+  </div>
+  <h2 class="post-title">{{.Post.Title}}</h2>
+  {{if .Post.Intro}}<p class="post-intro">{{.Post.Intro}}</p>{{end}}
+  {{/* 编号行（PostDetailScreen.kt:1163-1185）：帖子编号 / 编号 / 板块，labelMedium + CodeLabel */}}
+  <div class="meta-row">
+    <span>帖子编号</span><span class="no">{{.Post.No}}</span>
+    <span>{{.Post.BoardLabel}}</span>
+    {{if .Post.Edited}}<span>已编辑</span>{{end}}
+  </div>
+  {{/* 作者行（:1189-1212）：头像 42（ring）+ 12 + 昵称 titleMedium + 6 + 身份 + 3 + 发布于 */}}
+  <div class="author-row">
+    <a class="avatar ring av42" data-role="{{.Post.Author.Role}}" href="/u/{{.Post.Author.No}}">{{initial .Post.Author.Nickname}}</a>
+    <div class="author-col">
+      <div class="name">{{.Post.Author.Nickname}} <span class="role-tag" data-role="{{.Post.Author.Role}}">{{rolename .Post.Author.Role}}</span></div>
+      <span class="published">发布于 {{.Post.TimeText}}</span>
+    </div>
+  </div>
+  {{if .Post.CoverURL}}<img class="post-cover-img" src="{{.Post.CoverURL}}" alt="封面" loading="lazy" referrerpolicy="no-referrer">{{end}}
+  <div class="md post-body">{{.BodyHTML}}</div>
+</div>
+
+<div class="actions post-actions">
+  <button class="act" data-role="offer" data-total="{{.Post.OfferTotal}}">奉纳 <b>{{cn .Post.OfferTotal}}</b></button>
+  <button class="act{{if .Post.Upped}} on{{end}}" data-role="up">顶 <b data-c="up">{{.Post.UpCount}}</b></button>
+  <button class="act{{if .Post.Tracked}} on{{end}}" data-role="track">追踪</button>
+  <button class="act{{if .Post.Favorited}} on{{end}}" data-role="fav">收藏 <b data-c="fav">{{.Post.SaveCount}}</b></button>
+  <button class="act" data-role="jump">评论 <b>{{.Post.CommentCount}}</b></button>
+</div>
+
+{{/* 计数统一用服务端 comment_count：拉黑过滤与 500 上限会让 len .Comments 小于真值，
+     顶栏与评论区两处数字不一致（安卓只显示服务端计数字段）。 */}}
+<div class="section-label">评论 {{.Post.CommentCount}}<span class="trailing">按时间正序</span></div>
+{{if not .Comments}}
+{{template "empty" "没有评论"}}
+{{end}}
+{{range .Comments}}
+<div class="comment{{if .Nested}} nested{{end}}" data-cid="{{.ID}}" data-mine="{{if .Mine}}1{{else}}0{{end}}" data-can-delete="{{if .CanDelete}}1{{else}}0{{end}}" data-author-rank="{{.AuthorRank}}">
+  <div class="head">
+    <a class="avatar sm" data-role="{{.Author.Role}}" href="/u/{{.Author.No}}">{{initial .Author.Nickname}}</a>
+    <span class="name">{{.Author.Nickname}}</span>
+    <span class="role-tag" data-role="{{.Author.Role}}">{{rolename .Author.Role}}</span>
+    <span class="time">{{.TimeText}}</span>
+  </div>
+  <div class="md body">
+    {{if .Nested}}<div class="reply-to">回复 @{{.ReplyToName}}：</div>{{end}}
+    {{.BodyHTML}}
+  </div>
+  <div class="c-actions">
+    <button class="c-like{{if .Liked}} on{{end}}" data-liked="{{if .Liked}}1{{else}}0{{end}}">
+      {{template "i-up"}}<span data-c="like">{{if gt .LikeCount 0}}顶 {{.LikeCount}}{{else}}顶{{end}}</span>
+    </button>
+    <button class="c-reply">回复</button>
+    <span style="flex:1"></span>
+    <button class="c-more" aria-label="更多操作">{{template "i-more"}}</button>
+  </div>
+</div>
+{{end}}
+{{if .Comments}}<p class="page-end">已经到底了 · 共 {{.Post.CommentCount}} 条评论</p>{{end}}
+
+<div class="reply-wrap">
+  <div class="reply-banner" data-role="reply-banner" style="display:none">
+    <span>回复 @<b data-role="reply-name"></b></span>
+    <button data-role="reply-cancel" aria-label="取消回复">{{template "i-close"}}</button>
+  </div>
+  <div class="img-preview" data-role="img-preview" style="display:none">
+    <img src="" alt="待发送的附图">
+    <button data-role="img-remove" aria-label="移除附图">{{template "i-close"}}</button>
+  </div>
+  <div class="composer glass">
+    <button class="cbtn" data-role="emoji" aria-label="表情">{{template "i-smile"}}</button>
+    <div class="well grow">
+      <textarea class="field" data-role="input" rows="1" maxlength="2000" placeholder="说点什么…"></textarea>
+    </div>
+    <button class="cbtn" data-role="pickimg" aria-label="添加图片">{{template "i-photo"}}</button>
+    <button class="send" data-role="send" aria-label="发送" disabled>{{template "i-send"}}</button>
+    <input type="file" accept="image/jpeg,image/png,image/gif,image/webp" data-role="file" hidden>
+  </div>
+</div>
+{{template "bottom" .}}

@@ -6,6 +6,9 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// 拉黑（静默）：被拉黑方不会收到任何提示；管理侧没有查看「谁拉黑了谁」的接口。
+
+// blockUser 拉黑某人
 func (w *Web) blockUser(c *gin.Context) {
 	v := w.viewer(c)
 	id, ok := pathID(c, "id")
@@ -28,6 +31,7 @@ func (w *Web) blockUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true, "blocked": true})
 }
 
+// unblockUser 解除拉黑（幂等）
 func (w *Web) unblockUser(c *gin.Context) {
 	v := w.viewer(c)
 	id, ok := pathID(c, "id")
@@ -42,6 +46,7 @@ func (w *Web) unblockUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true, "blocked": false})
 }
 
+// myBlocks 我拉黑的人
 func (w *Web) myBlocks(c *gin.Context) {
 	v := w.viewer(c)
 	list, err := w.St.BlockedUsers(c.Request.Context(), v.ID)

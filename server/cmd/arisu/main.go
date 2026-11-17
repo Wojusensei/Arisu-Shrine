@@ -35,7 +35,9 @@ func main() {
 	if c.JWT.Secret == "" || len(c.JWT.Secret) < 32 || c.JWT.Secret == "change-me-to-a-long-random-string-please" {
 		log.Fatal("jwt.secret 不安全：请设置为至少 32 字符的随机串（openssl rand -hex 32），不能保留示例占位符")
 	}
-
+	// 生产闸门：dev_mode 会把验证码原文回显进接口响应（任意注册邮箱可直接取
+	// reset 码改密=未认证账户接管）。只允许显式放行的开发机打开；
+	// 容器/生产部署必须 dev_mode: false
 	if c.DevMode && os.Getenv("ARISU_ALLOW_DEV_MODE") != "1" {
 		log.Fatal("dev_mode=true 需要环境变量 ARISU_ALLOW_DEV_MODE=1 显式放行（生产部署必须 dev_mode: false）")
 	}
@@ -68,6 +70,7 @@ func main() {
 		log.Warn("SMTP 未配置：验证码将打印到日志（开发模式），生产环境请在 config.yaml 配置 smtp")
 	}
 
+	// 后台任务：注销冷静期结束的账号匿名化
 	go func() {
 		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
@@ -91,6 +94,8 @@ func main() {
 		}
 	}()
 
+	// 优雅停机：docker stop 发 SIGTERM，在途请求最多给 15s 收尾，
+	// 之后才关连接池——升级重启不会把正在发帖的用户拦腰截断
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
 	<-quit

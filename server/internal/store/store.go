@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+//go:embed migrations/*.sql
 var migrationFS embed.FS
 
 type Store struct {
@@ -24,7 +25,7 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	cfg.MaxConns = 12
-
+	// 单条语句 10s 超时：慢查询（如超复杂正则搜索）不再拖垮连接池
 	cfg.ConnConfig.RuntimeParams["statement_timeout"] = "10000"
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
@@ -36,6 +37,7 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 	return &Store{Pool: pool}, nil
 }
 
+// Migrate 按文件名顺序执行 migrations/ 下未应用的 SQL（简单可靠，不引第三方迁移器）
 func (s *Store) Migrate(ctx context.Context) error {
 	if _, err := s.Pool.Exec(ctx, `CREATE TABLE IF NOT EXISTS schema_migrations (
 		name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())`); err != nil {
@@ -88,6 +90,8 @@ func (s *Store) Migrate(ctx context.Context) error {
 
 func (s *Store) Close() { s.Pool.Close() }
 
+// ---- 时间格式化辅助：客户端统一收 epoch 秒 ----
+
 func Unix(t time.Time) int64 {
 	if t.IsZero() {
 		return 0
@@ -103,6 +107,7 @@ func UnixPtr(t *time.Time) *int64 {
 	return &v
 }
 
+// ExecTx 在事务中执行 fn，出错回滚
 func (s *Store) ExecTx(ctx context.Context, fn func(pgx.Tx) error) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
@@ -115,6 +120,7 @@ func (s *Store) ExecTx(ctx context.Context, fn func(pgx.Tx) error) error {
 	return tx.Commit(ctx)
 }
 
+// sanitizeEnum 枚举值白名单，防注入
 func sanitizeEnum(v string, allowed []string) string {
 	for _, a := range allowed {
 		if v == a {

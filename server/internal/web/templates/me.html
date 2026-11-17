@@ -1,0 +1,141 @@
+{{template "top" .}}
+{{/* 封面 CoverSection（MyRoomScreen.kt:348-422）：凸面板 284 高、四周留白 18、
+     内容居中偏上、右下「编辑资料」胶囊。ToriiWatermark 的鸟居与日轮/雾由 CSS 伪元素承担。 */}}
+<div class="neu-surface me-cover">
+  <span class="avatar lg" data-role="{{.Owner.Role}}">{{if .Owner.Avatar}}<img src="{{webLocalUpload .Owner.Avatar}}" alt="{{.Owner.Nickname}}">{{else}}{{initial .Owner.Nickname}}{{end}}</span>
+  <div class="me-identity">
+    <span class="name">{{.Owner.Nickname}}</span>
+    {{if .Owner.StatusText}}<span class="pill status">{{.Owner.StatusEmoji}} {{.Owner.StatusText}}</span>{{end}}
+    <span class="role-tag" data-role="{{.Owner.Role}}">{{rolename .Owner.Role}}</span>
+  </div>
+  {{if .Owner.Signature}}<p class="me-sign">{{.Owner.Signature}}</p>{{end}}
+  <a class="pill accent me-edit" href="/me/edit">编辑资料</a>
+</div>
+
+{{/* 数据栏 StatsCard（MyRoomScreen.kt:429-460）：四格等宽 */}}
+<div class="stats-row">
+  <a class="stat" href="/me/follow/following"><b>{{.Following}}</b>关注数</a>
+  <a class="stat" href="/me/follow/followers"><b>{{.Follower}}</b>被关注数</a>
+  <span class="stat"><b>{{if .OnlineHidden}}已隐藏{{else}}{{.OnlineHours}}{{end}}</b>总在线小时数</span>
+  <span class="stat"><b>{{.Balance}} 円</b>赛钱</span>
+</div>
+
+{{if .HasCustom}}
+<div class="section-label">自定义区域</div>
+<div class="neu-surface custom-area" style="{{.CustomStyle}}">{{.CustomHTML}}</div>
+{{end}}
+
+{{/* 参拜热度（HeatmapCard：Heatmap.kt:44-118）——53 列 × 7 行，最后一格是今天 */}}
+<div class="section-label">参拜热度</div>
+<div class="heat-wrap">
+  <div class="heat-head">
+    <span class="heat-today-line">今天在神社停留 {{.TodayMin}} 分钟 · 发帖 {{.TodayPosts}} · 评论 {{.TodayCom}}</span>
+    <span class="heat-legend"><em>少</em><i class="heat h0"></i><i class="heat h1"></i><i class="heat h2"></i><i class="heat h3"></i><i class="heat h4"></i><em>多</em></span>
+  </div>
+  <div class="heat-body">
+    <div class="heat-weekdays"><span>周一</span><span></span><span>周三</span><span></span><span>周五</span><span></span><span></span></div>
+    <div class="heat-card">{{range .HeatWeeks}}<div class="heat-col">{{range .Days}}<span class="heat{{if not .Empty}} h{{.Level}}{{end}}{{if .Empty}} empty{{end}}"{{if .Date}} title="{{.Date}}"{{end}}></span>{{end}}</div>{{end}}</div>
+  </div>
+  <div class="heat-foot"><span>今天</span></div>
+</div>
+
+{{/* 内容四 tab（PillTabs + ProfileTab：Models.kt:377-382） */}}
+<div class="pill-tabs">
+  <a href="/me?tab=posts"{{if eq .Tab "posts"}} class="on"{{end}}>发布的帖子</a>
+  <a href="/me?tab=tracked"{{if eq .Tab "tracked"}} class="on"{{end}}>追踪的帖子</a>
+  <a href="/me?tab=liked"{{if eq .Tab "liked"}} class="on"{{end}}>喜欢的帖子</a>
+  <a href="/me?tab=favorited"{{if eq .Tab "favorited"}} class="on"{{end}}>收藏的帖子</a>
+</div>
+{{if not .Posts}}
+{{$note := "收藏夹还是空的"}}{{if eq .Tab "posts"}}{{$note = "还没有发过帖子"}}{{else if eq .Tab "tracked"}}{{$note = "还没有追踪的帖子"}}{{else if eq .Tab "liked"}}{{$note = "还没有喜欢的帖子"}}{{end}}{{template "empty" $note}}
+{{else}}
+<div class="coll-list" data-role="coll-list">
+  {{range .Posts}}{{template "postcard" .}}{{end}}
+</div>
+{{/* CollapsiblePostList：默认三条，展开后每页五条（CollapsiblePostList.kt:40-108） */}}
+<div class="coll-ctrl" data-role="coll-ctrl">
+  <button class="pill-soft" data-role="coll-expand">展开查看更多（共 {{len .Posts}} 篇）</button>
+  <div class="coll-pager" hidden>
+    <button class="pill-soft" data-role="coll-prev">上一页</button>
+    <span class="coll-page-no">第 1 / 1 页</span>
+    <button class="pill-soft" data-role="coll-next">下一页</button>
+  </div>
+  <button class="coll-fold" data-role="coll-fold" hidden>收起</button>
+</div>
+{{end}}
+
+<div class="section-label">资料</div>
+<div class="entry-card">
+  <button class="entry" data-role="toggle-avatar" data-on="{{if .ActiveAvatar}}1{{else}}0{{end}}">
+    固定头像以及活跃头像
+    <span class="val" data-role="avatar-state">{{if .ActiveAvatar}}已启用{{else}}已关闭{{end}}</span>
+    <span class="sub">关闭后所有地方都显示固定头像</span>
+    <span class="switch{{if .ActiveAvatar}} on{{end}}"></span>
+  </button>
+  <hr class="hairline">
+  <button class="entry" data-note="昵称可在「编辑资料」中修改。">个人昵称 <span class="val">{{.Nickname}}</span></button>
+  <hr class="hairline">
+  <button class="entry" data-note="个性签名可在「编辑资料」中修改。">个性签名 <span class="val">{{.Signature}}</span></button>
+  <hr class="hairline">
+  <button class="entry" data-note="个人状态可在「编辑资料」中修改。">个人状态 <span class="val">{{.Owner.StatusEmoji}} {{.Owner.StatusText}}</span></button>
+  <hr class="hairline">
+  <button class="entry" data-note="邮箱仅本人可见，不会公开展示。">个人邮箱 <span class="val">{{.Email}}</span><span class="sub">仅本人可见，不公开展示</span></button>
+  <hr class="hairline">
+  <button class="entry" data-note="博客网址可在「编辑资料」中修改。">个人博客网址 <span class="val">{{if .BlogURL}}{{.BlogURL}}{{else}}未填写{{end}}</span></button>
+</div>
+
+<div class="section-label">我的内容</div>
+<div class="entry-card">
+  <a class="entry" href="/me?tab=posts">个人发布的帖子 <span class="val">{{.PostCount}} 篇</span></a>
+  <hr class="hairline">
+  <a class="entry" href="/me?tab=tracked">个人追踪的帖子 <span class="val">{{index .Counters "tracked"}} 篇</span></a>
+  <hr class="hairline">
+  <a class="entry" href="/me?tab=liked">个人喜欢的帖子 <span class="val">{{index .Counters "liked"}} 篇</span></a>
+  <hr class="hairline">
+  <a class="entry" href="/me?tab=favorited">个人收藏的帖子 <span class="val">{{index .Counters "favorited"}} 篇</span></a>
+  <hr class="hairline">
+  <a class="entry" href="/me/collections">收藏夹管理</a>
+  <hr class="hairline">
+  <a class="entry" href="/me/drafts">草稿箱 <span class="sub">未发送的回复、帖子与绘马</span></a>
+  <hr class="hairline">
+  <a class="entry" href="/me/history">浏览足迹 <span class="sub">最近看过的帖子与绘马</span></a>
+</div>
+
+<div class="section-label">展示</div>
+<div class="entry-card">
+  <a class="entry" href="/me/edit">自定义区域 <span class="val">{{if .HasCustom}}已编辑{{else}}未编辑{{end}}</span></a>
+  <hr class="hairline">
+  <button class="entry" data-role="achievements">个人御守 <span class="val">已解锁 {{.UnlockedCount}} / {{len .Achievements}}</span><span class="sub">点击查看全部御守</span></button>
+  <hr class="hairline">
+  <button class="entry" data-note="参拜热度记录近一年的活跃情况，最后一格是今天。">参拜热度 <span class="val">查看</span></button>
+  <hr class="hairline">
+  <a class="entry" href="/me/follow/following">个人关注的社员数 <span class="val">{{.Following}}</span></a>
+  <hr class="hairline">
+  <button class="entry" data-note="被关注数由其他社员的关注行为累积。">个人被关注数 <span class="val">{{.Follower}}</span></button>
+</div>
+
+<div class="section-label">其他</div>
+<div class="entry-card">
+  <a class="entry" href="/me/settings">设置</a>
+</div>
+
+{{/* 个人御守弹窗（AchievementsDialog:716-752）：全宽 AlertDialog（左右各 16），
+   标题带解锁计数，两列等宽等高格子（奇数尾部留空），底部右对齐「关闭」。 */}}
+<div class="modal" data-role="achievements-modal" hidden>
+  <div class="modal-box neu-surface" role="dialog" aria-modal="true" aria-labelledby="ach-title" tabindex="-1">
+    <h3 id="ach-title">个人御守（{{.UnlockedCount}} / {{len .Achievements}}）</h3>
+    <div class="ach-grid">
+      {{range .Achievements}}{{template "ach-cell" .}}{{end}}
+    </div>
+    <div class="ach-actions"><button class="ach-close" type="button" data-role="ach-close">关闭</button></div>
+  </div>
+</div>
+
+{{/* 单格（AchievementCell:784-818）：图标 22 → 14 → 名字 → 2 → 描述 9/12（最多两行）。
+   八枚图标与名字一一对应（AchievementIcon:759-783），未登记的名字不出图标。 */}}
+{{define "ach-cell"}}<div class="ach{{if .Unlocked}} on{{end}}">
+  <span class="ach-ic">{{if eq .Name "神社出仕"}}{{template "i-torii"}}{{else if eq .Name "第一帖"}}{{template "i-description"}}{{else if eq .Name "捧帖"}}{{template "i-celebration"}}{{else if eq .Name "挂绘马"}}{{template "i-ema"}}{{else if eq .Name "上上签"}}{{template "i-omikuji"}}{{else if eq .Name "社务常客"}}{{template "i-yinyang"}}{{else if eq .Name "参拜者"}}{{template "i-incense"}}{{else if eq .Name "夜行性"}}{{template "i-night"}}{{end}}</span>
+  <b>{{.Name}}</b>
+  <span class="ach-desc">{{.Desc}}</span>
+</div>{{end}}
+{{template "bottom" .}}

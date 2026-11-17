@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="有栖神社 Android 客户端：论坛、绘马、御签与个人主页。"
+    />
+    <meta name="theme-color" content="#EDE8E1" />
+    <link rel="canonical" href="https://arisushrine.com/" />
+    <link rel="icon" type="image/png" href="/logo_red.png" />
+    <link rel="apple-touch-icon" href="/logo_red.png" />
+    <link rel="preload" href="/fonts/noto-serif-400.woff" as="font" type="font/woff" crossorigin />
+    <link rel="preload" href="/fonts/noto-serif-600.woff" as="font" type="font/woff" crossorigin />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="有栖神社" />
+    <meta property="og:title" content="有栖神社" />
+    <meta
+      property="og:description"
+      content="有栖神社 Android 客户端：论坛、绘马、御签与个人主页。"
+    />
+    <meta property="og:url" content="https://arisushrine.com/" />
+    <meta property="og:image" content="https://arisushrine.com/logo_red.png" />
+    <meta name="twitter:card" content="summary" />
+    <title>有栖神社</title>
+    <script>
+      // 明暗在首帧前定下来，避免闪一下白
+      try {
+        var saved = localStorage.getItem("arisu-web-theme")
+        var dark = saved ? saved === "dark" : matchMedia("(prefers-color-scheme: dark)").matches
+        if (dark) document.documentElement.classList.add("dark")
+        var themeMeta = document.querySelector('meta[name="theme-color"]')
+        if (themeMeta) themeMeta.setAttribute("content", dark ? "#0A0E14" : "#EDE8E1")
+      } catch (e) {}
+    </script>
+    <script type="module" crossorigin src="/site-assets/index-D5UXOHhq.js"></script>
+    <link rel="stylesheet" crossorigin href="/site-assets/index-DVoUvNJy.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

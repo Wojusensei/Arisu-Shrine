@@ -1,0 +1,46 @@
+{{template "top" .}}
+{{/* 举报处理（ReportsScreen.kt:190-300）：
+   LazyColumn contentPadding 16、卡片间距 12 → 卡 = NeuSurface 18dp 圆角、内边距 16：
+   首行「举报 #ID」titleSmall + 弹性 + 状态 SoftPill（待处理朱 / 已处理·已驳回 Slate）；
+   8dp → 举报人行（22dp ring 头像 + 7 + 「举报人：昵称 · 编号」bodySmall + 6 + RoleTag）；
+   理由 bodySmall（最多三行）→ 时间 labelSmall InkFaint → 10dp →
+   一行纯文字动作（前往查看/前往绘马 · 处理 · 驳回，labelMedium，处理朱、驳回 Slate），
+   仅 pending 才出处理/驳回；卡片下方一条全宽细线。 */}}
+{{/* 从某条举报通知进来但队列里已经没有它 = 被别的管理人员处理了
+     （ReportsScreen.kt:110-116 明确回一句，而不是留个空列表） */}}
+{{if .Notice}}<p class="form-hint notice-bar">{{.Notice}}</p>{{end}}
+{{if not .Items}}
+{{template "empty" "没有待处理的举报"}}
+{{end}}
+{{range .Items}}
+<div class="neu-surface report-row" data-id="{{.ID}}">
+  <div class="rp-head">
+    <b class="rp-id">举报 #{{.ID}}</b>
+    <span class="rp-pill{{if eq .Status "pending"}} pending{{else}} done{{end}}">{{if eq .Status "pending"}}待处理{{else if eq .Status "resolved"}}已处理{{else}}已驳回{{end}}</span>
+  </div>
+  <div class="rp-reporter">
+    <a class="avatar ring av22" data-role="{{.Reporter.Role}}" href="/u/{{.Reporter.No}}">{{if .Reporter.Avatar}}<img src="{{.Reporter.Avatar}}" alt="">{{else}}{{initial .Reporter.Nickname}}{{end}}</a>
+    <a class="rp-name" href="/u/{{.Reporter.No}}">举报人：{{.Reporter.Nickname}} · {{.Reporter.No}}</a>
+    <span class="role-tag" data-role="{{.Reporter.Role}}">{{rolename .Reporter.Role}}</span>
+  </div>
+  <p class="rp-reason">理由：{{.Reason}}</p>
+  <p class="rp-time">{{webTime .CreatedAt}}</p>
+  <div class="rp-acts">
+    {{if .PostHref}}<a class="rp-act" href="{{.PostHref}}">前往查看</a>{{end}}
+    {{if .EmaHref}}<a class="rp-act" href="{{.EmaHref}}">前往绘马</a>{{end}}
+    {{if eq .Status "pending"}}
+    <button class="rp-act" data-role="resolve" data-approve="1" data-id="{{.ID}}">处理</button>
+    <button class="rp-act slate" data-role="resolve" data-approve="0" data-id="{{.ID}}">驳回</button>
+    {{end}}
+  </div>
+</div>
+<hr class="hairline">
+{{end}}
+{{if .Items}}
+<div class="pager">
+  {{if .PrevOn}}<a class="btn-ghost" href="{{.PrevURL}}">上一页</a>{{else}}<span class="btn-ghost dis">上一页</span>{{end}}
+  {{if .NextOn}}<a class="btn-ghost" href="{{.NextURL}}">下一页</a>{{else}}<span class="btn-ghost dis">下一页</span>{{end}}
+</div>
+<p class="page-end">已经到底了 · 共 {{.Total}} 条</p>
+{{end}}
+{{template "bottom" .}}

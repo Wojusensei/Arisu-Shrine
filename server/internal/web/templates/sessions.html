@@ -1,0 +1,23 @@
+{{template "top" .}}
+{{/* 登录设备（SessionsScreen.kt:223-300）：
+   LazyColumn contentPadding h16/v14；行 h18/v13 = 22dp 设备图标 + 14 + 两行
+   （设备名 bodyMedium 14.5/24 + 最近活跃 labelSmall 11/15）+ 右侧「本机」胶囊
+   或朱色「下线」（labelLarge 14.5/20 SemiBold，h8/v6 热区）；
+   行间 HairlineDivider(startIndent = 54dp)。 */}}
+{{if not .Sessions}}
+{{template "empty" "加载失败，点击重试"}}
+{{else}}
+<div class="sess-list">
+  {{range .Sessions}}
+  <div class="sess-row">
+    <span class="sess-ic">{{template "i-devices"}}</span>
+    <div class="sess-main">
+      <b class="sess-name">{{if .Device}}{{.Device}}{{else}}未知设备{{end}}</b>
+      <span class="sess-time">最近活跃 {{webTime .CreatedAt.Unix}}</span>
+    </div>
+    {{if .Current}}<span class="pill accent">本机</span>{{else}}<button class="sess-kick" data-api="DELETE /api/me/sessions/{{.ID}}" data-confirm='{"title":"将该设备下线？","body":"下线后，它需要重新登录才能进入您的账号。","confirm":"下线","danger":true}' data-after="back">下线</button>{{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{template "bottom" .}}

@@ -1,0 +1,56 @@
+{{template "top" .}}
+{{/* 收藏夹管理（CollectionsScreen.kt:130-380）：
+   每张卡 = 52dp 2×2 封面 + 名称（默认夹掛「默认」胶囊）+「N 个内容」
+   + 删除（仅非默认）+ 展开箭头；展开后就地列最近 4 条（编号 + 标题）与收尾行。
+   展开态用 ?open=ID 走一次导航（安卓是行内拉取），刷新/返回都不丢。 */}}
+{{if not .Collections}}
+{{template "empty" "还没有收藏夹"}}
+{{else}}
+<div class="coll-list2">
+  {{range .Collections}}
+  <div class="coll-card{{if .Open}} open{{end}}">
+    <div class="coll-head">
+      <a class="coll-cov" href="{{if .Open}}/me/collections{{else}}/me/collections?open={{.ID}}{{end}}">
+        {{if .CoverURL}}<img src="{{webLocalUpload .CoverURL}}" alt="" loading="lazy" referrerpolicy="no-referrer">{{else}}<span class="cc-grid"></span>{{end}}
+      </a>
+      <a class="coll-body" href="{{if .Open}}/me/collections{{else}}/me/collections?open={{.ID}}{{end}}">
+        <span class="coll-name">{{.Name}}</span>
+        {{if .IsDefault}}<span class="pill accent">默认</span>{{end}}
+        <span class="coll-count">{{.Count}} 个内容</span>
+      </a>
+      {{if not .IsDefault}}
+      <button class="c-more" data-role="del-coll" data-id="{{.ID}}" data-name="{{.Name}}" aria-label="删除收藏夹">{{template "i-trash"}}</button>
+      {{end}}
+      <a class="coll-arrow{{if .Open}} open{{end}}" href="{{if .Open}}/me/collections{{else}}/me/collections?open={{.ID}}{{end}}" aria-label="{{if .Open}}收起{{else}}展开{{end}}">{{template "i-expand"}}</a>
+    </div>
+    {{if .Open}}
+    <div class="coll-open">
+      {{range .Posts}}
+      <a class="coll-post" href="/post/{{.No}}"><span class="no">{{.No}}</span><span class="t">{{.Title}}</span></a>
+      {{end}}
+      {{/* 收尾行（CollectionsScreen.kt:357-392）：空夹 / 失败可重试 / 共 N 条 */}}
+      <p class="coll-foot">{{if .Failed}}<a href="/me/collections?open={{.ID}}">加载失败，点击重试</a>{{else if not .Posts}}这个收藏夹还没有内容{{else if gt .Count 4}}仅展示最近 4 条{{else}}共 {{.Count}} 条{{end}}</p>
+    </div>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+{{/* 入口在顶栏右上「新建」（见 handler 的 page.Actions），这里只放对话框 */}}
+<div class="coll-dialog" data-role="new-coll-dialog" hidden>
+  <div class="coll-dialog-inner">
+    <h3>新建收藏夹</h3>
+    <div class="well">
+      <input class="field" data-role="new-coll" maxlength="20" placeholder="收藏夹名称（最多 20 字）">
+    </div>
+    <p class="form-error" data-role="coll-err" style="display:none"></p>
+    <div class="dialog-actions">
+      <button class="btn-ghost" data-role="new-coll-cancel">取消</button>
+      <button class="btn" data-role="create-coll">创建</button>
+    </div>
+  </div>
+</div>
+
+<p class="page-end">共 {{len .Collections}} 个收藏夹</p>
+{{template "bottom" .}}

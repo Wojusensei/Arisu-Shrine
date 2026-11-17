@@ -1,0 +1,43 @@
+{{template "top" .}}
+<div class="pill-tabs">
+  <a href="/inbox?category=all"{{if and (eq .Category "all") (eq .Only "")}} class="on"{{end}}>全部</a>
+  <a href="/inbox?category=all&only=unread"{{if eq .Only "unread"}} class="on"{{end}}>未读</a>
+  <a href="/inbox?category=all&only=starred"{{if eq .Only "starred"}} class="on"{{end}}>收藏</a>
+  <a href="/inbox?category=reply"{{if eq .Category "reply"}} class="on"{{end}}>回复@</a>
+  <a href="/inbox?category=system"{{if eq .Category "system"}} class="on"{{end}}>系统</a>
+  <a href="/inbox?category=report"{{if eq .Category "report"}} class="on"{{end}}>举报</a>
+</div>
+
+{{if not .Notices}}
+{{$note := "没有通知"}}{{if eq .Only "unread"}}{{$note = "没有未读通知"}}{{else if eq .Only "starred"}}{{$note = "还没有收藏的通知"}}{{end}}{{template "empty" $note}}
+{{end}}
+{{range .Notices}}
+{{/* 行内动作（InboxScreen.kt:313-408）：点标题进详情；右侧星标切换收藏、
+     邮件图标切换已读/未读——安卓是左右滑，网页用两枚按钮等价表达。 */}}
+{{/* 行（InboxScreen.kt:544-612）：图标槽 40 → 12dp → 标题（未读带红点、收藏带金星）
+   / 时间；星标与已读切换在安卓是左右滑，网页用行内按钮等价表达（放在时间行右侧）。 */}}
+<div class="inbox-row{{if not .Read}} unread{{end}}" data-kind="{{.Kind}}">
+  {{/* 类型图标由 .inbox-row::before 按 data-kind 绘制（见 §4 的 grid 版规则） */}}
+  <a class="inbox-title" href="/inbox/{{.ID}}">{{.Content}}</a>
+  <span class="time">{{webTime .CreatedAt}}</span>
+  <button class="c-more{{if .Starred}} on{{end}}" data-role="star" data-id="{{.ID}}" data-starred="{{if .Starred}}1{{else}}0{{end}}"
+          aria-label="{{if .Starred}}取消收藏{{else}}收藏{{end}}">{{template "i-star"}}</button>
+  <button class="c-more" data-role="toggle-read" data-id="{{.ID}}" data-read="{{if .Read}}1{{else}}0{{end}}"
+          aria-label="{{if .Read}}标为未读{{else}}标为已读{{end}}">{{template "i-mail"}}</button>
+  {{/* 左滑删除（InboxScreen.kt:451-455 EndToStart + :485-505 删除确认）：
+     网页没有滑动手势，用第三枚按钮等价表达，删除前经确认框（安卓同款防误删）。 */}}
+  <button class="c-more danger" data-role="del-notice" data-id="{{.ID}}"
+          aria-label="删除通知">{{template "i-trash"}}</button>
+</div>
+{{end}}
+{{if .Notices}}
+{{/* 只有一页时不出翻页器：安卓列表到底直接给 ShrineListEnd，多页才需要翻页 */}}
+{{if or .PrevOn .NextOn}}
+<div class="pager">
+  {{if .PrevOn}}<a class="btn-ghost" href="{{.PrevURL}}">上一页</a>{{else}}<span class="btn-ghost dis">上一页</span>{{end}}
+  {{if .NextOn}}<a class="btn-ghost" href="{{.NextURL}}">下一页</a>{{else}}<span class="btn-ghost dis">下一页</span>{{end}}
+</div>
+{{end}}
+<p class="page-end">已经到底了 · 共 {{.Total}} 条</p>
+{{end}}
+{{template "bottom" .}}

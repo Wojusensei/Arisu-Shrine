@@ -16,6 +16,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// ---- 密码 ----
+
+// bcryptCost 12：默认 10 在当前硬件下偏低，注册/登录/重置共用这一档；
+// 校验侧 bcrypt 自动读 hash 内的 cost，新旧 hash 混存无需迁移
 const bcryptCost = 12
 
 func HashPassword(plain string) (string, error) {
@@ -27,11 +31,15 @@ func CheckPassword(hash, plain string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(plain)) == nil
 }
 
+// DummyBcrypt 对不存在账号也做一次等价 bcrypt 比较，拉平登录响应时间，防账号枚举。
+// cost 必须与真实签发一致，否则不存在账号的响应时间可观测地更短
 var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("arisu-dummy-account"), bcryptCost)
 
 func DummyBcrypt() {
 	_ = bcrypt.CompareHashAndPassword(dummyHash, []byte("arisu-not-the-password"))
 }
+
+// ---- JWT access token ----
 
 type Claims struct {
 	UserID int64  `json:"uid"`
@@ -76,8 +84,11 @@ func NewRefreshToken() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+// ---- 邮箱验证码（Redis） ----
+
 var emailRe = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
 
+// ValidateEmail 通用邮箱校验：不设域名白名单，Outlook/Hotmail/QQ/163/126/Gmail/edu 等均可
 func ValidateEmail(s string) bool {
 	return len(s) <= 254 && emailRe.MatchString(s)
 }
@@ -94,6 +105,7 @@ var ErrCooldown = errors.New("请求太频繁，请 60 秒后再试")
 var ErrTooMany = errors.New("今日验证码请求次数已达上限")
 var ErrBadCode = errors.New("验证码不正确或已过期")
 
+// SendVerificationCode 生成并发送验证码；devMode 且 SMTP 未配置时把验证码带回给调用方（打印日志/接口返回）
 func SendVerificationCode(ctx context.Context, rdb redis.UniversalClient, mailer *Mailer,
 	log *zap.Logger, purpose, email, ip string, perDay, perIPDay int) (code string, err error) {
 
@@ -101,22 +113,22 @@ func SendVerificationCode(ctx context.Context, rdb redis.UniversalClient, mailer
 		return "", errors.New("邮箱格式不正确")
 	}
 	day := time.Now().Format("20060102")
-
+	// 60s 冷却
 	if n, _ := rdb.Exists(ctx, coolKey(email)).Result(); n > 0 {
 		return "", ErrCooldown
 	}
-
+	// 每邮箱每日上限
 	if n, _ := rdb.Get(ctx, dayKey(email, day)).Result(); toInt(n) >= int64(perDay) {
 		return "", ErrTooMany
 	}
-
+	// 每 IP 每日上限
 	if n, _ := rdb.Get(ctx, ipDayKey(ip, day)).Result(); toInt(n) >= int64(perIPDay) {
 		return "", ErrTooMany
 	}
 
 	code = genCode()
 	if err := rdb.Set(ctx, codeKey(purpose, email), code, codeTTL).Err(); err != nil {
-
+		// Redis 故障时只记日志：原样返回会把连接串等内部信息经 err.Error() 下发客户端
 		log.Error("验证码写入失败", zap.String("to", email), zap.Error(err))
 		return "", errors.New("发送失败，请稍后重试")
 	}
@@ -136,6 +148,7 @@ func SendVerificationCode(ctx context.Context, rdb redis.UniversalClient, mailer
 	return code, nil
 }
 
+// VerifyCode 校验并消费验证码；失败次数超 5 次作废
 func VerifyCode(ctx context.Context, rdb redis.UniversalClient, purpose, email, code string) error {
 	key := codeKey(purpose, email)
 	stored, err := rdb.Get(ctx, key).Result()
@@ -153,7 +166,7 @@ func VerifyCode(ctx context.Context, rdb redis.UniversalClient, purpose, email, 
 		}
 		return ErrBadCode
 	}
-
+	// 验证通过后作废：Del 失败不把 Redis 错误原文带给客户端（码已对，当成功处理）
 	if err := rdb.Del(ctx, key).Err(); err != nil {
 		return nil
 	}

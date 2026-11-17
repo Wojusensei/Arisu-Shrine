@@ -1,0 +1,20 @@
+{{template "top" .}}
+{{/* 草稿箱（DraftsScreen.kt）：安卓存 filesDir/drafts.json，网页对应 localStorage
+     的 arisu:drafts（由 app.js 的 window.drafts 维护）。列表在客户端渲染——
+     草稿是纯本地数据，服务端拿不到。 */}}
+<div class="drafts-page" data-role="drafts-page">
+  <p class="page-end" data-role="drafts-loading">读取中…</p>
+</div>
+
+{{/* 删除确认（AlertDialog） */}}
+<div class="modal" data-role="draft-del-modal" hidden>
+  <div class="modal-box neu-surface">
+    <h3>删除这条草稿？</h3>
+    <p class="modal-body">删除后不可恢复。</p>
+    <div class="dialog-actions">
+      <button class="btn-ghost" data-role="draft-del-cancel">取消</button>
+      <button class="btn" data-role="draft-del-ok" data-danger>删除</button>
+    </div>
+  </div>
+</div>
+{{template "bottom" .}}

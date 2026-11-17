@@ -1,0 +1,27 @@
+{{template "top" .}}
+{{/* 关注 / 粉丝（FollowListScreen.kt:119-250）：
+   顶栏右侧「共 N 人」（labelMedium）→ 卡内 LazyColumn（页内 h16/v12）：
+   行 h16/v13 = 44dp ring 头像 + 12 + 昵称 titleSmall + 3 + 签名 bodySmall
+   （无签名时不占这一行）+ 12 + 小胶囊关注钮（自己那行不出）；
+   行间 HairlineDivider(startIndent = 62.dp)。 */}}
+{{if not .Users}}
+{{$note := "没有粉丝"}}{{if eq .Mode "following"}}{{$note = "没有关注"}}{{end}}{{template "empty" $note}}
+{{else}}
+<div class="follow-list">
+  {{range .Users}}
+  <div class="follow-row">
+    <a class="follow-main" href="/u/{{.No}}">
+      <span class="avatar ring av44" data-role="{{.Role}}">{{if .Avatar}}<img src="{{.Avatar}}" alt="">{{else}}{{initial .Nickname}}{{end}}</span>
+      <span class="follow-txt">
+        <b>{{.Nickname}}</b>
+        {{if .Signature}}<span class="follow-sign">{{.Signature}}</span>{{end}}
+      </span>
+    </a>
+    {{if not .IsMe}}
+    <button class="follow-act{{if .Following}} on{{end}}" data-role="toggle-follow" data-id="{{.ID}}" data-following="{{if .Following}}1{{else}}0{{end}}">{{if .Following}}已关注{{else}}关注{{end}}</button>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{template "bottom" .}}

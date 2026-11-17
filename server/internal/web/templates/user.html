@@ -1,0 +1,89 @@
+{{template "top" .}}
+{{/* 管理动作的可用性标记（UserProfileScreen.kt:201-247）：JS 读这几个 data-* 决定菜单项。
+     必须放在 {{template "top"}} 之后——放在前面会落在 <!doctype> 之前，被浏览器丢弃。
+     门槛最终由服务端校验（requireGuuji/requireAdmin），这里只负责「列不列出来」。 */}}
+<span hidden data-role="user-caps"
+      data-nick="{{.User.Nickname}}"
+      data-cur-role="{{.User.Role}}"
+      data-blocked="{{if .Blocked}}1{{else}}0{{end}}"
+      data-can-curate="{{if .CanCurate}}1{{else}}0{{end}}"
+      data-can-moderate="{{if .CanModerate}}1{{else}}0{{end}}"
+      data-can-assign="{{if .CanAssign}}1{{else}}0{{end}}"
+      data-target-banned="{{if .Banned}}1{{else}}0{{end}}"
+      data-muted="{{if .Muted}}1{{else}}0{{end}}"
+      data-self="{{if .IsSelf}}1{{else}}0{{end}}"></span>
+<div class="neu-surface me-cover">
+  <span class="avatar lg" data-role="{{.User.Role}}">{{if .User.Avatar}}<img src="{{webLocalUpload .User.Avatar}}" alt="{{.User.Nickname}}">{{else}}{{initial .User.Nickname}}{{end}}</span>
+  {{/* 身份区（ProfileIdentity.kt:16-46）：昵称一行，下一行是「状态胶囊 + 身份」并排。
+       状态 = 状态表情 + 状态文字（有才有），与客房同一形制。 */}}
+  <div class="me-identity">
+    <span class="name">{{.User.Nickname}}</span>
+    <div class="me-badges">
+      {{if or .User.StatusEmoji .User.StatusText}}<span class="pill status">{{.User.StatusEmoji}} {{.User.StatusText}}</span>{{end}}
+      <span class="role-tag" data-role="{{.User.Role}}">{{rolename .User.Role}}</span>
+    </div>
+  </div>
+  {{if .User.Signature}}<p class="me-sign">{{.User.Signature}}</p>{{end}}
+  {{/* 「编辑资料」只在自己主页出现（UserProfileScreen.kt:538-560 的 isSelf 分支）；
+       他人主页没有这颗钮。 */}}
+  {{if .IsSelf}}<a class="pill accent me-edit" href="/me/edit">编辑资料</a>{{end}}
+  {{/* 关注按钮（UserProfileScreen.kt:601-645）：签名正下方 12dp、水平居中、
+       pill 形；自己主页不显示，拉黑后也不显示（点了不会有反应）。
+       已关注走凹槽胶囊并点开「取消关注」菜单，未关注是朱色实心。 */}}
+  {{if and (ne .Me.ID .User.ID) (not .Blocked)}}
+  <div class="cover-follow">
+    {{if .Following}}
+    <button class="pill-soft" data-follow="{{.User.ID}}" data-following="1">已关注</button>
+    {{else}}
+    <button class="pill accent" data-follow="{{.User.ID}}" data-following="0">关注</button>
+    {{end}}
+  </div>
+  {{else if and (ne .Me.ID .User.ID) .Blocked}}
+  <div class="cover-follow"><span class="pill-soft">已拉黑</span></div>
+  {{end}}
+</div>
+<div class="stats-row">
+  <span class="stat"><b>{{.User.FollowingCount}}</b>关注数</span>
+  <span class="stat"><b>{{.User.FollowerCount}}</b>被关注数</span>
+  {{/* 总在线小时数：对齐安卓他人视角的真实行为——他人资料 DTO 不含 show_fields
+       （UserDto，ApiDtos.kt:20-39），「已隐藏」分支不可达；服务端 ToPublic 已把
+       隐藏者的 online_minutes 清零，故安卓显示 0，网页照此显示 0 */}}
+  <span class="stat"><b>{{.OnlineHours}}</b>总在线小时数</span>
+</div>
+{{/* 参拜热度（HeatmapCard：Heatmap.kt:44-118）；他人视角头部文案是
+     「活跃度按当日在线、发帖与评论加权累计」（UserProfileScreen.kt:326） */}}
+<div class="section-label">参拜热度</div>
+{{if .HeatWeeks}}
+<div class="heat-wrap">
+  <div class="heat-head">
+    <span class="heat-today-line">活跃度按当日在线、发帖与评论加权累计</span>
+    <span class="heat-legend"><em>少</em><i class="heat h0"></i><i class="heat h1"></i><i class="heat h2"></i><i class="heat h3"></i><i class="heat h4"></i><em>多</em></span>
+  </div>
+  <div class="heat-body">
+    <div class="heat-weekdays"><span>周一</span><span></span><span>周三</span><span></span><span>周五</span><span></span><span></span></div>
+    <div class="heat-card">{{range .HeatWeeks}}<div class="heat-col">{{range .Days}}<span class="heat{{if not .Empty}} h{{.Level}}{{end}}{{if .Empty}} empty{{end}}"{{if .Date}} title="{{.Date}}"{{end}}></span>{{end}}</div>{{end}}</div>
+  </div>
+  <div class="heat-foot"><span>今天</span></div>
+</div>
+{{else}}
+<p class="page-end">暂无参拜记录</p>
+{{end}}
+{{/* 帖子区（UserProfileScreen.kt:737-800）：看自己时标题「我的帖子」且
+   不带计数、下面给四标签页；看他人时「TA 的帖子」+「N 篇」，无标签页。 */}}
+<div class="section-label">{{if .IsSelf}}我的帖子{{else}}TA 的帖子{{end}}{{if not .IsSelf}} <span class="trailing">{{.PostCount}} 篇</span>{{end}}</div>
+{{if .IsSelf}}
+<div class="pill-tabs user-self-tabs">
+  <a href="/u/{{.User.No}}"{{if eq .Tab 0}} class="on"{{end}}>帖子</a>
+  <a href="/u/{{.User.No}}?tab=1"{{if eq .Tab 1}} class="on"{{end}}>追踪</a>
+  <a href="/u/{{.User.No}}?tab=2"{{if eq .Tab 2}} class="on"{{end}}>喜欢</a>
+  <a href="/u/{{.User.No}}?tab=3"{{if eq .Tab 3}} class="on"{{end}}>收藏</a>
+</div>
+{{end}}
+{{if not .Posts}}
+{{/* 空态文案（UserProfileScreen.kt:789-799）按 isSelf 与当前标签区分 */}}
+{{$note := "这位社员还没有发过帖子"}}
+{{if .IsSelf}}{{if eq .Tab 1}}{{$note = "还没有追踪的帖子"}}{{else if eq .Tab 2}}{{$note = "还没有喜欢的帖子"}}{{else if eq .Tab 3}}{{$note = "收藏夹还是空的"}}{{else}}{{$note = "还没有发过帖子"}}{{end}}{{end}}
+{{template "empty" $note}}
+{{end}}
+{{range .Posts}}{{template "postcard" .}}{{end}}
+{{template "bottom" .}}

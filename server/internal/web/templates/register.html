@@ -1,0 +1,59 @@
+{{template "top" .}}
+<div class="auth-hero">
+  <span class="brand-orb">{{template "i-torii"}}</span>
+  <h2 class="brand-name">有栖神社</h2>
+  <p class="brand-sub">建造于人间之里外的飘渺存在</p>
+</div>
+<form method="post" action="/register" data-confirm-pw>
+  <div class="auth-card neu-surface">
+    <div class="form-row">
+      <span class="form-label">昵称</span>
+      <div class="well">
+        <span class="well-ic">{{template "i-person"}}</span>
+        <input class="field" type="text" name="nickname" required maxlength="20" placeholder="大家在茶话里怎么称呼您">
+      </div>
+    </div>
+    <div class="form-row">
+      <span class="form-label">邮箱</span>
+      <div class="well">
+        <span class="well-ic">{{template "i-mail"}}</span>
+        <input class="field" type="email" name="email" value="{{.Email}}" required autocomplete="email" placeholder="outlook / qq / gmail / 163 等任意邮箱">
+      </div>
+    </div>
+    <div class="form-row">
+      <span class="form-label">验证码</span>
+      <div class="code-row">
+        <div class="well grow">
+          <input class="field" type="text" name="code" required inputmode="numeric" maxlength="6" placeholder="6 位数字">
+        </div>
+        <button class="btn-ghost" type="submit" formaction="/register/code" formnovalidate data-role="send-code" data-purpose="register">发送验证码</button>
+      </div>
+      {{/* 提示条与错误行常驻占位（hidden 时不占布局）：发送验证码走 fetch 原地更新，
+           不再整页重渲染——安卓 CodeSendButton 就是原地倒计时，昵称密码都还在 */}}
+      <p class="form-note" data-role="code-note"{{if not .CodeSent}} hidden{{end}}>{{.CodeSent}}</p>
+      <p class="form-error" data-role="code-err" hidden></p>
+    </div>
+    <div class="form-row">
+      <span class="form-label">密码</span>
+      <div class="well">
+        <span class="well-ic">{{template "i-lock"}}</span>
+        <input class="field" id="pw1" type="password" name="password" required minlength="8" autocomplete="new-password" placeholder="至少 8 位">
+        <button class="well-act" type="button" data-eye="pw1" aria-label="显示密码">{{template "i-eye"}}</button>
+      </div>
+    </div>
+    <div class="form-row">
+      <span class="form-label">确认密码</span>
+      <div class="well">
+        <span class="well-ic">{{template "i-lock"}}</span>
+        <input class="field" id="pw2" type="password" name="password_confirm" required minlength="8" autocomplete="new-password" data-confirm="pw1" placeholder="再输入一次密码">
+        <button class="well-act" type="button" data-eye="pw2" aria-label="显示密码">{{template "i-eye"}}</button>
+      </div>
+      {{if .Error}}<p class="form-error">{{.Error}}</p>{{end}}
+      <p class="form-error pw-mismatch" style="display:none"></p>
+    </div>
+  </div>
+  <button class="btn btn-full" type="submit">注册</button>
+</form>
+<p class="auth-links">已有账号？<a href="/login">去登录</a></p>
+<p class="form-hint center">社员编号依入社先后发放，自 User_000001 起</p>
+{{template "bottom" .}}

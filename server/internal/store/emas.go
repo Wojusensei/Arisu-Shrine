@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// EmaStates 绘马状态白名单（handler 侧校验用）
 var EmaStates = []string{"open", "in_progress", "resolved", "closed"}
 var emaTags = []string{"enhance", "bug", "questions", "tips"}
 
@@ -39,11 +40,11 @@ func scanEma(row pgx.Row) (*model.Ema, error) {
 }
 
 type EmaListQuery struct {
-	Tag    string
-	Tags   []string
-	State  string
-	States []string
-	Sort   string
+	Tag    string   // 单选兼容：enhance|bug|questions|tips|空
+	Tags   []string // 多选（已由调用方 sanitize），与 Tag 任一命中即算
+	State  string   // 单选兼容：open|in_progress|resolved|closed|空
+	States []string // 多选（已由调用方 sanitize）
+	Sort   string   // new|old
 	Limit  int
 	Offset int
 }
@@ -57,7 +58,7 @@ func (s *Store) EmasPage(ctx context.Context, viewerID int64, q EmaListQuery) (*
 		q.Tags = append(q.Tags, sanitizeEnum(q.Tag, emaTags))
 	}
 	if len(q.Tags) > 0 {
-
+		// 多选任一命中（OR 语义）
 		where += ` AND e.tags && ARRAY[`
 		for i, t := range q.Tags {
 			if i > 0 {
@@ -133,6 +134,8 @@ func (s *Store) CreateEma(ctx context.Context, c EmaCreate) (*model.Ema, error) 
 	return s.EmaByID(ctx, c.AuthorID, id)
 }
 
+// 白名单 + 去重 + 封顶 4（与列表筛选侧 tags 封顶同规）：
+// 不封顶时 15MB 请求体里的 ["bug"×N] 会原样进 JSONB 并随详情全量下发
 func sanitizeTags(tags []string) []string {
 	out := make([]string, 0, len(emaTags))
 	seen := make(map[string]struct{}, len(emaTags))
@@ -166,7 +169,7 @@ type EmaUpdate struct {
 }
 
 func (s *Store) UpdateEma(ctx context.Context, id int64, u EmaUpdate) error {
-
+	// 与 UpdatePost 同款：包进事务避免半更新
 	return s.ExecTx(ctx, func(tx pgx.Tx) error {
 		if u.Title != nil {
 			if _, err := tx.Exec(ctx, `UPDATE emas SET title=$1, updated_at=now() WHERE id=$2`, *u.Title, id); err != nil {
@@ -196,7 +199,8 @@ func (s *Store) SetEmaState(ctx context.Context, id int64, state string) error {
 func (s *Store) DeleteEma(ctx context.Context, id, operatorID int64, mod bool, reason string) error {
 	return s.ExecTx(ctx, func(tx pgx.Tx) error {
 		var authorID int64
-
+		// 只有一个占位符：此前误传 operatorID 两个参数，pgx 严格校验直接报错，
+		// 删除绘马（含举报处置路径）从上线起就整体 500
 		err := tx.QueryRow(ctx, `UPDATE emas SET deleted_at=now() WHERE id=$1 AND deleted_at IS NULL
 			RETURNING author_id`, id).Scan(&authorID)
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -245,7 +249,9 @@ func (s *Store) EmaReplies(ctx context.Context, viewerID, emaID int64) ([]model.
 func (s *Store) AddEmaReply(ctx context.Context, emaID, authorID int64, content string) (*model.EmaReply, error) {
 	var id int64
 	err := s.ExecTx(ctx, func(tx pgx.Tx) error {
-
+		// 存在性/软删/状态校验放在 INSERT 之前：此前先插入再查，
+		// 不存在的 id 直接 FK 违反变 500（ErrNotFound 分支永远走不到），
+		// 已删除的绘马也照常 reply_count++ 并通知作者
 		var emaAuthor int64
 		var title string
 		var alive bool
@@ -291,6 +297,8 @@ func (s *Store) AddEmaReply(ctx context.Context, emaID, authorID int64, content 
 	return nil, ErrNotFound
 }
 
+// DeleteEmaReply 删除绘马回复（软删）：作者本人可直接删；
+// 管理删除（mod=true）套评论规则「下不能管上」，通知回复作者。reply_count 按实扣减
 func (s *Store) DeleteEmaReply(ctx context.Context, emaID, replyID, operatorID int64, mod bool, reason string) error {
 	return s.ExecTx(ctx, func(tx pgx.Tx) error {
 		var authorID int64

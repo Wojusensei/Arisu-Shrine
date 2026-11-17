@@ -18,6 +18,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ---- 社务箱 ----
+
 func (w *Web) listNotices(c *gin.Context) {
 	v := w.viewer(c)
 	page, size := clampPage(c)
@@ -32,6 +34,7 @@ func (w *Web) listNotices(c *gin.Context) {
 	c.JSON(http.StatusOK, np)
 }
 
+// getNotice 单条通知：详情页按 id 重取，进程回收后也能恢复内容
 func (w *Web) getNotice(c *gin.Context) {
 	v := w.viewer(c)
 	id, ok := pathID(c, "id")
@@ -70,6 +73,7 @@ func (w *Web) starNotice(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// markNoticeUnread 标回未读
 func (w *Web) markNoticeUnread(c *gin.Context) {
 	v := w.viewer(c)
 	id, ok := pathID(c, "id")
@@ -131,6 +135,8 @@ func (w *Web) deleteNotice(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// ---- 举报队列 ----
+
 func (w *Web) listReports(c *gin.Context) {
 	if !w.requireAdmin(c) {
 		return
@@ -176,7 +182,8 @@ func (w *Web) resolveReport(c *gin.Context) {
 		w.bad(c, "理由过长")
 		return
 	}
-
+	// 处置删除的层级规则（2026-10-02 用户裁决）：帖子/绘马是整体，任何维护人员可删；
+	// 评论适用「下不能管上」——层级不足时举报保持待处理
 	if req.Approve && req.DeleteTarget {
 		authorRole, isComment, hasTarget, err := w.St.ReportTargetAuthorRole(c.Request.Context(), id)
 		if errors.Is(err, store.ErrNotFound) {
@@ -192,7 +199,7 @@ func (w *Web) resolveReport(c *gin.Context) {
 		}
 	}
 	if err := w.St.ResolveReport(c.Request.Context(), id, v.ID, req.Approve, req.DeleteTarget, req.Reason); err != nil {
-
+		// 举报不存在或已被并发处置：这是可预期的结果，不是服务器故障
 		if errors.Is(err, store.ErrNotFound) {
 			w.notFound(c)
 			return
@@ -203,6 +210,10 @@ func (w *Web) resolveReport(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// ---- 搜索 ----
+
+// searchMentionUsers 提及选择器专用：只查社员，不查帖子。
+// 逐键补全要的是即时反馈，通用 /search 的 2 秒间隔与帖子检索都不合适。
 func (w *Web) searchMentionUsers(c *gin.Context) {
 	v := w.viewer(c)
 	if !w.intervalRateLimitMsg(c, v, 200*time.Millisecond, "查询太频繁，请稍后再试") {
@@ -230,7 +241,7 @@ func (w *Web) searchMentionUsers(c *gin.Context) {
 
 func (w *Web) search(c *gin.Context) {
 	v := w.viewer(c)
-
+	// 正则模式会全表扫标题，不设间隔可长期占满连接池拖垮全站
 	if !w.intervalRateLimit(c, v, 2*time.Second) {
 		return
 	}
@@ -267,6 +278,8 @@ func (w *Web) search(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+// ---- 游会 ----
+
 func (w *Web) onlineStats(c *gin.Context) {
 	st, err := w.St.OnlineStats(c.Request.Context())
 	if err != nil {
@@ -276,9 +289,15 @@ func (w *Web) onlineStats(c *gin.Context) {
 	c.JSON(http.StatusOK, st)
 }
 
+// omikujiToday 只查询今天是否已求签，不落库
 func (w *Web) omikujiToday(c *gin.Context) {
 	v := w.viewer(c)
-	drawn, luck := w.St.OmikujiToday(c.Request.Context(), v.ID)
+	drawn, luck, err := w.St.OmikujiToday(c.Request.Context(), v.ID)
+	if err != nil {
+		// 查询故障不能回 200+未抽：客户端会把「已抽」缓存成 0，界面翻回可点状态
+		w.err(c, 500, "查询失败，请稍后重试")
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"drawn": drawn, "luck": luck})
 }
 
@@ -302,6 +321,7 @@ func (w *Web) omikujiHistory(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": list})
 }
 
+// omikujiLeaderboard 今日御签榜：前十名次 + 自己前后各 2 人（名次服务端算好）
 func (w *Web) omikujiLeaderboard(c *gin.Context) {
 	board, err := w.St.OmikujiLeaderboard(c.Request.Context(), w.viewer(c).ID)
 	if err != nil {
@@ -310,6 +330,8 @@ func (w *Web) omikujiLeaderboard(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, board)
 }
+
+// ---- 版本日志 ----
 
 func (w *Web) listReleases(c *gin.Context) {
 	list, err := w.St.Releases(c.Request.Context())
@@ -358,10 +380,25 @@ func (w *Web) createRelease(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+// apkFileFor 从 uploads 目录挑出供「立即更新」下载的 APK 文件名。
+// 只认文件名带该版本号的包（v 前缀可有可无）；对不上就返回空——
+// 宁可让客户端提示联系神主，也不能把目录里更旧的包发出去。
+// 此前按目录序取第一个 .apk，app-debug.apk 排最前，客户端下到过几个版本前的旧包
 func apkFileFor(dir, version string) string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return ""
+	}
+	// 先按精确包名找（arisu-<版本>.apk，v 前缀可有可无）：目录里同时有
+	// arisu-1.1.2.0.apk 与 arisu-1.1.2.0-beta.apk 时，子串扫描按字典序会
+	// 先命中 beta 包（'-' < '.'），stable 渠道就下到 beta 构建去了
+	for _, want := range []string{"arisu-" + version, "arisu-" + strings.TrimPrefix(version, "v")} {
+		for _, e := range entries {
+			if e.IsDir() || !strings.EqualFold(e.Name(), want+".apk") {
+				continue
+			}
+			return e.Name()
+		}
 	}
 	for _, e := range entries {
 		if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".apk") {
@@ -387,9 +424,13 @@ func (w *Web) checkUpdate(c *gin.Context) {
 	var latest *model.Release
 	for i := range releases {
 		r := releases[i]
-		if r.Channel == channel {
+		if r.Channel != channel {
+			continue
+		}
+		// 同渠道取版本号最大者：重发旧版本走 upsert 会把 created_at 刷到现在，
+		// 按「第一条」取会把高版本遮蔽，老客户端永远收不到新版本提示
+		if latest == nil || compareVersions(r.Version, latest.Version) > 0 {
 			latest = &r
-			break
 		}
 	}
 	resp := gin.H{"update_available": false}
@@ -400,7 +441,7 @@ func (w *Web) checkUpdate(c *gin.Context) {
 		resp["update_available"] = available
 		if available {
 			resp["release"] = *latest
-
+			// 只有真有更新才带下载地址，且包名必须对得上版本号
 			if apk := apkFileFor(w.Cfg.Upload.Dir, latest.Version); apk != "" {
 				resp["download_url"] = strings.TrimSuffix(w.Cfg.BaseURL, "/") + "/uploads/" + apk
 			}
@@ -411,6 +452,7 @@ func (w *Web) checkUpdate(c *gin.Context) {
 
 var versionRe = regexp.MustCompile(`^v?\d+(\.\d+){0,4}(-[\w.]+)?$`)
 
+// compareVersions 比较 vA 与 vB（支持 v 前缀与可选 -beta 后缀）
 func compareVersions(a, b string) int {
 	pa, pb := parseVersion(a), parseVersion(b)
 	for i := 0; i < 5; i++ {
@@ -424,6 +466,9 @@ func compareVersions(a, b string) int {
 	return 0
 }
 
+// parseVersion 支持一到五段（x / x.y / x.y.z / 客户端 versionName 的 x.y.z.w）。
+// 此前只认三段，四段版本号的第四位被丢弃——0.0.1.20 与 0.0.1.21 会被比对成相同版本，
+// 检查更新永远「已是最新」（2026-10-03 用户实测点名）
 func parseVersion(v string) [5]int {
 	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
 	if i := strings.IndexByte(v, '-'); i >= 0 {
@@ -439,11 +484,13 @@ func parseVersion(v string) [5]int {
 	return out
 }
 
+// ---- 上传 ----
+
 var allowedExt = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true}
 
 func (w *Web) upload(c *gin.Context) {
 	v := w.viewer(c)
-
+	// 图床也拦禁言：上传的图都渲染在公共页面上（此前只拦了帖子区）
 	if w.mutedErr(c, v) {
 		return
 	}
@@ -467,10 +514,10 @@ func (w *Web) upload(c *gin.Context) {
 		return
 	}
 	defer src.Close()
-
+	// 魔数校验先于配额扣减：内容不是图片的请求不该烧当日次数（与限频在参数校验后同一方针）
 	head := make([]byte, 512)
 	nread, _ := io.ReadFull(src, head)
-
+	// 空文件（nread==0）此前会跳过魔数校验直接落盘
 	if nread == 0 {
 		w.bad(c, "文件内容不是图片")
 		return
@@ -483,11 +530,12 @@ func (w *Web) upload(c *gin.Context) {
 		w.err(c, 500, "读取失败")
 		return
 	}
-
+	// 每日配额：先原子自增再比较——此前先 GET 后 INCR，
+	// 并发窗口内 N 个请求全部读到同一计数后全部放行，每轮可超额 100 张
 	day := time.Now().Format("20060102")
 	qk := "upload:day:" + itoa(int(v.ID)) + ":" + day
 	if n, err := w.RDB.Incr(c.Request.Context(), qk).Result(); err != nil {
-
+		// Redis 抖动不放大成上传不可用，放行（配额只是防滥用闸，不是账本）
 		println("upload quota incr failed:", err.Error())
 	} else {
 		if n == 1 {
@@ -498,7 +546,7 @@ func (w *Web) upload(c *gin.Context) {
 			return
 		}
 	}
-
+	// 保存失败要回补配额：INCR 在保存之前（防并发超发），失败不烧当日次数
 	refundQuota := func() {
 		w.RDB.Decr(c.Request.Context(), qk)
 	}
@@ -524,7 +572,7 @@ func (w *Web) upload(c *gin.Context) {
 		return
 	}
 	if err := w.St.SaveUpload(c.Request.Context(), v.ID, name, "image"); err != nil {
-
+		// 审计记录失败不让上传失败，但不能静默失明
 		println("upload audit failed:", err.Error())
 	}
 	c.JSON(http.StatusOK, gin.H{"url": strings.TrimSuffix(w.Cfg.BaseURL, "/") + "/uploads/" + name})

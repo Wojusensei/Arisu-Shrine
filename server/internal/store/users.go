@@ -50,6 +50,7 @@ const userColsRaw = `id,email,password_hash,nickname,role,signature,status_emoji
 	blog_url,fixed_avatar_url,active_avatar_url,active_avatar_enabled,custom_markdown,custom_css,
 	show_fields,notify_scope,online_minutes,muted_until,banned,deactivated_at,created_at,balance_tenths`
 
+// qcols 给列加表前缀，用于 JOIN 查询
 func qcols(prefix string) string {
 	parts := strings.Split(userColsRaw, ",")
 	for i := range parts {
@@ -80,7 +81,7 @@ func (u *UserRow) show(key string) bool {
 	if v, ok := u.ShowFields[key]; ok {
 		return v
 	}
-	return true
+	return true // 默认全部展示
 }
 
 func (u *UserRow) DisplayAvatar() string {
@@ -90,6 +91,7 @@ func (u *UserRow) DisplayAvatar() string {
 	return u.FixedAvatarURL
 }
 
+// MutedUntilActive 禁言到期视为已解除
 func (u *UserRow) MutedUntilActive() *time.Time {
 	if u.MutedUntil == nil || u.MutedUntil.Before(time.Now()) {
 		return nil
@@ -97,6 +99,7 @@ func (u *UserRow) MutedUntilActive() *time.Time {
 	return u.MutedUntil
 }
 
+// ToPublic 公开视角：邮箱绝不外泄；被隐藏的字段直接不给
 func (u *UserRow) ToPublic() *model.User {
 	m := &model.User{
 		Signature:      u.Signature,
@@ -122,7 +125,7 @@ func (u *UserRow) ToPublic() *model.User {
 	if !u.show("online_hours") {
 		m.OnlineMinutes = 0
 	}
-
+	// 邮箱默认仅本人可见，社员显式开启后才随公开资料下发
 	if v, ok := u.ShowFields["email"]; ok && v {
 		m.Email = u.Email
 	}
@@ -144,13 +147,14 @@ func (u *UserRow) ToBrief() model.UserBrief {
 
 func (u *UserRow) ToMe() *model.Me {
 	pub := *u.ToPublic()
-
+	// show_fields 只管别人视角；本人的客房和编辑资料必须取回完整内容，
+	// 否则关掉可见性后 /me 拿到空值，编辑页一保存就把自己写的内容洗掉了
 	pub.Signature = u.Signature
 	pub.StatusEmoji, pub.StatusText = u.StatusEmoji, u.StatusText
 	pub.BlogURL = u.BlogURL
 	pub.CustomMarkdown, pub.CustomCSS = u.CustomMarkdown, u.CustomCSS
 	pub.OnlineMinutes = u.OnlineMinutes
-
+	// 账面（0.1 円单位）只给本人（ToPublic 不带，他人视角恒为 0）
 	pub.BalanceTenths = u.BalanceTenths
 	return &model.Me{
 		User:                pub,
@@ -164,6 +168,8 @@ func (u *UserRow) ToMe() *model.Me {
 		DeactivatedAt:       UnixPtr(u.DeactivatedAt),
 	}
 }
+
+// ---- 查询 ----
 
 func (s *Store) UserByID(ctx context.Context, id int64) (*UserRow, error) {
 	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+userCols+` FROM users WHERE id=$1`, id))
@@ -179,14 +185,15 @@ func (s *Store) UserCount(ctx context.Context) (int64, error) {
 	return n, err
 }
 
+// CreateUser 第一个注册的用户自动成为神主，并解锁「开山祖师」
 func (s *Store) CreateUser(ctx context.Context, email, passwordHash, nickname string) (*UserRow, error) {
-
+	// 神主判定放进 INSERT 同语句：先查 count 再插的窗口里并发注册会出现两位神主
 	row := s.Pool.QueryRow(ctx, `INSERT INTO users(email,password_hash,nickname,role)
 		VALUES($1,$2,$3,CASE WHEN NOT EXISTS(SELECT 1 FROM users) THEN $4 ELSE $5 END)
 		RETURNING `+userCols, email, passwordHash, nickname, model.RoleKannushi, model.RoleMember)
 	u, err := scanUser(row)
 	if err != nil {
-
+		// 昵称与邮箱各有一条唯一索引：按约束名分开报，别把撞昵称说成「邮箱已注册」
 		if uniqueViolation(err) == "uniq_users_nickname" {
 			return nil, ErrNicknameTaken
 		}
@@ -195,7 +202,7 @@ func (s *Store) CreateUser(ctx context.Context, email, passwordHash, nickname st
 		}
 		return nil, err
 	}
-
+	// 神社出仕：前 100 位入社的社员
 	if u.ID <= 100 {
 		_ = s.GrantAchievement(ctx, u.ID, "founder")
 	}
@@ -210,6 +217,8 @@ func isUniqueErr(err error) bool {
 	return false
 }
 
+// uniqueViolation 返回违反的唯一约束名（非唯一冲突返回空串）。
+// 注册时邮箱与昵称各有一条唯一索引，必须按约束名区分，否则撞昵称会提示「邮箱已注册」。
 func uniqueViolation(err error) string {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -273,7 +282,8 @@ func (s *Store) UpdateProfile(ctx context.Context, userID int64, p ProfileUpdate
 		add("active_avatar_enabled", *p.ActiveAvatarEnabled)
 	}
 	if p.ShowFields != nil {
-
+		// JSONB 浅合并：PATCH 只改传入的键，其余键保持不变。
+		// 之前是整表替换，关一个开关会把其他开关全部重置（联动 bug）。
 		sets = append(sets, fmt.Sprintf("show_fields = COALESCE(show_fields,'{}'::jsonb) || $%d", i))
 		args = append(args, p.ShowFields)
 		i++
@@ -295,6 +305,7 @@ func (s *Store) UpdateProfile(ctx context.Context, userID int64, p ProfileUpdate
 	return u, err
 }
 
+// UpdateEmail 换绑邮箱（唯一性冲突返回 ErrConflict）
 func (s *Store) UpdateEmail(ctx context.Context, userID int64, email string) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE users SET email=$2 WHERE id=$1`, userID, email)
 	if isUniqueErr(err) {
@@ -308,6 +319,7 @@ func (s *Store) UpdatePassword(ctx context.Context, userID int64, hash string) e
 	return err
 }
 
+// Deactivate 注销（进入冷静期）；冷静期内登录即取消
 func (s *Store) Deactivate(ctx context.Context, userID int64) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE users SET deactivated_at=now() WHERE id=$1 AND anonymized=FALSE`, userID)
 	return err
@@ -318,6 +330,7 @@ func (s *Store) CancelDeactivation(ctx context.Context, userID int64) error {
 	return err
 }
 
+// AnonymizeExpiredDeactivations 冷静期结束的账号抹掉个人信息（帖子保留）
 func (s *Store) AnonymizeExpiredDeactivations(ctx context.Context, cooldownSeconds int64) (int64, error) {
 	tag, err := s.Pool.Exec(ctx, `UPDATE users SET
 		email='deleted_'||id||'@invalid', nickname='已注销的社员', password_hash='',
@@ -334,6 +347,10 @@ func (s *Store) AnonymizeExpiredDeactivations(ctx context.Context, cooldownSecon
 	return tag.RowsAffected(), nil
 }
 
+// ---- 统计 ----
+
+// FillUserCounts 关注/粉丝计数与 FollowList 同一把尺：把 viewer 拉黑了的人不计入，
+// 免得计数与列表条数对不上（帖子数与拉黑无关，不过滤）
 func (s *Store) FillUserCounts(ctx context.Context, m *model.User, viewerID int64) error {
 	return s.Pool.QueryRow(ctx, `SELECT
 			(SELECT count(*) FROM follows f WHERE f.follower_id=$1
@@ -343,6 +360,8 @@ func (s *Store) FillUserCounts(ctx context.Context, m *model.User, viewerID int6
 			(SELECT count(*) FROM posts WHERE author_id=$1 AND deleted_at IS NULL)`,
 		m.ID, viewerID).Scan(&m.FollowingCount, &m.FollowerCount, &m.PostCount)
 }
+
+// ---- 关注 ----
 
 func (s *Store) IsFollowing(ctx context.Context, followerID, followeeID int64) (bool, error) {
 	var one int
@@ -368,6 +387,7 @@ func (s *Store) Unfollow(ctx context.Context, followerID, followeeID int64) erro
 	return err
 }
 
+// FollowList followers=false 返回我关注的人；true 返回关注我的人
 func (s *Store) FollowList(ctx context.Context, userID int64, followers bool) ([]model.UserBrief, error) {
 	var q string
 	if followers {
@@ -380,7 +400,7 @@ func (s *Store) FollowList(ctx context.Context, userID int64, followers bool) ([
 		return nil, err
 	}
 	defer rows.Close()
-
+	// 查看者已关注的社员集合，用于粉丝列表里如实标注关注状态
 	followed := map[int64]bool{}
 	if followers {
 		frows, ferr := s.Pool.Query(ctx, `SELECT followee_id FROM follows WHERE follower_id=$1`, userID)
@@ -407,6 +427,9 @@ func (s *Store) FollowList(ctx context.Context, userID int64, followers bool) ([
 	return out, rows.Err()
 }
 
+// ---- 心跳与在线统计 ----
+
+// Heartbeat 上报活跃：累计在线分钟、参与热度、维护当日峰值
 func (s *Store) Heartbeat(ctx context.Context, userID int64, activeSeconds int) error {
 	if activeSeconds <= 0 {
 		activeSeconds = 1
@@ -416,7 +439,8 @@ func (s *Store) Heartbeat(ctx context.Context, userID int64, activeSeconds int) 
 	}
 	minutes := activeSeconds / 60
 	return s.ExecTx(ctx, func(tx pgx.Tx) error {
-
+		// 成就：夜行性（凌晨三点还在神社）——按北京时间判，
+		// 此前用服务器本地时区（容器 UTC），实际在北京时间上午 11 点发放
 		if time.Now().In(shanghaiLoc).Hour() == 3 {
 			if _, err := tx.Exec(ctx, `INSERT INTO achievements(user_id, code) VALUES($1,'night_owl') ON CONFLICT DO NOTHING`, userID); err != nil {
 				return err
@@ -455,8 +479,11 @@ func (s *Store) OnlineStats(ctx context.Context) (*model.OnlineStats, error) {
 	return st, err
 }
 
-func (s *Store) Tiles(ctx context.Context, userID int64) ([]model.Tile, error) {
+// ---- 参拜热度（371 天瓷砖） ----
 
+func (s *Store) Tiles(ctx context.Context, userID int64) ([]model.Tile, error) {
+	// 求签也记一天：omikuji_draws 里已有完整历史，并进来即可回填过去的签，
+	// 不必给 activity_days 加列，也不必等新版本重新累计
 	rows, err := s.Pool.Query(ctx, `SELECT day, sum(minutes)::int, sum(posts)::int, sum(comments)::int, max(omikuji)::int
 		FROM (
 			SELECT day, minutes, posts, comments, 0 AS omikuji FROM activity_days
@@ -498,7 +525,7 @@ func (s *Store) Tiles(ctx context.Context, userID int64) ([]model.Tile, error) {
 }
 
 func tileLevel(minutes, posts, comments, omikuji int) int {
-
+	// 每日求签算 1 分：只抽了一签的那天也会亮起第一格
 	score := minutes/15 + posts*3 + comments + omikuji
 	switch {
 	case score == 0:
@@ -514,6 +541,7 @@ func tileLevel(minutes, posts, comments, omikuji int) int {
 	}
 }
 
+// BumpActivity 发帖/评论计入当日热度
 func bumpActivity(tx pgx.Tx, ctx context.Context, userID int64, kind string) error {
 	col := "posts"
 	if kind == "comment" {
@@ -523,6 +551,8 @@ func bumpActivity(tx pgx.Tx, ctx context.Context, userID int64, kind string) err
 		ON CONFLICT (user_id, day) DO UPDATE SET `+col+` = activity_days.`+col+` + 1`, userID)
 	return err
 }
+
+// ---- 禁言 / 封禁 / 角色 ----
 
 func (s *Store) SetMute(ctx context.Context, targetID int64, until *time.Time) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE users SET muted_until=$2 WHERE id=$1`, targetID, until)
@@ -538,6 +568,8 @@ func (s *Store) SetRole(ctx context.Context, targetID int64, role string) error 
 	_, err := s.Pool.Exec(ctx, `UPDATE users SET role=$2 WHERE id=$1`, targetID, role)
 	return err
 }
+
+// ---- 成就 ----
 
 func (s *Store) GrantAchievement(ctx context.Context, userID int64, code string) error {
 	_, err := s.Pool.Exec(ctx, `INSERT INTO achievements(user_id, code) VALUES($1,$2)
@@ -564,6 +596,8 @@ func (s *Store) Achievements(ctx context.Context, userID int64) ([]model.Achieve
 	return out, rows.Err()
 }
 
+// ---- Refresh Token ----
+
 func hashToken(token string) string {
 	h := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(h[:])
@@ -575,11 +609,12 @@ func (s *Store) SaveRefreshToken(ctx context.Context, userID int64, token string
 	if err != nil {
 		return err
 	}
-
+	// 过期行永不清理会无限堆积（每次登录插一行、30 天有效期），顺手扫掉
 	_, err = s.Pool.Exec(ctx, `DELETE FROM refresh_tokens WHERE expires_at < now()`)
 	return err
 }
 
+// SessionRow 是账号名下的一台已登录设备；轮换会删旧行插新行，created_at 即最近活跃时刻
 type SessionRow struct {
 	ID        int64
 	Device    string
@@ -587,6 +622,8 @@ type SessionRow struct {
 	Current   bool
 }
 
+// Sessions 列出用户全部有效会话，currentToken 那一行标 Current；
+// 设备名空串说明是设备上报功能上线前的旧会话，客户端兜底显示
 func (s *Store) Sessions(ctx context.Context, userID int64, currentToken string) ([]SessionRow, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT id, device_label, created_at, (token_hash=$2)
 		FROM refresh_tokens
@@ -606,6 +643,7 @@ func (s *Store) Sessions(ctx context.Context, userID int64, currentToken string)
 	return out, rows.Err()
 }
 
+// DeleteSession 踢掉指定会话：行不属于该用户时视同不存在
 func (s *Store) DeleteSession(ctx context.Context, userID, sessionID int64) (bool, error) {
 	tag, err := s.Pool.Exec(ctx, `DELETE FROM refresh_tokens WHERE id=$1 AND user_id=$2`, sessionID, userID)
 	if err != nil {
@@ -621,11 +659,13 @@ func (s *Store) RefreshTokenUser(ctx context.Context, token string) (*UserRow, e
 		  AND u.banned=FALSE AND u.anonymized=FALSE AND u.password_hash<>''`, hashToken(token)))
 }
 
+// RevokeRefreshTokens 吊销某用户全部会话（改密/重置/封禁时）
 func (s *Store) RevokeRefreshTokens(ctx context.Context, userID int64) error {
 	_, err := s.Pool.Exec(ctx, `DELETE FROM refresh_tokens WHERE user_id=$1`, userID)
 	return err
 }
 
+// RevokeRefreshTokensExcept 吊销某用户除指定会话外的全部会话（换绑邮箱时保持当前设备在线）
 func (s *Store) RevokeRefreshTokensExcept(ctx context.Context, userID int64, keepToken string) error {
 	_, err := s.Pool.Exec(ctx,
 		`DELETE FROM refresh_tokens WHERE user_id=$1 AND token_hash<>$2`,
@@ -638,6 +678,10 @@ func (s *Store) DeleteRefreshToken(ctx context.Context, token string) error {
 	return err
 }
 
+// RotateRefreshToken 原子轮换：条件删除旧行并在同一语句内插入新行。
+// 旧的「查→删→插」三步无事务，并发双刷同一 token 的窗口内可克隆出多个并行会话；
+// 单条 CTE 让删除与插入原子完成——第二个并发请求与重放都拿不到行，直接 401。
+// USING 过滤与 RefreshTokenUser 一致：封禁/已注销/匿名化的行不参与轮换
 func (s *Store) RotateRefreshToken(ctx context.Context, oldToken, newToken, device string, ttlSeconds int64) (int64, error) {
 	var userID int64
 	err := s.Pool.QueryRow(ctx, `WITH dead AS (
@@ -656,6 +700,8 @@ func (s *Store) RotateRefreshToken(ctx context.Context, oldToken, newToken, devi
 	return userID, err
 }
 
+// ---- 奉仕会 ----
+
 func (s *Store) StaffGroups(ctx context.Context) ([]model.StaffGroup, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+userCols+` FROM users
 		WHERE role IN ('temp_houshi','houshi','guuji','kannushi') AND anonymized=FALSE
@@ -671,7 +717,7 @@ func (s *Store) StaffGroups(ctx context.Context) ([]model.StaffGroup, error) {
 		if err != nil {
 			return nil, err
 		}
-
+		// 签名同样受 show_fields 管辖：用户关掉签名展示，奉仕会名单不该再漏出来
 		sig := ""
 		if u.show("signature") {
 			sig = u.Signature
@@ -741,10 +787,11 @@ func (s *Store) PendingStaffApplications(ctx context.Context) ([]model.StaffAppl
 	return out, rows.Err()
 }
 
+// DecideStaffApplication 批准则升为临时奉仕
 func (s *Store) DecideStaffApplication(ctx context.Context, appID, approverID int64, approve bool) (int64, string, error) {
 	var uid int64
 	var status string
-
+	// 审批与授权必须同事务：此前 SetRole 失败会留下「已批准未授权」且状态机不可重试
 	err := s.ExecTx(ctx, func(tx pgx.Tx) error {
 		if err := tx.QueryRow(ctx, `UPDATE staff_applications
 			SET status=CASE WHEN $2 THEN 'approved' ELSE 'rejected' END, decided_by=$3, decided_at=now()
@@ -752,7 +799,8 @@ func (s *Store) DecideStaffApplication(ctx context.Context, appID, approverID in
 			return err
 		}
 		if approve {
-
+			// 只把普通社员升为临时奉仕：申请待批期间若已被神主另行授职
+			// （houshi/guuji 等），批准旧申请不该把人硬写成 temp_houshi 降回去
 			if _, err := tx.Exec(ctx, `UPDATE users SET role=$2 WHERE id=$1 AND role=$3`,
 				uid, model.RoleTempHoushi, model.RoleMember); err != nil {
 				return err
@@ -768,6 +816,8 @@ func (s *Store) DecideStaffApplication(ctx context.Context, appID, approverID in
 	}
 	return uid, status, nil
 }
+
+// ---- 导出 ----
 
 func (s *Store) ExportUserPostsMarkdown(ctx context.Context, userID int64) (string, error) {
 	u, err := s.UserByID(ctx, userID)
@@ -794,3 +844,13 @@ func (s *Store) ExportUserPostsMarkdown(ctx context.Context, userID int64) (stri
 }
 
 func NewStore(pool *pgxpool.Pool) *Store { return &Store{Pool: pool} }
+
+// UserByRefreshToken 用一枚 refresh 令牌反查账号（切换账号时校验令牌是否仍有效）。
+// 与 RotateRefreshToken 同一套有效性口径：未过期、账号未封禁/匿名化/有密码。
+func (s *Store) UserByRefreshToken(ctx context.Context, token string) (*UserRow, error) {
+	// 列名必须带表前缀：users 与 refresh_tokens 都有 id，裸 id 在 JOIN 里是歧义列
+	return scanUser(s.Pool.QueryRow(ctx, `SELECT `+qcols("u")+` FROM users u
+		JOIN refresh_tokens rt ON rt.user_id = u.id
+		WHERE rt.token_hash=$1 AND rt.expires_at > now()
+		  AND u.banned=FALSE AND u.anonymized=FALSE AND u.password_hash<>''`, hashToken(token)))
+}

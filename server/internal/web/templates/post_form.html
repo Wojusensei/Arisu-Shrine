@@ -1,0 +1,79 @@
+{{template "top" .}}
+{{/* 撰写帖子（NewPostScreen.kt:530-700）：
+   顶栏「撰写帖子 / 当前板块：正殿」+ 右侧实底「发布」（编辑时「保存」）；
+   页内左右 16、top 4、bottom 32；四组「标题 / 介绍语 / 封面 / 正文」各自
+   SectionLabel（trailing 说明），输入框之间 18dp；正文前有说明与 Markdown
+   工具条；末尾「发送到板块」三页签。 */}}
+{{/* data-post-id 只在编辑时有值：新建时渲染成 "0" 会被 JS 当成真值，
+     走去 PATCH /api/posts/0（发帖整个不可用，2026-11-16 实测发现）。 */}}
+<form method="post" action="" id="f-post"{{if .ID}} data-post-id="{{.ID}}"{{end}} data-board="{{.Board}}" data-cover="{{.CoverURL}}">
+  <div class="section-label">标题</div>
+  <div class="well">
+    <input class="field" name="title" required maxlength="60" value="{{.FormTitle}}" placeholder="此处撰写标题">
+  </div>
+
+  <div class="section-label">介绍语 <span class="trailing">选填 · 展示在列表封面</span></div>
+  <div class="well">
+    <input class="field" name="intro" maxlength="60" value="{{.Intro}}" placeholder="给帖子配一句简短介绍（最多 60 字）">
+  </div>
+
+  {{/* 封面三态（CoverPicker）：未选 = 88×88 凹槽占位卡 + 「从相册选择一张封面图」与胶囊钮；
+       已选 = 「封面预览」缩略图 + 编辑/移除。 */}}
+  <div class="section-label">封面 <span class="trailing">选填 · 未选时以您的头像为封面</span></div>
+  <div class="cover-picker" data-role="cover-row">
+    <div class="cover-empty" data-role="cover-empty">
+      <span class="cover-ph">
+        <svg class="ic" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+      </span>
+      <div class="cover-empty-main">
+        <span class="cover-hint">从相册选择一张封面图</span>
+        <button class="pill accent" type="button" data-role="pickcover">选择封面图</button>
+      </div>
+    </div>
+    <div class="cover-picked" data-role="cover-picked" hidden>
+      <img data-role="cover-thumb" src="" alt="封面预览">
+      <div class="cover-actions">
+        <button class="btn-ghost" type="button" data-role="cover-edit">编辑这张图</button>
+        <button class="btn-ghost danger" type="button" data-role="cover-remove">移除这张图</button>
+      </div>
+    </div>
+    <div class="well" data-role="cover-url-well" hidden>
+      <input class="field" name="cover_url" value="{{.CoverURL}}" placeholder="封面图片地址">
+    </div>
+    <input type="file" accept="image/jpeg,image/png,image/webp" data-role="coverfile" hidden>
+  </div>
+
+  <div class="section-label">正文</div>
+  <p class="md-note">正文支持 Markdown，行文简洁即可。</p>
+  {{/* Markdown 工具条（MarkdownToolbar）：图标在上、名字在下，8 枚等宽 */}}
+  <div class="md-toolbar">
+    <button type="button" data-md="bold"><b>B</b><span>加粗</span></button>
+    <button type="button" data-md="italic"><i>I</i><span>斜体</span></button>
+    <button type="button" data-md="heading"><b>T</b><span>标题</span></button>
+    <button type="button" data-md="list">{{template "i-list"}}<span>列表</span></button>
+    <button type="button" data-md="code">{{template "i-code"}}<span>代码</span></button>
+    <button type="button" data-md="quote">{{template "i-quote"}}<span>引用</span></button>
+    <button type="button" data-role="pickimg">{{template "i-image"}}<span>图片</span></button>
+    <button type="button" data-md="link">{{template "i-link"}}<span>链接</span></button>
+  </div>
+  <div class="well md-well">
+    <textarea class="field md-field" name="body" required maxlength="32000" rows="12" placeholder="写点什么……
+
+可用 **加粗**、*斜体*、`行内代码`，也可插入列表、引用与图片。">{{.Body}}</textarea>
+  </div>
+  <input type="file" multiple accept="image/jpeg,image/png,image/gif,image/webp" data-role="imgfile" hidden>
+  <p class="form-hint" data-role="upload-hint" style="display:none"></p>
+
+  <div class="section-label">发送到板块 <span class="trailing">{{.BoardLabel}}</span></div>
+  <div class="tabs-u board-select">
+    <a href="javascript:void(0)" data-board="main"{{if eq .Board "main"}} class="on"{{end}}><b>正殿</b><span class="bar"></span></a>
+    <a href="javascript:void(0)" data-board="gensokyo"{{if eq .Board "gensokyo"}} class="on"{{end}}><b>幻想乡闻</b><span class="bar"></span></a>
+    <a href="javascript:void(0)" data-board="dev"{{if eq .Board "dev"}} class="on"{{end}}><b>/dev.</b><span class="bar"></span></a>
+  </div>
+  <p class="form-hint">发布后的帖子将自动获得编号，如 arisu_000001</p>
+
+  <p class="form-error" data-role="err" style="display:none"></p>
+  {{/* 发布/保存是顶栏动作（handler 的 page.Actions），这里留隐藏提交钮给回车与脚本 */}}
+  <button class="visually-hidden" type="submit" data-role="submit-btn">{{if .ID}}保存{{else}}发布{{end}}</button>
+</form>
+{{template "bottom" .}}

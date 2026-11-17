@@ -1,0 +1,105 @@
+{{template "top" .}}
+{{/* 编辑资料（EditProfileScreen.kt:308-560）：
+   头像组（固定 / 活跃 / 启用开关 + 关闭时的说明）→ 基本资料（昵称 / 个性签名 50 字 /
+   个人状态 emoji 16 枚横滑 + 状态文字 10 字）→ 联系方式（邮箱 / 换绑）→
+   自定义区域（Markdown + 安全 CSS）→ 底部悬浮「保存」（与页面同色凸面、20dp 圆角、
+   v12 / h18）。安卓所有字段先落本地草稿，点保存才统一 PATCH。 */}}
+<form method="post" action="" id="f-profile">
+  <div class="section-label">头像</div>
+  <div class="entry-card" data-role="avatar-group">
+    <button class="avatar-row" type="button" data-role="pick-fixed">
+      <span class="avatar av56" data-role="{{.Role}}">{{if .FixedAvatar}}<img src="{{.FixedAvatar}}" alt="">{{else}}{{initial .Nickname}}{{end}}</span>
+      <span class="av-main"><b>固定头像</b><span>点击更换固定头像</span></span>
+      <span class="av-arrow">{{template "i-chevron"}}</span>
+    </button>
+    <hr class="hairline ind88">
+    <button class="avatar-row" type="button" data-role="pick-active">
+      <span class="avatar av56" data-role="{{.Role}}">{{if .ActiveAvatar}}<img src="{{.ActiveAvatar}}" alt="">{{else}}{{initial .Nickname}}{{end}}</span>
+      <span class="av-main"><b>活跃头像</b><span>点击更换活跃头像</span></span>
+      <span class="av-arrow">{{template "i-chevron"}}</span>
+    </button>
+    <hr class="hairline">
+    <button class="entry switch-row" type="button" data-role="toggle-active-avatar" data-on="{{if .ActiveAvatarOn}}1{{else}}0{{end}}">
+      <span class="lbl">启用活跃头像</span>
+      <span class="switch{{if .ActiveAvatarOn}} on{{end}}"></span>
+    </button>
+    <p class="entry-hint" data-role="active-avatar-hint"{{if .ActiveAvatarOn}} hidden{{end}}>关闭后所有地方将显示固定头像</p>
+  </div>
+
+  <div class="section-label">基本资料</div>
+  <div class="entry-card">
+    <div class="field-block">
+      <span class="form-label">昵称</span>
+      <div class="well">
+        <input class="field" name="nickname" required maxlength="20" value="{{.Nickname}}" placeholder="给自己起个名字">
+      </div>
+    </div>
+    <div class="field-block">
+      <span class="form-label">个性签名</span>
+      <div class="well">
+        <textarea class="field" name="signature" maxlength="50" rows="3" placeholder="一句话介绍您自己">{{.Signature}}</textarea>
+      </div>
+      <span class="counter" data-role="signature-counter">{{len .Signature}}/50</span>
+    </div>
+
+    {{/* 个人状态（:382-403）：labelLarge「个人状态」→ 9dp → 16 枚 40dp emoji 圆片横滑（间 8dp）
+       → 4dp → 「状态文字」10 字。选中态 = primary α0.12 底 + α0.75 描边；未选 = 凹槽。 */}}
+    <div class="field-block">
+      <span class="form-label big">个人状态</span>
+      <div class="emoji-row" data-role="emoji-row">
+        {{range .StatusEmojis}}<button class="emoji-chip{{if eq . $.StatusEmoji}} on{{end}}" type="button" data-emoji="{{.}}">{{.}}</button>{{end}}
+      </div>
+      <input type="hidden" name="status_emoji" data-role="status-emoji" value="{{.StatusEmoji}}">
+      <span class="form-label">状态文字</span>
+      <div class="well">
+        <input class="field" name="status_text" maxlength="10" value="{{.StatusText}}" placeholder="社员随性填写即可">
+      </div>
+      <span class="counter" data-role="status-counter">{{len .StatusText}}/10</span>
+    </div>
+  </div>
+
+  <div class="section-label">联系方式</div>
+  <div class="entry-card">
+    <button class="entry" type="button" data-role="rebind-email">
+      <span class="lbl">个人邮箱</span>
+      <span class="val">{{.Email}}</span>
+      <span class="sub">注册邮箱即账号，支持换绑</span>
+    </button>
+    <hr class="hairline">
+    <div class="field-block">
+      <span class="form-label">个人博客 URL</span>
+      <div class="well">
+        <input class="field" name="blog" value="{{.BlogURL}}" placeholder="https://">
+      </div>
+    </div>
+  </div>
+
+  <div class="section-label">自定义区域</div>
+  <div class="entry-card">
+    <div class="field-block">
+      <span class="form-label">Markdown</span>
+      <div class="well">
+        <textarea class="field" name="custom_md" maxlength="20000" rows="8" placeholder="支持标题、粗体、列表、代码块、引用、表格……">{{.CustomMD}}</textarea>
+      </div>
+    </div>
+    <div class="field-block">
+      <span class="form-label">安全 CSS</span>
+      <div class="well">
+        <textarea class="field mono" name="custom_css" maxlength="20000" rows="4" placeholder=".arisu-card { border-radius: 16px; background-color: #FDF9F6; }">{{.CustomCSS}}</textarea>
+      </div>
+      <p class="form-hint">仅支持 border-radius / background-color / color / font-size 四个安全属性</p>
+    </div>
+  </div>
+
+  {{/* 给悬浮保存条让出 96dp（:514-515） */}}
+  <div class="save-gap"></div>
+  <p class="form-error" data-role="err" style="display:none"></p>
+  <div class="save-dock">
+    <div class="save-dock-inner">
+      <button class="btn btn-full" type="submit" data-role="save-btn">保存</button>
+    </div>
+  </div>
+</form>
+
+<input type="file" accept="image/jpeg,image/png,image/webp" data-role="avatar-file" hidden>
+{{template "bottom" .}}

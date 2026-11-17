@@ -1,0 +1,24 @@
+{{template "top" .}}
+{{/* 拉黑名单（BlockedUsersScreen.kt:94-155）：
+   LazyColumn contentPadding h16/v14；行 v6 = 44dp ring 头像 + 12 +
+   昵称 titleSmall + 3 + RoleTag + 尾部 TextButton「解除」；
+   行间 HairlineDivider(startIndent = 62dp)。 */}}
+{{if not .Users}}
+{{template "empty" "还没有拉黑任何人"}}
+{{else}}
+<div class="blocks-list">
+  {{range .Users}}
+  <div class="blocks-row">
+    <a class="blocks-main" href="/u/{{.No}}">
+      <span class="avatar ring av44" data-role="{{.Role}}">{{if .Avatar}}<img src="{{.Avatar}}" alt="">{{else}}{{initial .Nickname}}{{end}}</span>
+      <span class="blocks-txt">
+        <b>{{.Nickname}}</b>
+        <span class="role-tag" data-role="{{.Role}}">{{rolename .Role}}</span>
+      </span>
+    </a>
+    <button class="blocks-unban" data-role="unblock" data-id="{{.ID}}">解除</button>
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{template "bottom" .}}

@@ -1,0 +1,66 @@
+{{template "top" .}}
+<div class="neu-surface ema-detail"
+     data-ema-id="{{.Ema.ID}}"
+     data-mine="{{if .Mine}}1{{else}}0{{end}}"
+     data-can-delete="{{if .CanDelete}}1{{else}}0{{end}}"
+     data-can-moderate="{{if .CanModerate}}1{{else}}0{{end}}"
+     data-title="{{.Ema.Title}}"
+     data-state-label="{{.Ema.StateLabel}}"
+     data-author="{{.Ema.Author.Nickname}}"
+     data-time="{{.Ema.TimeText}}"
+     data-ema-no="#{{.Ema.ID}}"
+     data-kind="绘马">
+  <div class="ec-head detail">
+    <b class="no">#{{.Ema.ID}}</b>
+    <span class="stpill t-{{.Ema.StateTint}}">{{.Ema.StateLabel}}</span>
+  </div>
+  <h2 class="post-title">{{.Ema.Title}}</h2>
+  {{/* 只认安卓 EmaTag 那四个键（Models.kt:228-233）：库里的「祈愿/杂谈/学业」安卓认不出、整行不渲染 */}}
+  {{$tags := webKnownTags .Ema.Tags}}
+  {{if $tags}}
+  <div class="ec-tags">{{range $tags}}<span class="tagpill tt-{{.}}"><i></i>{{.}}</span>{{end}}</div>
+  {{end}}
+  <hr class="hairline">
+  <div class="author-row">
+    <a class="avatar sm" data-role="{{.Ema.Author.Role}}" href="/u/{{.Ema.Author.No}}">{{initial .Ema.Author.Nickname}}</a>
+    <div class="author-col">
+      <div class="name">{{.Ema.Author.Nickname}} <span class="role-tag" data-role="{{.Ema.Author.Role}}">{{rolename .Ema.Author.Role}}</span></div>
+      <span class="published">{{.Ema.TimeText}}</span>
+    </div>
+  </div>
+  <div class="md post-body">{{.Ema.BodyHTML}}</div>
+</div>
+
+<div class="section-label">回复 {{len .Replies}}
+  {{if .CanModerate}}<button class="state-btn" data-role="state">改变状态</button>{{end}}
+</div>
+{{if not .Replies}}
+{{template "empty" "没有回复"}}
+{{end}}
+{{range .Replies}}
+{{/* 与安卓 EmaReplyRow 同结构（EmaDetailScreen.kt:673-745）：
+   Row[头像 30+4×2 | 10 | Column[名字行(名字 + RoleTag + 时间右贴) + 4 + 正文]] */}}
+<div class="ema-reply" data-rid="{{.ID}}" data-mine="{{if .Mine}}1{{else}}0{{end}}" data-can-delete="{{if .CanDelete}}1{{else}}0{{end}}">
+  <a class="avatar sm" data-role="{{.Author.Role}}" href="/u/{{.Author.No}}">{{initial .Author.Nickname}}</a>
+  <div class="rp-main">
+    <div class="head">
+      <span class="name">{{.Author.Nickname}}</span>
+      <span class="role-tag" data-role="{{.Author.Role}}">{{rolename .Author.Role}}</span>
+      <span class="time">{{.TimeText}}</span>
+    </div>
+    <div class="md body">{{.BodyHTML}}</div>
+  </div>
+</div>
+{{end}}
+{{if .Replies}}<p class="page-end">已经到底了</p>{{end}}
+
+<div class="reply-wrap">
+  <div class="composer glass">
+    <button class="cbtn" data-role="emoji" aria-label="表情">{{template "i-smile"}}</button>
+    <div class="well grow">
+      <textarea class="field" data-role="input" rows="1" maxlength="1000" placeholder="写下您的回复…"></textarea>
+    </div>
+    <button class="send" data-role="send" aria-label="发送" disabled>{{template "i-send"}}</button>
+  </div>
+</div>
+{{template "bottom" .}}

@@ -1,0 +1,49 @@
+{{template "top" .}}
+{{/* 发绘马（NewEmaScreen.kt:230-360）：
+   顶栏「发绘马 / 提交后自动分配编号」+ 右侧「提交」小号朱色实心圆角钮（12dp、h15/v7）；
+   页内左右 16；三组 SectionLabel：标题与正文（标题输入 + 正文框 + Markdown 工具条）
+   / 标签（四枚可多选胶囊 + 用法说明）/ 提交说明（「提交后将自动分配编号，如 #9」）。 */}}
+{{/* data-ema-id 只在编辑时有值：新建时渲染成 "0" 会被 JS 当成真值，
+     走去 PATCH /api/emas/0（发绘马整个不可用，2026-11-16 实测发现）。 */}}
+<form method="post" action="" id="f-ema"{{if .ID}} data-ema-id="{{.ID}}"{{end}} data-tags="{{range .Tags}}{{.}},{{end}}">
+  {{/* 一组 = SectionLabel + SectionCard(h17/v16)，卡内「标题」表标签 → 8dp → 输入框
+       → 18dp → 「正文」标签 → 9dp → 工具条 → 10dp → 正文框（NewEmaScreen.kt:277-311） */}}
+  <div class="section-label">标题与正文</div>
+  <div class="ema-group">
+  <p class="field-label">标题</p>
+  <div class="well">
+    <input class="field" name="title" required maxlength="60" value="{{.FormTitle}}" placeholder="一句话说明您的建议或问题（最多 60 字）">
+  </div>
+  <p class="field-label">正文</p>
+  {{/* Markdown 工具条（NewEmaScreen.kt:387-430）：一行横滑、7 枚「图标 + 名字」横排，
+       间距 4dp、圆角 10dp 热区、图标 15dp、名字 labelSmall */}}
+  <div class="md-toolbar inline">
+    <button type="button" data-md="bold">{{template "i-bold"}}<span>加粗</span></button>
+    <button type="button" data-md="italic">{{template "i-italic"}}<span>斜体</span></button>
+    <button type="button" data-md="heading">{{template "i-heading"}}<span>标题</span></button>
+    <button type="button" data-md="list">{{template "i-list"}}<span>列表</span></button>
+    <button type="button" data-md="code">{{template "i-code"}}<span>代码</span></button>
+    <button type="button" data-md="quote">{{template "i-quote"}}<span>引用</span></button>
+    <button type="button" data-md="link">{{template "i-link"}}<span>链接</span></button>
+  </div>
+  <div class="well md-well">
+    <textarea class="field md-field" name="body" required maxlength="16000" rows="10" placeholder="支持 Markdown：标题、加粗、列表、代码块、图片与链接…">{{.Body}}</textarea>
+  </div>
+  </div>
+
+  <div class="section-label">标签</div>
+  <div class="ema-group">
+    <div class="tag-select">
+      {{range .AllTags}}<button type="button" class="tagpill sel tt-{{.}}" data-tag="{{.}}"><i></i>{{.}}</button>{{end}}
+    </div>
+    <p class="form-hint">可用标签：enhance（改进）/ bug（问题）/ questions（提问）/ tips（提示）</p>
+  </div>
+
+  <div class="section-label">提交说明</div>
+  <p class="ema-submit-note">提交后将自动分配编号，如 #9</p>
+
+  <p class="form-error" data-role="err" style="display:none"></p>
+  {{/* 提交是顶栏动作（handler 的 Actions），这里留隐藏提交钮给回车与脚本 */}}
+  <button class="visually-hidden" type="submit" data-role="submit-btn">提交</button>
+</form>
+{{template "bottom" .}}
