@@ -6,6 +6,7 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.ui.graphics.vector.ImageVector
 import dev.arisu.shrine.core.components.ShrineIcons
 
+/** 底部导航的四个 tab。 */
 enum class ArisuTab(
     val route: String,
     val label: String,
@@ -22,10 +23,11 @@ object Routes {
     const val REGISTER = "register"
     const val FORGOT = "forgot"
 
+    /** 茶话列表，board 为板块名 */
     const val CHAT = "chat"
     const val POST_DETAIL = "post/{postId}"
     const val NEW_POST = "newPost"
-
+    /** 改帖：与撰写同一套整页面板，预填原稿 */
     const val EDIT_POST = "editPost/{postId}"
 
     const val SHRINE = "shrine"
@@ -35,7 +37,7 @@ object Routes {
 
     fun editEma(id: Int) = "editEma/$id"
     const val NOTICE_DETAIL = "noticeDetail?noticeId={noticeId}"
-
+    /** 举报队列；带 focus 时说明是从某条举报通知进来的，队列里找不到即表示已被他人处理 */
     const val REPORTS = "reports?focus={focus}"
 
     fun reports(focusId: String? = null) = if (focusId.isNullOrEmpty()) "reports?focus=" else "reports?focus=$focusId"

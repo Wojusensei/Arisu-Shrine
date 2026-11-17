@@ -73,21 +73,34 @@ import dev.arisu.shrine.data.model.displayAvatarSeed
 import java.util.regex.Pattern
 import java.util.regex.PatternSyntaxException
 
+/* ══════════════════════════════════════════════════════════════════
+ * 搜索
+ *
+ * 支持两种模式：
+ * - 普通模式：标题 / 昵称 / 编号做包含匹配
+ * - 正则模式：把输入当正则解析，只匹配帖子标题（非法正则给出红色提示）
+ *
+ * 无论哪种模式，如果输入正好等于某个编号（arisu_000001 / User_000001，
+ * 大小写不敏感），命中的对象会被提到结果最前面并打上「编号精确匹配」标签。
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 一次搜索的命中结果。 */
 private data class SearchOutcome(
     val posts: List<Post> = emptyList(),
     val users: List<User> = emptyList(),
-
+    /** 命中的帖子编号，用于「编号精确匹配」标签 */
     val exactPostId: String? = null,
-
+    /** 命中的社员编号，用于「编号精确匹配」标签 */
     val exactUserId: String? = null,
-
+    /** 正则模式下解析失败时的提示 */
     val regexError: Boolean = false,
-
+    /** 其他失败（网络/服务器）的提示 */
     val error: String? = null,
-
+    /** 是否已经执行过一次搜索（用于决定是否显示空状态） */
     val done: Boolean = false,
 )
 
+/** 判断输入是否为正则；正则模式下非法表达式返回 null。 */
 private fun compileQuery(keyword: String, regex: Boolean): Pattern? {
     if (!regex) return null
     return try {
@@ -97,15 +110,22 @@ private fun compileQuery(keyword: String, regex: Boolean): Pattern? {
     }
 }
 
+/** 普通模式下的包含匹配，带大小写回退。 */
 private fun containsIgnoreCase(source: String, keyword: String): Boolean =
     source.contains(keyword, ignoreCase = true)
 
+/**
+ * 执行一次搜索（服务器端）。编号精确命中的对象已由服务器排到最前。
+ *
+ * @param keyword 用户输入，调用前请先 trim
+ * @param regex   是否启用正则
+ */
 private suspend fun runSearch(keyword: String, regex: Boolean): SearchOutcome {
     if (keyword.isEmpty()) return SearchOutcome()
 
     val pattern = compileQuery(keyword, regex)
     if (regex && pattern == null) {
-
+        // 正则不合法：停下来并让 UI 报错，不要再退化成包含匹配
         return SearchOutcome(regexError = true, done = true)
     }
 
@@ -122,6 +142,9 @@ private suspend fun runSearch(keyword: String, regex: Boolean): SearchOutcome {
     )
 }
 
+/**
+ * 搜索页：顶部返回 + 圆角搜索框 + 朱色「搜索」，下面依次是历史记录与结果。
+ */
 @Composable
 fun SearchScreen(
     onBack: () -> Unit,
@@ -131,12 +154,13 @@ fun SearchScreen(
 ) {
     var query by rememberSaveable { mutableStateOf("") }
     var regexMode by rememberSaveable { mutableStateOf(false) }
-
+    // 历史记录存本地，从空白开始
     var history by remember { mutableStateOf(SearchHistoryStore.items) }
     var result by remember { mutableStateOf(SearchOutcome()) }
     var searching by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
+    /** 点「搜索」/ 回车时调用：把关键词记进历史并跑一次搜索。 */
     fun submit() {
         val keyword = query.trim()
         if (keyword.isEmpty() || searching) return
@@ -148,7 +172,7 @@ fun SearchScreen(
                 runSearch(keyword, regexMode)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-
+                // 只有正则编译失败才是“表达式不合法”，网络/服务器问题如实提示
                 if (e is dev.arisu.shrine.data.remote.ApiError &&
                     e.message?.contains("正则") == true) {
                     SearchOutcome(regexError = true, done = true)
@@ -165,7 +189,7 @@ fun SearchScreen(
     Column(modifier.fillMaxSize().imePadding()) {
         SearchHeader(
             query = query,
-
+            // 服务端关键词上限 100 字
             onQueryChange = { if (it.length <= 100) query = it },
             regexMode = regexMode,
             onToggleRegex = { regexMode = !regexMode },
@@ -174,7 +198,7 @@ fun SearchScreen(
         )
 
         if (result.regexError || result.error != null) {
-
+            // 网络错误那行文案承诺「点击重试」，行本身就得可点
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -201,11 +225,11 @@ fun SearchScreen(
         if (searching) {
             dev.arisu.shrine.core.components.ShrineLoadingState(note = "少女祈祷中")
         } else if (!result.done) {
-
+            // 还没搜过：历史记录 + 一句能力说明
             HistorySection(
                 history = history,
                 onPick = { picked ->
-
+                    // 复用 submit()：同一条搜索通道（写历史、防抖、错误分类），不再分叉
                     query = picked
                     submit()
                 },
@@ -247,7 +271,7 @@ fun SearchScreen(
                             result.users.forEachIndexed { index, user ->
                                 UserResultRow(
                                     user = user,
-
+                                    // 兜底分支存的是全大写 USER_，实际 id 是 User_——按忽略大小写比
                                     exact = result.exactUserId?.let { user.id.equals(it, ignoreCase = true) } == true,
                                     onClick = { onOpenUser(user.id) },
                                 )
@@ -272,6 +296,10 @@ fun SearchScreen(
     )
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+ * 顶部搜索条
+ * ══════════════════════════════════════════════════════════════════ */
 
 @Composable
 private fun SearchHeader(
@@ -320,6 +348,7 @@ private fun SearchHeader(
     }
 }
 
+/** 「正则」开关：开启后按正则解析输入；两种状态都是小胶囊，未开启时为中性凹槽。 */
 @Composable
 private fun RegexToggle(on: Boolean, onToggle: () -> Unit) {
     Box(
@@ -344,6 +373,10 @@ private fun RegexToggle(on: Boolean, onToggle: () -> Unit) {
         )
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+ * 历史记录与提示
+ * ══════════════════════════════════════════════════════════════════ */
 
 @Composable
 private fun HistorySection(
@@ -430,6 +463,11 @@ private fun HintLine() {
     )
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 结果行
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 「编号精确匹配」标签。 */
 @Composable
 private fun ExactMatchBadge(modifier: Modifier = Modifier) {
     SoftPill(
@@ -440,6 +478,7 @@ private fun ExactMatchBadge(modifier: Modifier = Modifier) {
     )
 }
 
+/** 用户结果行：头像 / 昵称 / 身份 / 社员编号。 */
 @Composable
 private fun UserResultRow(
     user: User,
@@ -493,6 +532,7 @@ private fun UserResultRow(
     }
 }
 
+/** 搜索历史：进程级保留，退出搜索页不丢（与服务端无关的客户端偏好）。 */
 object SearchHistoryStore {
     var items: List<String> = emptyList()
 }

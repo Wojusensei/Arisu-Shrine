@@ -59,6 +59,11 @@ import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
 import kotlinx.coroutines.launch
 
+/**
+ * 切换账号（本地账号库管理，QQ 式）：列出本机保存的账号档案。
+ * 点非当前账号免密切换（当前会话写回档案、不登出服务器，随时可切回）；
+ * 「移除」删本地档案并尽力吊销服务器会话；「添加账号」保留当前会话进登录页。
+ */
 @Composable
 fun AccountManageScreen(onBack: () -> Unit, onSwitched: () -> Unit, modifier: Modifier = Modifier) {
     val accounts by Shrine.vaultAccounts.collectAsStateWithLifecycle()
@@ -108,7 +113,8 @@ fun AccountManageScreen(onBack: () -> Unit, onSwitched: () -> Unit, modifier: Mo
                                     val ok = Shrine.switchAccount(account)
                                     switching = null
                                     if (ok) {
-
+                                        // 已登录状态下切换不会触发导航图重建（LoggedIn→LoggedIn），
+                                        // 数据虽已切走、界面还停在本屏——主动弹回主 tab
                                         onSwitched()
                                     } else {
                                         notice = "该账号需要重新登录，请用密码登录后再试"
@@ -200,6 +206,10 @@ fun AccountManageScreen(onBack: () -> Unit, onSwitched: () -> Unit, modifier: Mo
     }
 }
 
+/**
+ * 登录设备：列出当前账号名下所有有效会话（每台设备一行），
+ * 可把任意其他设备下线；被下线的设备下一次请求就会退回登录页。
+ */
 @Composable
 fun SessionsScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     var items by remember { mutableStateOf<List<SessionDto>?>(null) }

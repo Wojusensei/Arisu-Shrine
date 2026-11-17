@@ -57,6 +57,14 @@ import dev.arisu.shrine.data.remote.ResolveReq
 import dev.arisu.shrine.data.remote.toApiMessage
 import kotlinx.coroutines.launch
 
+/**
+ * 举报处理（奉仕+）：每条举报可见举报人、被举报对象、理由与时间。
+ * 「前往查看」直达帖子/绘马；处理 / 驳回 的结果通过社务箱通知举报人。
+ *
+ * [focusReportId] 非空表示从某条举报通知点进来：队列里没有它，说明这条已被
+ * 别的管理人员处理（多个管理人员会同时收到同一条举报），此时明确回一句
+ * 「没有待处理的举报」，而不是让条目留在列表里被二次处置。
+ */
 @Composable
 fun ReportsScreen(
     focusReportId: String,
@@ -74,17 +82,18 @@ fun ReportsScreen(
     var bar by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    // 队列分页：服务端此前只回最新 50 条且无翻页参数，超出的待处理举报永远不可见
     var total by remember { mutableStateOf(0L) }
     var page by remember { mutableStateOf(1) }
     var endReached by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
-
+    // 翻页失败给「点击重试」页脚：哨兵是 LaunchedEffect(size)，失败后 size 不变不会自动再触发
     var loadMoreFailed by remember { mutableStateOf(false) }
-
+    // 请求序号：load（刷新）会重置 page，序号递增后，在途的旧 loadMore 响应作废
     var loadSeq by remember { mutableStateOf(0) }
-
+    // 首载失败与「没有待处理」分开：失败给重试入口，不把断网伪装成空队列
     var failed by remember { mutableStateOf(false) }
-
+    // focus 提示只报一次：后续下拉刷新不再重复弹
     var focusChecked by remember { mutableStateOf(false) }
 
     fun load() {
@@ -107,7 +116,7 @@ fun ReportsScreen(
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 if (seq != loadSeq) return@launch
-
+                // 已有内容时保留旧列表，只有首载无数据才进入失败态
                 if (reports == null) failed = true
             }
         }
@@ -122,7 +131,7 @@ fun ReportsScreen(
         scope.launch {
             try {
                 val res = Api.service.reports("pending", snapPage + 1, REPORTS_PAGE_SIZE)
-
+                // 刷新（seq 变了）或 page 被重置后，旧的第 N+1 页不得再落地
                 if (seq != loadSeq || page != snapPage) return@launch
                 page += 1
                 total = res.total
@@ -138,6 +147,10 @@ fun ReportsScreen(
     }
     LaunchedEffect(Unit) { load() }
 
+    /**
+     * 重取第一页并落地，返回 id 是否仍在待处理队列里（null = 重取本身也失败）。
+     * 处置撞车（举报已被他人处理）时用它区分「队列真的没了这条」与「网络/权限坏了」。
+     */
     suspend fun refreshQueueContaining(id: Long): Boolean? = try {
         val res = Api.service.reports("pending", 1, REPORTS_PAGE_SIZE)
         loadSeq++
@@ -221,7 +234,8 @@ fun ReportsScreen(
                                         .clickable { onOpenUser(r.reporter.no) },
                                 )
                                 Spacer(Modifier.width(6.dp))
-
+                                // 身份徽标随举报人展示：临时奉仕与社员、奉仕与宫司
+                                // 在管理层眼里从此有区别（用户实测反馈）
                                 RoleTag(role = roleFromWire(r.reporter.role))
                             }
                             Text(
@@ -319,7 +333,7 @@ fun ReportsScreen(
                         value = comment,
                         onValueChange = { if (it.length <= 100) comment = it },
                         placeholder = "附言（选填）",
-
+                        // 回车即换行
                         singleLine = false,
                         minLines = 2,
                         maxLines = 4,
@@ -339,7 +353,8 @@ fun ReportsScreen(
                                 load()
                             } catch (e: Exception) {
                                 if (e is kotlinx.coroutines.CancellationException) throw e
-
+                                // 大概率是别的管理人员抢先处理了：等重取一次待处理队列再定调，
+                                // 该条已不在队列 = 回「没有待处理的举报」；仍在 = 真·失败，透出原始报错
                                 bar = if (refreshQueueContaining(r.id) == false) {
                                     "没有待处理的举报"
                                 } else {
@@ -356,4 +371,5 @@ fun ReportsScreen(
     }
 }
 
+/** 举报队列每页条数 */
 private const val REPORTS_PAGE_SIZE = 20

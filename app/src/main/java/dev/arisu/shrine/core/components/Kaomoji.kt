@@ -21,6 +21,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/**
+ * 颜文字快捷面板：与表情同一套「点选即插入」交互。
+ * 只收录字符组成的颜文字，不放 emoji；长条一律单行省略。
+ */
 private val KaomojiItems = listOf(
     "（´・ω・`）",
     "(・ω・)",

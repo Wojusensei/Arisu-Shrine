@@ -4,6 +4,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * GitHub 式 README 的 HTML 写法必须能渲染：
+ * 注释隐藏、<br> 成换行、<img>/<picture> 成图片、<table> 成表格、
+ * <details> 成折叠引用、格式标签对齐 Markdown 标记。
+ */
 class MarkdownHtmlTest {
 
     @Test
@@ -24,7 +29,7 @@ class MarkdownHtmlTest {
                 "<img src=\"https://a/main.png\" alt=\"图\">" +
                 "</picture>",
         )
-
+        // 图片就地内联：包在 <a> 里才能嵌成 [![](图)](地址) 徽章链接
         assertEquals("![图](https://a/main.png)", out)
     }
 
@@ -84,7 +89,7 @@ class MarkdownHtmlTest {
 
     @Test
     fun `entities decode in pure markdown without html`() {
-
+        // GitHub 徽章墙用 &nbsp; 做间隔，纯 Markdown 输入也要解码
         assertEquals("a b", normalizeHtml("a&nbsp;b"))
     }
 
@@ -119,5 +124,32 @@ class MarkdownHtmlTest {
         val blocks = parseMarkdown("# 站名\n\n正文", profileMode = true)
         assertTrue(blocks.filterIsInstance<MdBlock.Heading>().all { !it.centered })
         assertTrue(blocks.filterIsInstance<MdBlock.Paragraph>().all { !it.centered })
+    }
+
+    @Test
+    fun `mixed image and text inside center container keep centered`() {
+        // 图与文字同一段（无空行）走段落分支：此前该分支漏传 centered，图靠左文字居中
+        val blocks = parseMarkdown(
+            "<div align=\"center\">\n文字 ![logo](https://a/logo.png)\n</div>",
+            profileMode = true,
+        )
+        assertTrue(blocks.filterIsInstance<MdBlock.Image>().all { it.centered })
+        assertTrue(blocks.filterIsInstance<MdBlock.Paragraph>().all { it.centered })
+    }
+
+    @Test
+    fun `escaped pipe inside cell stays one column`() {
+        val blocks = parseMarkdown("| A | B |\n| --- | --- |\n| 1 \\| 2 | c |")
+        val table = blocks.filterIsInstance<MdBlock.Table>().single()
+        assertEquals(listOf("A", "B"), table.header)
+        assertEquals(listOf(listOf("1 | 2", "c")), table.rows)
+    }
+
+    @Test
+    fun `table rows align to header column count`() {
+        val blocks = parseMarkdown("| A | B | C |\n| --- | --- | --- |\n| 1 | 2 |")
+        val table = blocks.filterIsInstance<MdBlock.Table>().single()
+        assertEquals(3, table.header.size)
+        assertEquals(listOf("1", "2", ""), table.rows.single())
     }
 }

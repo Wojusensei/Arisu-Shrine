@@ -28,6 +28,9 @@ import androidx.compose.ui.unit.dp
 import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.design.NeuLight
 
+/**
+ * 子板块切换标签，选中项下方是一条短下划线。
+ */
 @Composable
 fun <T> UnderlineTabs(
     items: List<T>,
@@ -36,7 +39,7 @@ fun <T> UnderlineTabs(
     label: (T) -> String,
     modifier: Modifier = Modifier,
     evenWeight: Boolean = true,
-
+    /** 一格里字长的场景（绘马的 enhance/questions）：缩一档字号并压紧左右留白，保证一行放得下 */
     compact: Boolean = false,
 ) {
     Column(modifier.fillMaxWidth()) {
@@ -85,6 +88,7 @@ fun <T> UnderlineTabs(
     }
 }
 
+/** 排序栏：最新 / 最热 / 精华，等宽分布，选中项短下划线（与板块 tab 同语言）。 */
 @Composable
 fun <T> SortBar(
     items: List<T>,
@@ -136,6 +140,11 @@ fun <T> SortBar(
     }
 }
 
+/**
+ * 分段控件式的分类切换。
+ *
+ * 新拟物里这是最经典的一个件：一条**压进去**的轨道 + 一枚**凸出来**的滑块。
+ */
 @Composable
 fun <T> PillTabs(
     items: List<T>,
@@ -154,7 +163,7 @@ fun <T> PillTabs(
             .neuInset(shape = RoundedCornerShape(16.dp), color = NeuInset, highlight = true)
             .padding(4.dp)
             .then(if (!evenWeight && scrollable) Modifier.horizontalScroll(rememberScrollState()) else Modifier),
-
+        // 边距收窄：等宽分布是硬法则，六格标签在 360dp 屏上也要放得下完整字样
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -187,3 +196,5 @@ fun <T> PillTabs(
         }
     }
 }
+
+/** 保留给旧调用点。 */

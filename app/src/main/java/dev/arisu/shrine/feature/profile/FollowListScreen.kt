@@ -45,6 +45,13 @@ import dev.arisu.shrine.data.model.User
 import dev.arisu.shrine.data.model.avatarUrl
 import dev.arisu.shrine.nav.FOLLOW_MODE_FOLLOWING
 
+/**
+ * 关注 / 粉丝列表。
+ *
+ * [mode] 为 "following" 时是「关注」，为 "followers" 时是「粉丝」。
+ * 整个列表装在一张白卡里，行与行之间用内缩发丝线分隔；
+ * 每行右侧是小胶囊关注按钮，自己的那一行留空。
+ */
 @Composable
 fun FollowListScreen(
     mode: String,
@@ -57,22 +64,23 @@ fun FollowListScreen(
     val me by Shrine.me.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
 
+    // 首帧先摆上次那份（进关注/粉丝列表不再先空一下），网络回来再覆盖
     val cachedUsers = remember(isFollowing) {
         if (isFollowing) Shrine.peekFollowing() else Shrine.peekFollowers()
     }
     var users by remember { mutableStateOf(cachedUsers.orEmpty()) }
     var loading by remember { mutableStateOf(cachedUsers == null) }
-
+    // 首载失败与「真的没有」分开：断网不能伪装成没有关注/没有粉丝
     var failed by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableStateOf(0) }
     val followState = remember { mutableStateMapOf<String, Boolean>() }
-
+    // 缓存直出时行内关注态也得先有值：粉丝列表里我能看到的关注关系同样来自这份数据
     LaunchedEffect(cachedUsers) {
         cachedUsers?.forEach { followState[it.id] = if (isFollowing) true else it.following }
     }
 
     LaunchedEffect(isFollowing, reloadKey) {
-
+        // 已经有内容就静默刷新，不整块换成加载态
         loading = users.isEmpty()
         try {
             val list = if (isFollowing) Shrine.followingUsers() else Shrine.followerUsers()
@@ -81,12 +89,13 @@ fun FollowListScreen(
             list.forEach { followState[it.id] = if (isFollowing) true else it.following }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-
+            // 已有内容时保留旧列表，只有首载无数据才进入失败态
             if (users.isEmpty()) failed = true
         }
         loading = false
     }
 
+    // 行内关注按钮的在途锁：连点发多次 toggle（偶数次=没点上）
     var busyIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var bar by remember { mutableStateOf<String?>(null) }
 
@@ -213,6 +222,7 @@ private fun FollowRow(
     }
 }
 
+/** 小胶囊关注按钮：关注为朱色凸起面 + 白字，已关注为中性凹槽 + 弱化文字，点击取消。 */
 @Composable
 private fun FollowActionButton(following: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     val shape = RoundedCornerShape(999.dp)

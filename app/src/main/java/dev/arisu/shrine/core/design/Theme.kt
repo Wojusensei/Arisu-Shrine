@@ -10,6 +10,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+/* 暗色方案与 docs/design-lab/dark-mode-preview.html 的 H·深空（GitHub 风）
+ * 一致，页面底再压深一档；文字组合全部 AA 以上（明细见预览稿色板表）。
+ * 两个 scheme 做成函数而不是顶层 val：顶层 val 首次访问时初始化、
+ * 会把当时的 token 值固化进 scheme，靠调用时序才碰巧正确——函数每次
+ * 组合重建，与主题状态解耦。构造开销可忽略（仅在根节点切换时发生）。 */
 private fun lightColors() = lightColorScheme(
     primary = Vermilion,
     onPrimary = Color.White,
@@ -80,6 +85,15 @@ private fun darkColors() = darkColorScheme(
     scrim = Color(0x66000000),
 )
 
+/**
+ * 应用主题。深浅由 [ArisuTheme.isDark] 决定——MainActivity 在
+ * attachBaseContext 里读本机偏好注入 uiMode（默认亮色），启动窗口与
+ * windowBackground 同步解析，冷启动首帧即正确；设置页开关拨动后
+ * 走 ArisuTheme.setNightPref 即时切换，无需重建 Activity。
+ *
+ * 早先锁死亮色的原因（新拟物色板只有亮色一套）已随 Color.kt 的
+ * 主题化消除；页面若有漏网的硬编码色，逐处改回 token 即可。
+ */
 @Composable
 fun ArisuShrineTheme(
     content: @Composable () -> Unit,

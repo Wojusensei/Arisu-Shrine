@@ -28,6 +28,11 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
+
+/**
+ * 组件画廊：用测试内构造的模型渲染共享组件。
+ * 数据只存在于测试代码里，不进 APK。
+ */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")

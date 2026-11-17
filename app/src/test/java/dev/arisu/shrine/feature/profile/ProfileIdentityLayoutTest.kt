@@ -22,6 +22,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
+/**
+ * 封面身份区布局断言：
+ * 昵称独占一行、在其容器里水平居中；职务标签排在个人状态之后、同一行。
+ * 一律相对自身容器比较，不依赖屏幕尺寸与密度。
+ */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class ProfileIdentityLayoutTest {

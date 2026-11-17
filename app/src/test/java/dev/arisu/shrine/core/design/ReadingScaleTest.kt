@@ -10,7 +10,7 @@ class ReadingScaleTest {
 
     @After
     fun resetScale() {
-
+        // 全局状态：不还原会把后面截图测试的字号一起带大
         ReadingScale.apply(1f)
     }
 

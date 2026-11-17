@@ -7,6 +7,10 @@ import dev.arisu.shrine.core.design.Vermilion
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+/**
+ * 身份色全站统一一套（头像环、身份徽标共用 Role.accent）：
+ * 神主金、宫司朱红、奉仕与临时奉仕同蓝、社员灰。
+ */
 class RoleAccentTest {
 
     @Test

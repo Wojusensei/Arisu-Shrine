@@ -25,6 +25,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
+/**
+ * 主页帖子折叠分页的行为断言：默认三条、展开后每页五条、翻页与收起。
+ */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class CollapsiblePostListTest {
@@ -49,7 +52,8 @@ class CollapsiblePostListTest {
         rule.setContent {
             ArisuShrineTheme {
                 Surface(color = MaterialTheme.colorScheme.background) {
-
+                    // 帖子卡统一高度后，展开的列表高过测试窗口——
+                    // 与真实页面一致套 verticalScroll，点击前先滚动到控件
                     Column(
                         Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                     ) {
@@ -68,10 +72,11 @@ class CollapsiblePostListTest {
         assertEquals(3, rule.onAllNodesWithText("标题", substring = true).fetchSemanticsNodes().size)
         rule.onNodeWithText("展开查看更多（共 13 篇）").assertExists().performClick()
         rule.waitForIdle()
-
+        // 展开后第一页 5 条
         assertEquals(5, rule.onAllNodesWithText("标题", substring = true).fetchSemanticsNodes().size)
         rule.onNodeWithText("第 1 / 3 页").assertExists()
 
+        // 卡片加高后页脚滑出窗口，点击会落空：先滚到位再点（T63 同款处理）
         rule.onNodeWithText("下一页").performScrollTo()
         rule.waitForIdle()
         rule.onNodeWithText("下一页").performClick()

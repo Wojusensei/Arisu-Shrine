@@ -33,6 +33,15 @@ class MarkdownPlainTest {
     }
 
     @Test
+    fun unclosedCodeFenceIsDroppedToo() {
+        // 漏打收尾 ```：摘要至少不该带出围栏记号本身（正文与闭合围栏口径一致，保留代码文字）
+        assertEquals(
+            "前文\nprint(1)\n后文",
+            markdownPlainText("前文\n```python\nprint(1)\n后文"),
+        )
+    }
+
+    @Test
     fun dropsHtmlTags() {
         assertEquals("正文", markdownPlainText("<b>正文</b>"))
     }

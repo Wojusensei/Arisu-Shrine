@@ -76,6 +76,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import dev.arisu.shrine.data.model.EmaTag
 
+/** Markdown 工具栏按钮：动作交给 core/markdown 的纯函数，发帖与发绘马共用一套语义。 */
 private data class MdTool(
     val icon: ImageVector,
     val label: String,
@@ -92,6 +93,12 @@ private val MdTools = listOf(
     MdTool(Icons.Rounded.Link, "链接", MdAction.Link),
 )
 
+/**
+ * 发绘马。
+ *
+ * 标题栏：返回 + 发绘马 + 提交
+ * 表单：标题 / 正文（带 Markdown 工具栏）/ 标签多选
+ */
 @Composable
 fun NewEmaScreen(
     onBack: () -> Unit,
@@ -99,15 +106,15 @@ fun NewEmaScreen(
     modifier: Modifier = Modifier,
     editEma: dev.arisu.shrine.data.model.Ema? = null,
 ) {
-
+    // 草稿驻留（editEma 作键：编辑模式等资料到位后再预填）
     var title by rememberSaveable(editEma) { mutableStateOf(editEma?.title ?: "") }
-
+    // 正文带光标选区：Markdown 工具条要插到光标处，还得能把选中内容包进记号里
     var body by rememberSaveable(editEma, stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(editEma?.body ?: ""))
     }
     val tags = remember(editEma) { mutableStateListOf<EmaTag>().apply { editEma?.tags?.let { addAll(it) } } }
     var draftLoaded by rememberSaveable(editEma) { mutableStateOf(editEma != null) }
-
+    // 检测到的草稿先不落进表单：由用户决定继续写还是从头开始
     var draftPrompt by remember { mutableStateOf<Draft?>(null) }
     var submitting by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -115,6 +122,7 @@ fun NewEmaScreen(
     val bodyField = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
 
+    /** 认下这份草稿：表单回填，随后自动保存接着跑 */
     fun keepDraft(saved: Draft) {
         title = saved.title
         body = TextFieldValue(saved.body, TextRange(saved.body.length))
@@ -124,6 +132,7 @@ fun NewEmaScreen(
         draftPrompt = null
     }
 
+    /** 重新开始：本地那份删掉，空表单之后若落笔会重新存一份 */
     fun dropDraft() {
         Shrine.me.value?.id?.let { DraftStore.deleteAsync(it, DraftStore.EMA, "new") }
         draftLoaded = true
@@ -135,9 +144,9 @@ fun NewEmaScreen(
         val uid = Shrine.me.value?.id
         if (uid != null && title.isBlank() && body.text.isBlank() && tags.isEmpty()) {
             val saved = DraftStore.get(uid, DraftStore.EMA, "new")
-
+            // 读盘这几毫秒里用户可能已经落笔：那就别再用旧稿盖掉
             if (saved != null && title.isBlank() && body.text.isBlank() && tags.isEmpty()) {
-
+                // 选之前不放行自动保存，免得空表单先把本地那份删掉
                 draftPrompt = saved
                 return@LaunchedEffect
             }
@@ -167,6 +176,7 @@ fun NewEmaScreen(
 
     val canSubmit = title.isNotBlank() && body.text.isNotBlank() && !submitting
 
+    // 退出前的未保存提醒：编辑模式按改动算，新绘马按有没有落笔算
     val hasDraft = if (editEma != null) {
         title != editEma.title || body.text != editEma.body || tags.toList() != editEma.tags
     } else {
@@ -176,7 +186,7 @@ fun NewEmaScreen(
     androidx.activity.compose.BackHandler(enabled = hasDraft && !submitting) { confirmDiscard = true }
 
     fun applyAction(action: MdAction) {
-
+        // 行内再点取消、列表/引用整行、代码单行/多行分流，与发帖同一套纯函数
         body = applyMarkdownAction(body, action)
         runCatching { bodyField.requestFocus() }
         keyboard?.show()
@@ -184,7 +194,7 @@ fun NewEmaScreen(
 
     draftPrompt?.let { saved ->
         androidx.compose.material3.AlertDialog(
-
+            // 点外面/返回键按「继续编辑」处理：草稿不能因为误触丢
             onDismissRequest = { keepDraft(saved) },
             title = { Text("继续编辑草稿？") },
             text = { Text("上次的草稿还没有发布。") },
@@ -295,7 +305,7 @@ fun NewEmaScreen(
                     Spacer(Modifier.height(10.dp))
                     BodyField(
                         value = body,
-
+                        // 服务端绘马正文上限 16000 字：超长粘贴在输入侧截住
                         onValueChange = { if (it.text.length <= 16000) body = it },
                         placeholder = "支持 Markdown：标题、加粗、列表、代码块、图片与链接…",
                         fieldModifier = Modifier.focusRequester(bodyField),
@@ -347,6 +357,7 @@ fun NewEmaScreen(
     }
 }
 
+/** 标题栏右侧的「提交」：小号朱色实心圆角按钮。 */
 @Composable
 private fun SubmitAction(enabled: Boolean, onClick: () -> Unit) {
     Box(
@@ -371,6 +382,7 @@ private fun SubmitAction(enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
+/** Markdown 工具栏：点击把标记插入正文。整条放在一张卡片里。 */
 @Composable
 private fun MarkdownToolbar(onAction: (MdAction) -> Unit) {
     Box(
@@ -424,6 +436,7 @@ private fun MarkdownToolbar(onAction: (MdAction) -> Unit) {
     }
 }
 
+/** 多行 Markdown 正文输入框（带光标选区，工具栏要插到光标处）。 */
 @Composable
 private fun BodyField(
     value: TextFieldValue,

@@ -29,6 +29,10 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
+/**
+ * 拉黑功能的界面探针：拉黑名单页、设置入口、确认框。
+ * 只用于出图核对，不含业务断言。
+ */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")

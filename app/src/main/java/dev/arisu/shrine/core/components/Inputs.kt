@@ -43,6 +43,11 @@ import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.design.NeuLight
 import dev.arisu.shrine.core.design.NeuShadow
 
+/* ══════════════════════════════════════════════════════════════════
+ * 卡片
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 统一的凸起卡面。 */
 @Composable
 fun ArisuCard(
     modifier: Modifier = Modifier,
@@ -66,15 +71,17 @@ fun ArisuCard(
     }
 }
 
+/** 分组卡片：一组内容装在一张卡里，行与行之间用内缩分割线。 */
 @Composable
 fun SectionCard(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-
+    // 分组容器拍平：行直接铺在页面上，行间已有细线，不再包凸起卡
     Column(modifier.fillMaxWidth(), content = content)
 }
 
+/** 分组标题。 */
 @Composable
 fun SectionLabel(
     text: String,
@@ -110,6 +117,10 @@ fun SectionLabel(
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 输入 —— 新拟物里输入框是「压进去」的凹槽
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Composable
 fun ArisuTextField(
     value: String,
@@ -126,7 +137,7 @@ fun ArisuTextField(
     visualTransformation: VisualTransformation = VisualTransformation.None,
     enabled: Boolean = true,
     containerColor: Color = NeuInset,
-
+    /** 挂在输入框本体上（抢焦点用）；与带选区版本的 fieldModifier 同一语义 */
     fieldModifier: Modifier = Modifier,
 ) {
     ArisuFieldShell(
@@ -157,6 +168,11 @@ fun ArisuTextField(
     }
 }
 
+/**
+ * 带光标选区的版本：Markdown 工具条要把记号插到光标处、
+ * 并把选中内容包进记号里，光有 String 看不见 selection。
+ * [fieldModifier] 挂在输入框本体上（抢焦点用，挂在外框上找不到焦点目标）。
+ */
 @Composable
 fun ArisuTextField(
     value: TextFieldValue,
@@ -203,6 +219,7 @@ fun ArisuTextField(
     }
 }
 
+/** 两种入参共用的凹槽外壳，形状与留白只写一份。 */
 @Composable
 private fun ArisuFieldShell(
     isEmpty: Boolean,
@@ -248,6 +265,7 @@ private fun ArisuFieldShell(
     }
 }
 
+/** 带标签的表单项。 */
 @Composable
 fun FieldRow(
     label: String,
@@ -288,6 +306,10 @@ fun FieldRow(
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 按钮
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Composable
 fun ArisuPrimaryButton(
     text: String,
@@ -295,7 +317,7 @@ fun ArisuPrimaryButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     icon: ImageVector? = null,
-
+    /** 请求在途：阴阳玉转起来，等待期间界面不是「死」的 */
     busy: Boolean = false,
 ) {
     Row(
@@ -311,7 +333,9 @@ fun ArisuPrimaryButton(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (busy) {
-
+            // 朱底上这颗玉两瓣必须真正分得开：白墨 + 半透明黑（随按钮本色压暗），
+            // 18dp 下也读得出是太极球。此前的「白 + 白32%」两瓣都是浅色，
+            // 小尺寸糊成一坨，用户两次点名说看着不像太极球
             val ink = if (enabled) Color.White else MaterialTheme.colorScheme.primary
             YinYangOrb(
                 size = 18.dp,
@@ -338,6 +362,7 @@ fun ArisuPrimaryButton(
     }
 }
 
+/** 次要按钮：也是一枚凸起面，只是不着色。 */
 @Composable
 fun ArisuGhostButton(
     text: String,
@@ -377,6 +402,10 @@ fun ArisuGhostButton(
         }
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+ * 设置行
+ * ══════════════════════════════════════════════════════════════════ */
 
 private val RowHPad = 18.dp
 private val RowVPad = 14.dp
@@ -440,6 +469,7 @@ fun SettingSwitchRow(
     }
 }
 
+/** 可点击的导航行。 */
 @Composable
 fun SettingNavRow(
     title: String,
@@ -504,6 +534,7 @@ fun SettingNavRow(
     }
 }
 
+/** 统计数字 + 说明。新拟物里做成一枚小凹槽。 */
 @Composable
 fun StatColumn(
     value: String,
@@ -532,7 +563,7 @@ fun StatColumn(
             ),
         )
         Spacer(Modifier.height(2.dp))
-
+        // 标签与数值同规矩：等分格内不折行，放不下就缩字号（四格数据栏的「总在线小时数」曾折行）
         androidx.compose.foundation.text.BasicText(
             text = label,
             style = MaterialTheme.typography.labelSmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant),
@@ -545,6 +576,7 @@ fun StatColumn(
     }
 }
 
+/** 兼容旧调用点。 */
 @Composable
 fun ListGap(height: Dp = 10.dp) {
     Spacer(Modifier.height(height))

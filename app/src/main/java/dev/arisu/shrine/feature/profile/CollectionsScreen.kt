@@ -62,13 +62,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
 import dev.arisu.shrine.data.model.Collection
 
+/**
+ * 收藏夹管理。
+ *
+ * 每个收藏夹显示 2×2 封面、名称与内容数量；点击展开后可以看到
+ * 该收藏夹下的帖子（展开时从服务器拉取该夹最近几条），点标题进帖子详情。
+ */
 @Composable
 fun CollectionsScreen(
     onBack: () -> Unit,
     onOpenPost: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-
+    // 首帧先摆上次那份（进收藏夹不再先空一下），网络回来再覆盖
     val cachedCollections = remember { Shrine.peekCollections() }
     var collections by remember { mutableStateOf(cachedCollections.orEmpty()) }
     var loading by remember { mutableStateOf(cachedCollections == null) }
@@ -76,19 +82,20 @@ fun CollectionsScreen(
     var showCreate by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
-
+    // 删除收藏夹：非默认夹显示入口，夹内帖子由服务端移回默认收藏夹
     var pendingDelete by remember { mutableStateOf<Collection?>(null) }
     var createError by remember { mutableStateOf<String?>(null) }
-
+    // 展开的收藏夹跨页面驻留：进帖子再返回不收起
     var expandedId by rememberSaveable { mutableStateOf<String?>(null) }
-
+    // 展开内容带上夹子 id：切夹子的瞬间不再短暂显示上一个夹子的帖子
     var expandedFor by remember { mutableStateOf<String?>(null) }
     var expandedPosts by remember { mutableStateOf<List<Post>>(emptyList()) }
     var expandedFailed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
+    // 首载失败不再伪装成「还没有收藏夹」，reloadKey 有了真实的重试职责
     var failed by remember { mutableStateOf(false) }
-
+    // 首载与下拉刷新共用；刷新失败保留旧列表，loading 只在首载为 true
     val load: suspend () -> Unit = {
         try {
             collections = Shrine.collections()
@@ -121,6 +128,7 @@ fun CollectionsScreen(
         }
     }
 
+    // 进程恢复把展开状态带回来时，内容要补拉一次——此前恢复后永远是「还没有内容」
     LaunchedEffect(expandedId) {
         val restored = expandedId
         if (restored != null && expandedFor != restored) loadExpandedPosts(restored)
@@ -161,7 +169,7 @@ fun CollectionsScreen(
                 LazyColumn(
                     Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 20.dp),
-
+                    // 与全站凸起卡列表一致：16dp，卡片柔影不再互相贴着
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     items(collections, key = { it.id }) { collection ->
@@ -382,6 +390,7 @@ private fun CollectionCard(
     }
 }
 
+/** 2×2 封面：一枚凹槽底，里面嵌四块用 coverSeed 生成的颜色（不再是白底方块）。 */
 @Composable
 private fun CollectionCover(seed: Int, size: Dp = 52.dp, url: String? = null) {
     val tones = listOf(
@@ -396,10 +405,10 @@ private fun CollectionCover(seed: Int, size: Dp = 52.dp, url: String? = null) {
             .neuInset(shape = RoundedCornerShape(10.dp), color = NeuInset),
         contentAlignment = Alignment.Center,
     ) {
-
+        // 有真实封面（最新帖封面/首图/作者头像）直接铺满；占位才画四宫格色块
         if (url != null) {
             coil3.compose.AsyncImage(
-
+                // 格子小，原图（常见 2048px）缩到 400 再下
                 model = dev.arisu.shrine.core.net.thumbUrl(url, 400),
                 contentDescription = null,
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,

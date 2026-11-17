@@ -65,10 +65,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** 编辑时解码的上限：够看清细节，又不至于让旋转/裁剪卡手 */
 private const val EDIT_DECODE_MAX = 2048
 
+/** 裁出图的长边上限：比上传上限略小，二次压缩不吃掉画质 */
 private const val EDIT_OUT_MAX = 1600
 
+/** 可选比例；null = 跟着原图 */
 private val EditorAspects = listOf(
     "原图" to null,
     "1:1" to 1f,
@@ -76,8 +79,17 @@ private val EditorAspects = listOf(
     "16:9" to 16f / 9f,
 )
 
+/** 封面的显示比例：帖详情里摊开的横幅就是这个形，取景就按它取 */
 const val COVER_ASPECT = 16f / 9f
 
+/**
+ * 发图前的编辑：双指缩放、拖动取景、按比例裁切、旋转 90°。
+ *
+ * 所见即所得——框里是什么，确定后就是什么（圆形头像那一套另有一页）。
+ * [lockedAspect] 非空时只按这一个比例取景、且不给换（封面用：列表条与详情横幅
+ * 都会把它裁成这个形，让上传的人自己定显示范围，而不是被系统从中间截一刀）。
+ * [onConfirm] 收到的是裁好的暂存文件路径，上传与否由调用方决定。
+ */
 @Composable
 fun ImageEditorOverlay(
     sourcePath: String,
@@ -98,6 +110,7 @@ fun ImageEditorOverlay(
     var viewportSize by remember(sourcePath) { mutableStateOf(0.dp to 0.dp) }
     val transform = remember(sourcePath) { CropTransform() }
 
+    // 解码（含 EXIF 转正）在 IO 线程：相机原图动辄几千万像素
     LaunchedEffect(sourcePath) {
         val decoded = withContext(Dispatchers.IO) {
             runCatching { decodeForEdit(File(sourcePath), EDIT_DECODE_MAX) }.getOrNull()
@@ -115,6 +128,8 @@ fun ImageEditorOverlay(
         Column(Modifier.fillMaxSize()) {
             ArisuTopBar(title = "编辑图片", onBack = onCancel)
 
+            // 取景区独占中间这块（weight 先把它框住），工具条与确定键才不会被顶出屏幕：
+            // 取景框按可用高度算尺寸时，若不给它上界，竖图会把整列撑满
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -152,6 +167,7 @@ fun ImageEditorOverlay(
                     .padding(bottom = 12.dp),
             )
 
+            // 工具条：旋转 + 比例。旋转换的是位图本身，取景随之复位
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -184,7 +200,7 @@ fun ImageEditorOverlay(
                     )
                 }
                 Spacer(Modifier.weight(1f))
-
+                // 锁死比例（封面）时不给换：显示形是定的，能换反而会白框一场
                 if (lockedAspect == null) {
                     EditorAspects.forEachIndexed { index, (label, _) ->
                         SoftPill(
@@ -235,6 +251,7 @@ fun ImageEditorOverlay(
     }
 }
 
+/** 取景框：框内是成图，框外压暗；手势在整块框上都有效 */
 @Composable
 private fun EditorViewport(
     bitmap: Bitmap,
@@ -252,14 +269,14 @@ private fun EditorViewport(
             .padding(horizontal = 24.dp),
     ) {
         val ratio = aspect ?: (bitmap.width.toFloat() / bitmap.height.toFloat())
-
+        // 先按可用宽度定，再按可用高度夹回来，横竖都框得下
         val byWidth = this.maxWidth
         val byHeight = this.maxHeight * ratio
         val width: Dp = if (byWidth <= byHeight) byWidth else byHeight
         val height: Dp = width / ratio
         val viewportPx = with(density) { width.toPx() }
         val viewportHPx = with(density) { height.toPx() }
-
+        // 盖满框的基准倍率：横竖图都不会露出空边
         val fit = coverFit(bitmap.width, bitmap.height, viewportPx, viewportHPx)
 
         LaunchedEffect(width, height) { onViewport(width, height) }
@@ -294,7 +311,7 @@ private fun EditorViewport(
                     filterQuality = FilterQuality.Medium,
                 )
             }
-
+            // 一圈细线：明白告诉用户边界在哪
             ComposeCanvas(Modifier.fillMaxSize()) {
                 drawRect(
                     color = Color.White.copy(alpha = 0.75f),
@@ -305,6 +322,10 @@ private fun EditorViewport(
     }
 }
 
+/**
+ * 按取景框把可见区域裁下来写成上传件。
+ * 长边封顶 [EDIT_OUT_MAX]；源图是 PNG 就继续用 PNG（保住透明底）。
+ */
 private fun cropEditorToFile(
     context: android.content.Context,
     bitmap: Bitmap,
@@ -317,7 +338,7 @@ private fun cropEditorToFile(
     val scale = coverFit(bitmap.width, bitmap.height, viewportW, viewportH) * zoom
     val srcW = viewportW / scale
     val srcH = viewportH / scale
-
+    // 取景框左上角对应的原图坐标；夹回图内，取整误差不吃到界外
     val left = (bitmap.width / 2f - (viewportW / 2f + offset.x) / scale)
         .coerceIn(0f, (bitmap.width - srcW).coerceAtLeast(0f))
     val top = (bitmap.height / 2f - (viewportH / 2f + offset.y) / scale)
@@ -334,7 +355,7 @@ private fun cropEditorToFile(
 
     val out = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
     Canvas(out).apply {
-
+        // 带透明通道的图压成 JPEG 会丢 alpha，先铺白底
         if (!png) drawColor(android.graphics.Color.WHITE)
         drawBitmap(
             bitmap,
@@ -344,7 +365,7 @@ private fun cropEditorToFile(
         )
     }
     val dir = File(context.cacheDir, "upload").apply { mkdirs() }
-
+    // 扩展名先落变量：模板串里再嵌引号会被开源导出器的注释剥离器截断（见导出管线陷阱）
     val ext = if (png) "png" else "jpg"
     val file = File(dir, "edit_${System.currentTimeMillis()}.$ext")
     file.outputStream().use {

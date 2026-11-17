@@ -30,6 +30,22 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
+/**
+ * 字体探针 + 字体**断言**。
+ *
+ * v0.0.0.5 之前这里只有 [probeFonts] 一张截图供人目测——静态检查和目测
+ * 连续三轮都没拦住「中文实际渲染成系统黑体」。现在补两条像素断言：
+ *
+ * · step1-3 [step3SerifMustDifferFromSans]：同一段汉字，SerifFamily 渲染结果
+ *   必须与系统无衬线不同——家族里思源宋体必须真的被命中，
+ *   拦住「Tinos 在前、汉字回落系统黑体」一类的回退失效；
+ * · step4-6 [step6WeightsMustDiffer]：Regular 与 Bold 渲染必须不同——
+ *   拦住「四份文件其实是同一份轮廓、只改了字重元数据」一类的假字重
+ *   （v0.0.0.5 的四个 noto_serif_*.ttf 全是 ExtraLight）。
+ *
+ * Robolectric 的 setContent 每个用例只能调一次，所以拆成
+ * 渲染→渲染→比较 三步，按方法名字典序执行（@FixMethodOrder）。
+ */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
@@ -38,7 +54,8 @@ class FontProbeTest {
 
     companion object {
         init {
-
+            // 普通 test 任务下 roborazzi 默认不落盘（taskType=None），
+            // 这里的断言必须真的拿到像素——强制开录制。
             System.setProperty("roborazzi.test.record", "true")
         }
     }

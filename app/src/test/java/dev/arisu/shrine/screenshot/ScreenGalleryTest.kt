@@ -12,6 +12,12 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
+
+/**
+ * 页面画廊：不依赖数据的页面直接整屏渲染。
+ * 列表类页面在无网络环境下渲染为加载/空态，同样是有意义的设计态。
+ * 数据只存在于测试代码里，不进 APK。
+ */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")

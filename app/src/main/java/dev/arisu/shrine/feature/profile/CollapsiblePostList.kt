@@ -25,14 +25,18 @@ import dev.arisu.shrine.core.design.InkMuted
 import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.data.model.Post
 
+/**
+ * 折叠分页的帖子列表：默认三条，展开后每页五条。
+ * 帖子多的社员要是全量平铺，主页会被拉得老长。两个主页共用。
+ */
 @Composable
 internal fun CollapsiblePostList(posts: List<Post>, onOpenPost: (String) -> Unit) {
-
+    // 展开与翻页驻留：切内容标签、进帖子再返回，不折叠回默认三条
     var expanded by rememberSaveable { mutableStateOf(false) }
     var page by rememberSaveable { mutableIntStateOf(0) }
     val pageSize = 5
     val totalPages = (posts.size + pageSize - 1) / pageSize
-
+    // 内容变短（切标签/删帖）时页码收敛：此前 drop 越界渲染出空白页、翻页器却显示「第 3 / 2 页」
     val safePage = page.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
 
     Column(Modifier.fillMaxWidth()) {
@@ -53,6 +57,8 @@ internal fun CollapsiblePostList(posts: List<Post>, onOpenPost: (String) -> Unit
             }
         }
 
+        // 控件行与帖子之间必须留出一口气：卡片的柔影会向下渗约 10dp，
+        // 贴太近看起来就像粘在最后一张帖子上
         if (!expanded && posts.size > 3) {
             Row(
                 Modifier

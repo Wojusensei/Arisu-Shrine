@@ -63,18 +63,29 @@ import kotlinx.coroutines.launch
 import kotlin.math.cos
 import kotlin.math.sin
 
+/**
+ * 奉纳弹窗（朱鸟居 + 圆印）：红色鸟居居中为记，奉纳成立时一枚
+ * 斜置的圆形朱印盖章其上（正式印章形制：双环 + 衬线印文）。
+ * 面板为真正的悬浮投影卡片——不用新拟物投影也不用细线描边。
+ */
+
+/** 奉纳弹窗状态：输入 / 提交中 / 印已落（不可关闭） */
 private sealed interface OfferPhase {
     data object Input : OfferPhase
     data object Busy : OfferPhase
     data class Stamped(val newTotal: Int) : OfferPhase
 }
 
+/**
+ * 圆形朱印：外粗环 + 内细环 + 衬线印文，整体斜置。
+ * 盖章感来自印泥浓度与微斜，不靠材质仿真
+ */
 @Composable
 private fun RoundSeal(ring: Float, modifier: Modifier = Modifier) {
     Canvas(modifier.size(66.dp)) {
         val c = Offset(size.width / 2f, size.height / 2f)
         val r = size.minDimension / 2f
-
+        // 印环（落章时向外扩散的一圈朱）
         if (ring > 0f && ring < 1f) {
             drawCircle(
                 color = Vermilion.copy(alpha = 0.5f * (1f - ring)),
@@ -83,21 +94,21 @@ private fun RoundSeal(ring: Float, modifier: Modifier = Modifier) {
                 style = Stroke(width = 2.dp.toPx() * (1f - ring * 0.5f)),
             )
         }
-
+        // 外粗环
         drawCircle(
             color = VermilionDeep,
             radius = r * 0.94f,
             center = c,
             style = Stroke(width = r * 0.14f),
         )
-
+        // 内细环
         drawCircle(
             color = VermilionDeep.copy(alpha = 0.65f),
             radius = r * 0.70f,
             center = c,
             style = Stroke(width = r * 0.035f),
         )
-
+        // 环上四点定位（正式印章的排布感）
         repeat(4) { i ->
             val ang = (45f + i * 90f) * 3.14159f / 180f
             drawCircle(
@@ -109,6 +120,10 @@ private fun RoundSeal(ring: Float, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * 奉纳弹窗：submitter 携网络提交（抛错留在原地、错误交给 onError）；
+ * 成功则圆印斜盖鸟居，播完 onDone 回传新总额、随后自行收场
+ */
 @Composable
 fun OfferSheet(
     post: Post,
@@ -120,12 +135,13 @@ fun OfferSheet(
     var text by remember { mutableStateOf("") }
     var phase by remember { mutableStateOf<OfferPhase>(OfferPhase.Input) }
     val amount = text.toLongOrNull() ?: 0L
-
+    // 账面单位是 0.1 円；奉纳只花整数円（amount×10 <= 账面）
     val tenths = me?.balanceTenths ?: 0L
     var errMsg by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val haptic = LocalHapticFeedback.current
 
+    // 印章：入场缩放/旋转、印环扩散——只在变换与绘制层读值
     val sealScale = remember { Animatable(1f) }
     val sealRot = remember { Animatable(-7f) }
     val sealRing = remember { Animatable(1f) }
@@ -145,12 +161,12 @@ fun OfferSheet(
         onDismissRequest = { if (!locked) onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false),
     ) {
-        BackHandler(enabled = locked) {  }
+        BackHandler(enabled = locked) { /* 印已落不许退 */ }
         Column(
             Modifier
                 .padding(horizontal = 34.dp)
                 .fillMaxWidth()
-
+                // 真悬浮卡片：一处干净的大投影，替代新拟物与描边
                 .shadow(
                     elevation = 18.dp,
                     shape = RoundedCornerShape(26.dp),
@@ -162,7 +178,7 @@ fun OfferSheet(
                 .padding(horizontal = 24.dp, vertical = 22.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-
+            // ── 徽记：朱鸟居居中，圆形斜印常驻盖其右下 ────
             Box(
                 Modifier
                     .fillMaxWidth()
@@ -177,7 +193,7 @@ fun OfferSheet(
                         .offset(y = (-6).dp)
                         .size(width = 78.dp, height = 60.dp),
                 )
-
+                // 圆印：初始隐去，奉纳成立时端正地盖在鸟居正中、轻微倾斜
                 if (stamped) {
                     Box(
                         Modifier.graphicsLayer {
@@ -209,6 +225,7 @@ fun OfferSheet(
                 },
             )
 
+            // ── 桥：细线 + 居中阴阳玉（印落即停） ──────────
             Spacer(Modifier.height(13.dp))
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(Modifier.weight(1f).height(1.dp).background(NeuShadow.copy(alpha = 0.28f)))
@@ -232,7 +249,7 @@ fun OfferSheet(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-
+                // 金额输入：平面细线框（弹窗内不再用凹槽新拟物）
                 Box(
                     Modifier
                         .weight(1f)
@@ -285,6 +302,7 @@ fun OfferSheet(
                 }
             }
 
+            // 就地错误槽（固定占位，不顶动布局）
             Spacer(Modifier.height(10.dp))
             Box(Modifier.fillMaxWidth().height(18.dp), contentAlignment = Alignment.Center) {
                 Text(
@@ -304,7 +322,8 @@ fun OfferSheet(
                         .weight(1f)
                         .height(44.dp)
                         .let { m ->
-
+                            // 余额不足也要能点：此前按钮直接不可点，用户只看到没反应。
+                            // 先就地提示，真被服务端拒绝时下面的 catch 还有一层兜底
                             if (!locked && amount >= 1) {
                                 m.clickableNoRipple {
                                     if (amount * 10 > tenths) {
@@ -316,7 +335,7 @@ fun OfferSheet(
                                         try {
                                             val newTotal = submitter(amount)
                                             phase = OfferPhase.Stamped(newTotal)
-
+                                            // 圆印砸落：大尺入场 → 弹性落定 -7°，印环扩散
                                             sealScale.snapTo(2.2f)
                                             sealRot.snapTo(6f)
                                             sealRing.snapTo(0f)
@@ -371,6 +390,7 @@ fun OfferSheet(
     }
 }
 
+/** 无涟漪点击（弹窗里的轻量触点，涟漪会破坏面板的静） */
 private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
     this.then(
         Modifier.clickable(

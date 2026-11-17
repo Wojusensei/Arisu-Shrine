@@ -13,6 +13,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
 
+/** 一条浏览足迹。帖子额外记最后读到的评论与偏移，用来续读。 */
 @Serializable
 data class HistoryEntry(
     val userId: String,
@@ -26,6 +27,10 @@ data class HistoryEntry(
     val lastOffset: Int = 0,
 )
 
+/**
+ * 本地浏览足迹。与草稿箱同一套文件存储：filesDir、原子写入、损坏按空处理。
+ * 同一目标只留最近一次；上限 200 条。
+ */
 object HistoryStore {
 
     const val POST = "post"
@@ -52,6 +57,7 @@ object HistoryStore {
         initAt(File(context.filesDir, "local"))
     }
 
+    /** 测试入口：指定目录，不碰 Android Context。 */
     internal fun initAt(dir: File) {
         dir.mkdirs()
         file = File(dir, "history.json")
@@ -72,6 +78,7 @@ object HistoryStore {
         }
     }
 
+    /** 记一次访问；已有条目保留续读位置，只更新标题与时间。 */
     suspend fun visit(
         userId: String,
         kind: String,

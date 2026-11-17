@@ -5,7 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 
 object AppInfo {
-
+    /** 应用版本名（如 0.1.0），用于「当前版本」与检查更新 */
     fun version(context: Context): String = try {
         val pm = context.packageManager
         val info = if (Build.VERSION.SDK_INT >= 33) {

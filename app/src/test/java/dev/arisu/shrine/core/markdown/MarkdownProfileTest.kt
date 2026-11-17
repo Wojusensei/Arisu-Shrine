@@ -5,6 +5,10 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * 个人主页（profileMode）的 GitHub 徽章兼容：
+ * [![](图)](地址) 可点外链、`<a><img>` 嵌套、相邻图片连排成行、空行仍分段。
+ */
 class MarkdownProfileTest {
 
     @Test

@@ -3,6 +3,7 @@ package dev.arisu.shrine.feature.share
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+/** 分享卡的图片提取与正文摘要：图片交给卡面画，正文不再留「图片」占位。 */
 class ShareCardTest {
 
     @Test

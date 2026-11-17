@@ -31,6 +31,10 @@ import dev.arisu.shrine.core.design.NeuBaseHigh
 import dev.arisu.shrine.core.design.NeuShadow
 import kotlin.math.roundToInt
 
+/**
+ * 回到顶部阴阳玉：页面滚离顶部后出现在左下角，点击平滑滚回。
+ * visible 的判定由滚动状态自动派生（列表过一屏 / 滚动逾 700px）。
+ */
 @Composable
 fun ScrollTopOrb(
     visible: Boolean,
@@ -58,6 +62,7 @@ fun ScrollTopOrb(
     }
 }
 
+/** 列表页：滚过第一屏即出现。 */
 @Composable
 fun ScrollTopOrb(
     listState: LazyListState,
@@ -72,6 +77,7 @@ fun ScrollTopOrb(
     ScrollTopOrb(visible = visible, onClick = onClick, modifier = modifier)
 }
 
+/** 普通滚动页：滚逾 700px 即出现。 */
 @Composable
 fun ScrollTopOrb(
     scrollState: ScrollState,
@@ -82,13 +88,26 @@ fun ScrollTopOrb(
     ScrollTopOrb(visible = visible, onClick = onClick, modifier = modifier)
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 平滑回顶
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 回顶目标时长：短距离不拖沓，超长列表把速度抬上去，视觉上是「一口气冲上去」 */
 private const val GLIDE_SECONDS = 0.7f
 private const val MIN_SPEED = 4000f
 private const val MAX_SPEED = 42000f
 
+/**
+ * 平滑滚回顶端（列表页）。
+ *
+ * 不能直接用 animateScrollToItem(0)：它按 1500dp 分段重算距离、还可能整段瞬移，
+ * 长列表上看着就是「滑到一半停一下再继续」。这里改成自己推——远处逐帧匀速滚，
+ * 首项进画面后距离已精确可知（就是它的偏移量），再一次收速动画贴顶，
+ * 全程一段连续运动，中途没有油门。
+ */
 suspend fun LazyListState.smoothScrollToTop() {
     if (firstVisibleItemIndex == 0 && firstVisibleItemScrollOffset == 0) return
-
+    // 速度按「约 0.7 秒到顶」估：只能估，量不到还没实例化的那些 item
     val info = layoutInfo
     val viewport = (info.viewportEndOffset - info.viewportStartOffset).toFloat().coerceAtLeast(1f)
     val visible = info.visibleItemsInfo
@@ -104,7 +123,7 @@ suspend fun LazyListState.smoothScrollToTop() {
             val dt = ((now - last) / 1_000_000_000f).coerceIn(0.001f, 0.05f)
             last = now
             val moved = -scrollBy(-speed * dt)
-
+            // 连续几帧滚不动就收手：被别的滚动源抢着吃 delta 时空转没有意义
             if (moved < 0.5f) {
                 if (++stalled > 3) break
             } else {
@@ -119,6 +138,7 @@ suspend fun LazyListState.smoothScrollToTop() {
     }
 }
 
+/** 平滑滚回顶端（整页 verticalScroll 的页面）。距离精确，一次减速动画到底。 */
 suspend fun ScrollState.smoothScrollToTop() {
     val dist = value
     if (dist <= 0) return

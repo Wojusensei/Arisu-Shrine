@@ -54,6 +54,14 @@ import dev.arisu.shrine.core.design.NeuShadow
 import dev.arisu.shrine.core.design.Vermilion
 import dev.arisu.shrine.nav.ArisuTab
 
+/* ══════════════════════════════════════════════════════════════════
+ * 标题栏
+ * ══════════════════════════════════════════════════════════════════ */
+
+/**
+ * 页面标题栏。背景保持透明，直接透出页面底色，
+ * 只用一条极淡的发丝线收边——比实心色块透气。
+ */
 @Composable
 fun ArisuTopBar(
     title: String,
@@ -125,13 +133,17 @@ fun ArisuTopBar(
     }
 }
 
+/**
+ * 顶栏烟雾：柔雾团从屏幕两侧缭绕进来，画在标题之下（纯装饰）。
+ * dense=大标题页两簇；二级页只右簇、更淡——层次靠浓度分级。
+ */
 @Composable
 private fun BoxScope.MistTopDecor(dense: Boolean) {
     Box(
         Modifier
             .matchParentSize()
             .drawBehind {
-
+                // 雾收敛：每侧一团主雾足矣，不再满屏铺
                 fogBlob(Offset(size.width - 40.dp.toPx(), -30.dp.toPx()), 210.dp.toPx(), 0.035f)
                 if (dense) {
                     fogBlob(Offset(30.dp.toPx(), -20.dp.toPx()), 170.dp.toPx(), 0.026f)
@@ -140,7 +152,7 @@ private fun BoxScope.MistTopDecor(dense: Boolean) {
                 }
             }
     ) {
-
+        // 一朵风送云浮在雾上（大页大些浓些，二级页小些淡些）
         Icon(
             imageVector = ShrineIcons.Kumo,
             contentDescription = null,
@@ -153,6 +165,7 @@ private fun BoxScope.MistTopDecor(dense: Boolean) {
     }
 }
 
+/** 标题栏上的图标按钮，可带右上角未读数字。 */
 @Composable
 fun TopBarIcon(
     icon: ImageVector,
@@ -181,6 +194,14 @@ fun TopBarIcon(
         }
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+ * 底部导航
+ *
+ * 通底的一条实栏：不留外边距、不做悬浮胶囊，顶边一条极细暗线收口，
+ * 栏体本身一直延伸到屏幕最下沿（导航条安全区也算在内）。
+ * 四个 slot 等宽，**图标与名称全程都显示**，选中项整体转为朱色。
+ * ══════════════════════════════════════════════════════════════════ */
 
 @Composable
 fun ArisuBottomBar(
@@ -268,6 +289,10 @@ private fun BottomBarItem(
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 底部面板的头部
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Composable
 fun SheetHeader(
     title: String,
@@ -290,7 +315,7 @@ fun SheetHeader(
             )
         }
         Box(Modifier.fillMaxWidth()) {
-
+            // 樱花角饰：弹层标题右上角两瓣，压在标题层之下（纯装饰）
             Icon(
                 imageVector = ShrineIcons.Sakura,
                 contentDescription = null,

@@ -23,6 +23,11 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
+/**
+ * 长按拖拽排序的手势回归：拖起后越过半格与邻格换位，
+ * 「添加」格不参与、行内不越界（那些边界由 StickerStepTest 的纯函数兜底）。
+ * 只发手势不落库——落库是「保存」的事，这里断言的是草稿顺序。
+ */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
@@ -51,15 +56,22 @@ class StickerOrderGridTest {
         rule.waitForIdle()
     }
 
+    /** 一格位（格 + 间距）的像素宽 */
     private fun pitchPx(): Float =
         with(rule.density) { (STICKER_CELL + STICKER_GAP).toPx() }
 
+    /**
+     * 按住第一格（槽 1）拖出 [delta]。
+     *
+     * 在根坐标上注入：测试环境加载不出图片，表情格的语义框是空的（0 高）没法当锚点，
+     * 用首格（真尺寸）落点：它的中心右移一格位就是第一格（槽 1）的格心。
+     */
     private fun drag(delta: Offset) {
         val anchor = rule.onNodeWithContentDescription("首格")
             .fetchSemanticsNode().boundsInRoot.center
         rule.onRoot().performTouchInput {
             down(Offset(anchor.x + pitchPx(), anchor.y))
-            advanceEventTime(700)
+            advanceEventTime(700) // 长按判定
             moveBy(delta)
             advanceEventTime(50)
             up()
@@ -84,6 +96,7 @@ class StickerOrderGridTest {
 
         drag(Offset(0f, pitchPx() * 1.2f))
 
+        // 槽 1 与槽 5 换位（第二行第一格）
         assertEquals(listOf("5", "2", "3", "4", "1", "6"), items.map { it.id })
     }
 

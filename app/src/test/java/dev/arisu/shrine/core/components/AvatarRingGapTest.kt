@@ -19,6 +19,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
+/**
+ * 身份环与头像之间必须留空隙（贴着头像很难看，以个人主页大头像为准）：
+ * 无环时占位 = 头像尺寸；有环时占位 = 头像 + 两侧环垫（4dp×2）。
+ */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class AvatarRingGapTest {
@@ -42,7 +46,7 @@ class AvatarRingGapTest {
 
         val density = rule.activity.resources.displayMetrics.density
         val ringed = rule.onNodeWithTag("ringed").fetchSemanticsNode().boundsInRoot.width
-
+        // 40dp 头像 + 8dp 环垫 = 48dp；环垫里留出空隙，环不贴头像
         assertEquals((48f * density), ringed, 1.5f)
     }
 

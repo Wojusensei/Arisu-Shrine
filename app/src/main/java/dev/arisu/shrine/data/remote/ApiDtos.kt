@@ -3,6 +3,10 @@ package dev.arisu.shrine.data.remote
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/**
+ * 服务器 DTO（JSON 为 snake_case，与后端 model 包一一对应）。
+ * DTO 只在网络层存在，进入 UI 前统一映射为 data.model 里的界面模型。
+ */
 @Serializable
 data class UserBriefDto(
     val id: Long = 0,
@@ -274,6 +278,7 @@ data class SearchResultDto(
     val users: List<UserBriefDto> = emptyList(),
 )
 
+/** 提及选择器专用：只返回社员，不带帖子 */
 @Serializable
 data class MentionUsersDto(
     val users: List<UserBriefDto> = emptyList(),
@@ -298,6 +303,8 @@ data class ReportDto(
     val status: String = "pending",
     @SerialName("created_at") val createdAt: Long = 0,
 )
+
+// ---- 请求体 ----
 
 @Serializable
 data class SendCodeReq(val email: String, val purpose: String)
@@ -374,6 +381,7 @@ data class PasswordPatchReq(@SerialName("old_password") val oldPassword: String,
 @Serializable
 data class HeartbeatReq(@SerialName("active_seconds") val activeSeconds: Int)
 
+/** 账号名下的一台已登录设备；current=发起这次查询的设备 */
 @Serializable
 data class SessionDto(
     val id: Long,
@@ -445,6 +453,7 @@ data class UnreadRes(val unread: Long = 0)
 @Serializable
 data class ErrorRes(val error: String = "")
 
+/** 拉黑/解除的返回：blocked 是操作后的状态 */
 @Serializable
 data class BlockRes(val ok: Boolean = true, val blocked: Boolean = false)
 

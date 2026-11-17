@@ -19,6 +19,11 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 
+/**
+ * 帖子卡片封面的位置契约（v0.0.0.9 起封面统一在左；v0.0.0.11 起封面为通高柱）：
+ * 有封面 → 封面柱占左位、作者头像退场、编号压在封面下缘、职务徽标随昵称展示；
+ * 无封面 → 回落作者头像。
+ */
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
 class PostCardCoverTest {
@@ -37,7 +42,7 @@ class PostCardCoverTest {
         createdAt = "昨天",
         coverUrl = cover,
         saveCount = saves,
-
+        // 头像 URL 非空才会渲染带昵称描述的图（剪影占位没有描述）
         authorAvatar = avatar,
     )
 
@@ -58,18 +63,19 @@ class PostCardCoverTest {
     fun coverTakesAvatarSlotAndSaveCountShows() {
         setContent(post(cover = "http://example.com/cover.jpg"))
 
+        // 封面在卡片上，作者头像（以昵称作 contentDescription）退场
         rule.onNodeWithContentDescription("帖子封面").assertExists()
         rule.onNodeWithContentDescription("测试作者").assertDoesNotExist()
-
+        // 收藏计数与顶/评论并列展示
         rule.onNodeWithText("2").assertExists()
-
+        // 帖子编号压在封面下缘，职务徽标回到昵称之后
         rule.onNodeWithText("arisu_000042").assertExists()
         rule.onNodeWithText("社员").assertExists()
     }
 
     @Test
     fun noCoverFallsBackToAuthorAvatar() {
-
+        // 收藏数取 7 等独特值：顶/评论默认 0，避免文本断言撞车
         setContent(post(cover = null, saves = 7))
 
         rule.onNodeWithContentDescription("帖子封面").assertDoesNotExist()
@@ -81,6 +87,7 @@ class PostCardCoverTest {
     fun neitherCoverNorAvatarShowsPlaceholder() {
         setContent(post(cover = null, saves = 3, avatar = null))
 
+        // 既无封面也无头像：人像剪影占位，左位仍是 84dp 方形封面位
         rule.onNodeWithContentDescription("帖子封面").assertDoesNotExist()
         rule.onNodeWithContentDescription("测试作者").assertDoesNotExist()
         rule.onNodeWithText("封面与收藏数").assertExists()

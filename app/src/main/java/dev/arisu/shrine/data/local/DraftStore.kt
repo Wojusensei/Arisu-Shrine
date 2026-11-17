@@ -13,6 +13,10 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
 
+/**
+ * 一条草稿。按「用户 + 类型 + 目标」唯一：同一帖子只留最新一份，
+ * 换号互不可见。发帖/发绘马的目标固定为 new。
+ */
 @Serializable
 data class Draft(
     val userId: String,
@@ -33,6 +37,10 @@ data class Draft(
     val id: String get() = "$userId|$kind|$targetId"
 }
 
+/**
+ * 本地草稿箱。存 filesDir 而不是 cacheDir：系统清缓存不能把用户没发出去的字带走。
+ * 单文件 JSON，写入走临时文件再改名；文件损坏时按空箱处理，不让草稿拖垮页面。
+ */
 object DraftStore {
 
     const val COMMENT_POST = "comment_post"
@@ -62,6 +70,7 @@ object DraftStore {
         initAt(File(context.filesDir, "local"))
     }
 
+    /** 测试入口：指定目录，不碰 Android Context。 */
     internal fun initAt(dir: File) {
         dir.mkdirs()
         file = File(dir, "drafts.json")

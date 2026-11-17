@@ -6,6 +6,13 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * 上传前的整备规则。
+ *
+ * 用户报过「发图基本传不上去」：原图原样直传，几 MB 的图在弱网下必然失败，
+ * 服务端与 Caddy 还有 10/12MB 两道闸。这里把「压不压、值不值得用」钉住；
+ * 动图必须永远原样——重编码一次就等于把 gif 压成静帧。
+ */
 class ImagePrepTest {
 
     @Test
@@ -16,8 +23,8 @@ class ImagePrepTest {
 
     @Test
     fun `手机原图要压：长边超 2048 或体积超阈值`() {
-        assertTrue(needsRecompress("image/jpeg", 4000, 600 * 1024))
-        assertTrue(needsRecompress("image/jpeg", 1600, 3L * 1024 * 1024))
+        assertTrue(needsRecompress("image/jpeg", 4000, 600 * 1024))   // 4000×3000 的原图
+        assertTrue(needsRecompress("image/jpeg", 1600, 3L * 1024 * 1024)) // 长边合规但太大
     }
 
     @Test
@@ -60,7 +67,7 @@ class ImagePrepTest {
 
     @Test
     fun `取样倍率：解码后长边落在目标与两倍之间`() {
-
+        // 2 的幂只能粗调，解出来仍可能大于目标：真正的「缩到 2048」还要 scaleDownTo 补一刀
         listOf(1080 to 2400, 2048 to 1536, 4096 to 3072, 8000 to 6000, 12000 to 9000).forEach { (w, h) ->
             val long = maxOf(w, h) / imageSampleSize(w, h, 2048)
             assertTrue("${w}×$h 取样后长边 $long 应 ≥ 2048", long >= 2048)

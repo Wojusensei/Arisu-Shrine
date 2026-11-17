@@ -106,8 +106,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** 一次最多挑几张：与 QQ 同一量级，再多正文里的图就淹了 */
 private const val MAX_PICK = 9
 
+/** 上传途中进程被杀会留下没有暂存件的占位符：恢复草稿与发布前都清掉 */
 private val StaleUploadMark = Regex("""\n?!\[图片]\(上传中-\d+\)\n?""")
 
 internal fun stripStaleUploads(text: String): String =
@@ -115,6 +117,17 @@ internal fun stripStaleUploads(text: String): String =
         .replace(Regex("\\n{3,}"), "\n\n")
         .trim()
 
+/**
+ * 撰写帖子（整页）。[editPost] 非空即为改帖：预填原稿、标题栏与按钮改成「编辑 / 保存」，
+ * 提交走 PATCH，改完由 [onPublished] 把帖子编号交回调用方（页面本身不负责导航）。
+ *
+ * 标题栏：返回 + 「撰写帖子」+ 右侧小号朱色「发布」
+ * 板块：  正殿 / 幻想乡闻 / /dev.，默认选中进入时的板块
+ * 正文：  稿纸式输入卡 + Markdown 工具栏（加粗 / 斜体 / 标题 / 列表 / 代码块 / 图片 / 链接）
+ * 配图：  可多选，先落暂存件再逐张上传（每张一格圆环进度），上传前可裁剪/旋转
+ * 封面：  选图先取景再上传；改帖时旧封面也会取回本地，同样能重新取景
+ * 发布：  标题与正文都非空、且没有图还在路上，才可点
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewPostScreen(
@@ -127,11 +140,12 @@ fun NewPostScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // 选封面图会短暂离开本页，回来不重置已选板块
     var board by rememberSaveable(editPost) { mutableStateOf(editPost?.board ?: initialBoard) }
-
+    // 表单草稿驻留：跳相册选图、进程回收都不丢稿（改帖时以原稿起手）
     var title by rememberSaveable(editPost) { mutableStateOf(editPost?.title.orEmpty()) }
     var intro by rememberSaveable(editPost) { mutableStateOf(editPost?.intro.orEmpty()) }
-
+    // 正文带光标选区：Markdown 工具条要插到光标处，还得能把选中内容包进记号里
     var body by rememberSaveable(editPost, stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(editPost?.body.orEmpty()))
     }
@@ -140,18 +154,19 @@ fun NewPostScreen(
     var showMention by remember { mutableStateOf(false) }
     var publishing by remember { mutableStateOf(false) }
     var coverUrl by rememberSaveable(editPost) { mutableStateOf(editPost?.coverUrl?.takeIf { it.isNotBlank() }) }
-
+    // 新帖草稿从本地恢复一次；改帖不存草稿，避免和线上原文打架
     var draftLoaded by rememberSaveable(editPost) { mutableStateOf(editPost != null) }
-
+    // 检测到的草稿先不落进表单：由用户决定继续写还是从头开始
     var draftPrompt by remember { mutableStateOf<Draft?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     val bodyField = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
 
+    /** 认下这份草稿：表单回填，随后自动保存接着跑 */
     fun keepDraft(saved: Draft) {
         title = saved.title
         intro = saved.intro
-
+        // 上传没走完就退出/被杀的那几张，暂存件已经没了；占位符不能留在稿子里
         val restored = stripStaleUploads(saved.body)
         body = TextFieldValue(restored, TextRange(restored.length))
         coverUrl = saved.coverUrl
@@ -160,20 +175,22 @@ fun NewPostScreen(
         draftPrompt = null
     }
 
+    /** 重新开始：本地那份删掉，空表单之后若落笔会重新存一份 */
     fun dropDraft() {
         Shrine.me.value?.id?.let { DraftStore.deleteAsync(it, DraftStore.POST, "new") }
         draftLoaded = true
         draftPrompt = null
     }
 
+    // 首帧后找上次没发出去的稿；当前表单已经有字就不覆盖
     LaunchedEffect(Unit) {
         if (editPost != null || draftLoaded) return@LaunchedEffect
         val uid = Shrine.me.value?.id
         if (uid != null && title.isBlank() && intro.isBlank() && body.text.isBlank() && coverUrl == null) {
             val saved = DraftStore.get(uid, DraftStore.POST, "new")
-
+            // 读盘这几毫秒里用户可能已经落笔：那就别再用旧稿盖掉
             if (saved != null && title.isBlank() && intro.isBlank() && body.text.isBlank() && coverUrl == null) {
-
+                // 选之前不放行自动保存，免得空表单先把本地那份删掉
                 draftPrompt = saved
                 return@LaunchedEffect
             }
@@ -181,6 +198,7 @@ fun NewPostScreen(
         draftLoaded = true
     }
 
+    // 输入停顿后落盘；清空即删掉本地那份
     LaunchedEffect(title, intro, body.text, board, coverUrl, draftLoaded) {
         if (editPost != null || !draftLoaded) return@LaunchedEffect
         val uid = Shrine.me.value?.id ?: return@LaunchedEffect
@@ -203,17 +221,20 @@ fun NewPostScreen(
         )
     }
 
+    // 待发配图：本地暂存件 + 每张自己的上传进度/地址/失败原因。
+    // 进程回收后网格会空（暂存件在 cacheDir 里），但正文里的 Markdown 已落稿，不会丢图
     val staged = remember { mutableStateListOf<StagedImage>() }
     var coverFile by remember { mutableStateOf<File?>(null) }
     var coverProgress by remember { mutableStateOf(-1f) }
-
+    // 改帖时旧封面是站上的一张图，取回本地取景的空档界面得有忙态
     var coverFetching by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<EditTarget?>(null) }
     val uploading = staged.any { it.url == null && it.error == null } || coverProgress in 0f..1f
 
     val canPublish = title.isNotBlank() && body.text.isNotBlank() && !publishing && !uploading
     var confirmDiscard by remember { mutableStateOf(false) }
-
+    // 改帖按改动算：一字未动就直接退，不必再问一次；新帖按有没有落笔算
+    // （封面也算稿：只选了封面就返回，此前一声不响地丢掉）
     val hasDraft = if (editPost != null) {
         title != editPost.title || intro != editPost.intro || body.text != editPost.body ||
             board != editPost.board || (coverUrl ?: "") != (editPost.coverUrl ?: "") ||
@@ -224,13 +245,15 @@ fun NewPostScreen(
     }
     androidx.activity.compose.BackHandler(enabled = hasDraft && !publishing) { confirmDiscard = true }
 
+    /** 把某段 Markdown 从正文里撤掉（连同插入时补的换行），不留空行 */
     fun stripMark(md: String) {
-
+        // 先按 span 撤掉让光标跟着缩，再收拾多余空行
         val next = body.replaceSpan(md, "")
         val cleaned = next.text.replace(Regex("\\n{3,}"), "\n\n").trimEnd()
         body = next.withText(cleaned)
     }
 
+    /** 上传一张暂存件；完成后把正文里的占位符换成真地址（编辑过的图换地址，不挪位置） */
     fun upload(item: StagedImage) {
         scope.launch {
             item.error = null
@@ -243,7 +266,10 @@ fun NewPostScreen(
                 }
                 val snippet = "![图片]($url)"
                 val old = item.markdown
-
+                // 正常情况下正文里还留着选图时放下的占位符，原位换成真地址；
+                // 占位符被手动删掉/改掉时退化为「插到当前光标处」。
+                // 替换必须带着光标走：真地址比占位符长，按旧偏移截断会把光标留在
+                // 刚换上的 Markdown 中间，接着打字/插下一张就把这张拆坏。
                 body = if (old != null && body.text.contains(old)) {
                     body.replaceSpan(old, snippet)
                 } else {
@@ -253,7 +279,7 @@ fun NewPostScreen(
                 item.url = url
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-
+                // 占位符不能留在正文里：失败就撤掉，网格里那张仍可点重试
                 item.markdown?.let { stripMark(it) }
                 item.markdown = null
                 item.error = e.toApiMessage()
@@ -261,6 +287,7 @@ fun NewPostScreen(
         }
     }
 
+    /** 选图 → 问答缓存件（顺带压缩/转正）→ 挂上网格 → 立刻上传 */
     fun stage(uri: Uri) {
         scope.launch {
             val item = try {
@@ -273,7 +300,8 @@ fun NewPostScreen(
                 error = e.toApiMessage()
                 return@launch
             }
-
+            // 先在光标处放占位符，上传完成原位换成真地址：
+            // 上传期间继续打字，图也不会被挤到句子中间或帖子末尾
             val placeholder = "![图片](上传中-${item.id})"
             item.markdown = placeholder
             body = insertMark(body, MdMark("$placeholder\n", block = true))
@@ -288,6 +316,7 @@ fun NewPostScreen(
         staged -= item
     }
 
+    // 相册多选（Photo Picker，无需存储权限）：一次可以挑一组
     val galleryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia(MAX_PICK)
     ) { uris -> uris.forEach { stage(it) } }
@@ -300,7 +329,7 @@ fun NewPostScreen(
                 coverUrl = Shrine.uploadImage(file) { coverProgress = it }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
-
+                // 传失败退回上一张：改帖时旧封面得留着，一次网络抖动不该把封面抹掉
                 coverUrl = previous
                 error = e.toApiMessage()
             }
@@ -320,15 +349,24 @@ fun NewPostScreen(
                 error = e.toApiMessage()
                 return@launch
             }
-
+            // 先取景再上传：封面在列表条与详情横幅里都会被裁成固定比例，
+            // 让上传的人自己框显示范围，而不是被系统从中间截一刀。
+            // 取景期间不动旧封面也不亮上传态——返回即作废（见编辑页 onCancel）
             editing = EditTarget.Cover(file)
         }
     }
 
+    // 封面图：与正文配图同一套暂存/上传通道；不选则展示时回落作者头像
     val coverLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) stageCover(uri) }
 
+    /**
+     * 封面重新取景。
+     *
+     * 本地已有取景过的稿就用它；改帖的旧封面只有站上的地址，先取回本地——
+     * 取景器只认本地文件，否则「调整封面位置」在改帖时永远是灰的。
+     */
     fun refineCover() {
         coverFile?.let { editing = EditTarget.Cover(it); return }
         val remote = coverUrl
@@ -348,6 +386,9 @@ fun NewPostScreen(
         }
     }
 
+    // 拍照：先造一个临时文件 Uri（FileProvider），拍完回调；
+    // Uri 与文件路径都驻留进 saved state——拍摄期间进程被回收，照片才不会无声丢掉；
+    // 原图留在 filesDir/camera，上传的是拷贝件，成败都要删原图（照编辑资料页同一套约定）
     var pendingCameraUri by rememberSaveable { mutableStateOf<Uri?>(null) }
     var pendingCameraPath by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -366,7 +407,7 @@ fun NewPostScreen(
 
     fun publish() {
         if (publishing) return
-
+        // 上传中占位符不会流进正文：进程被回收时暂存件没了、占位符还留在正文里，发布前统一清掉
         val finalBody = stripStaleUploads(body.text)
         if (title.isBlank() || finalBody.isBlank()) return
         publishing = true
@@ -381,7 +422,7 @@ fun NewPostScreen(
                 } else {
                     Shrine.createPost(board, title.trim(), finalBody, intro.trim(), cover = coverUrl ?: "")
                 }
-
+                // 暂存件是本次草稿的中间产物，交出去就没用了
                 staged.forEach { it.file.delete() }
                 staged.clear()
                 coverFile?.delete()
@@ -398,11 +439,13 @@ fun NewPostScreen(
         }
     }
 
+    // 编辑配图：全屏覆盖在撰写页上，确定后换掉暂存件并重传
     val editingTarget = editing
     if (editingTarget != null) {
         ImageEditorOverlay(
             sourcePath = editingTarget.path,
-
+            // 返回 = 放弃这次选的图：暂存件删掉、上传态收回，旧封面原样留着；
+            // 只有点「确定」才代表认下取景结果并上传
             onCancel = {
                 if (editingTarget is EditTarget.Cover) {
                     editingTarget.file.delete()
@@ -416,11 +459,11 @@ fun NewPostScreen(
                 val edited = File(path)
                 when (editingTarget) {
                     is EditTarget.Cover -> {
-
+                        // 旧封面（本地暂存那份）与新取景无关，现在才换掉
                         editingTarget.file.delete()
                         coverFile?.takeIf { it.absolutePath != edited.absolutePath }?.delete()
                         coverFile = edited
-
+                        // 旧地址先留着：上传成功后由 uploadCover 换上，传失败还退回它
                         uploadCover(edited)
                     }
 
@@ -429,7 +472,8 @@ fun NewPostScreen(
                         item.file.delete()
                         item.file = edited
                         item.url = null
-
+                        // markdown 要留着：重传后按它把正文里的旧地址原位换掉，
+                        // 清掉就变成「又插一条」，同一张图在正文里出现两次
                         upload(item)
                     }
                 }
@@ -438,9 +482,10 @@ fun NewPostScreen(
         return
     }
 
+    // 页面底色由最外层的 PageBackground 提供，本页保持透明。
     draftPrompt?.let { saved ->
         androidx.compose.material3.AlertDialog(
-
+            // 点外面/返回键按「继续编辑」处理：草稿不能因为误触丢
             onDismissRequest = { keepDraft(saved) },
             title = { Text("继续编辑草稿？") },
             text = { Text("上次的草稿还没有发布。") },
@@ -490,7 +535,7 @@ fun NewPostScreen(
         ArisuTopBar(
             title = if (editPost != null) "编辑帖子" else "撰写帖子",
             subtitle = "当前板块：${board.label}",
-
+            // 顶栏返回与系统返回同一道确认，草稿不再被静默丢弃
             onBack = { if (hasDraft && !publishing) confirmDiscard = true else onBack() },
             actions = {
                 if (publishing) {
@@ -560,7 +605,7 @@ fun NewPostScreen(
 
             MarkdownToolbar(
                 onAction = { action ->
-
+                    // 行内样式再点取消、列表/引用按整行、代码按单行/多行分流，全在纯函数里
                     body = applyMarkdownAction(body, action)
                     runCatching { bodyField.requestFocus() }
                     keyboard?.show()
@@ -603,13 +648,14 @@ fun NewPostScreen(
 
             Spacer(Modifier.height(10.dp))
 
+            // 正文区：输入槽直接在页面上，不再套一层凸起稿纸卡
             Box(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
                 ArisuTextField(
                     value = body,
                     onValueChange = { new ->
-
+                        // 服务端正文上限 32000 字：超长粘贴在输入侧截住
                         if (new.text.length <= 32000) {
-
+                            // 刚敲下的这个字符是 @ 就唤起提及选择器（同评论区）
                             val caret = new.selection.start
                             if (new.text.length == body.text.length + 1 && new.selection.collapsed &&
                                 new.text.getOrNull(caret - 1) == '@'
@@ -628,6 +674,7 @@ fun NewPostScreen(
 
             Spacer(Modifier.height(12.dp))
 
+            // 板块选择放在表单末尾：发布前最后确认“发到哪”，避免再出现发错板块
             SectionLabel(text = "发送到板块", trailing = board.label)
             UnderlineTabs(
                 items = Board.entries,
@@ -636,6 +683,7 @@ fun NewPostScreen(
                 label = { it.label },
             )
 
+            // 编号是发布时才分配的，改帖时这句没有意义
             if (editPost == null) {
                 Spacer(Modifier.height(12.dp))
                 Text(
@@ -647,6 +695,7 @@ fun NewPostScreen(
             }
         }
 
+        /* ── 图片来源选择 ───────────────────────────────── */
         if (showImageSheet) {
             ModalBottomSheet(onDismissRequest = { showImageSheet = false }) {
                 Column(
@@ -685,7 +734,7 @@ fun NewPostScreen(
                         subtitle = "调用相机现拍一张",
                         onClick = {
                             showImageSheet = false
-
+                            // 顺手清掉历次进程死亡/失败遗留的孤儿截图（超过一天的都算）
                             runCatching {
                                 File(context.filesDir, "camera").listFiles()?.forEach {
                                     if (System.currentTimeMillis() - it.lastModified() > 24 * 3600_000L) it.delete()
@@ -716,6 +765,7 @@ fun NewPostScreen(
             }
         }
 
+        /* ── 表情包：点选即按 Markdown 插进正文 ── */
         if (showStickers) {
             EmojiSheet(
                 onSelect = { emoji -> body = insertMark(body, MdMark(emoji)) },
@@ -726,6 +776,7 @@ fun NewPostScreen(
             )
         }
 
+        /* ── 提及选择器：正文里输入 @ 唤起，选人后把触发用的 @ 替换成完整编号 ── */
         if (showMention) {
             MentionPickerSheet(
                 visible = true,
@@ -739,16 +790,24 @@ fun NewPostScreen(
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 待发配图
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 一张待发图：暂存件一路带着自己的上传状态，编辑过就换件重传 */
 private class StagedImage(val id: Long, var file: File) {
     var progress by mutableStateOf(0f)
     var url by mutableStateOf<String?>(null)
 
+    /** 已插进正文的那一段 Markdown：编辑重传时要原位换掉，而不是又插一条 */
     var markdown by mutableStateOf<String?>(null)
     var error by mutableStateOf<String?>(null)
 
+    /** 用户已把这张图从网格移除：在途上传完成后不得再把地址插回正文 */
     var removed by mutableStateOf(false)
 }
 
+/** 正在编辑的是哪张：封面或某张正文配图 */
 private sealed interface EditTarget {
     val path: String
 
@@ -761,6 +820,9 @@ private sealed interface EditTarget {
     }
 }
 
+/**
+ * 待发图网格：一张一格，上传中是圆环加百分比，失败点一下重传，点图进编辑器。
+ */
 @Composable
 private fun StagedImageRow(
     list: List<StagedImage>,
@@ -845,7 +907,7 @@ private fun StagedImageRow(
                         }
                     }
                 }
-
+                // 移除：右上角小叉，压在图的上层
                 Box(
                     Modifier
                         .align(Alignment.TopEnd)
@@ -868,10 +930,15 @@ private fun StagedImageRow(
     }
 }
 
+/**
+ * 封面选择区：未选时一枚凹槽占位，选中后展示缩略图，可更换/编辑/移除。
+ * [fetching] 是「把旧封面取回本地取景」的空档，此时封面已是站上那张图，
+ * 只是还不能改，所以只压一层转圈，不显示百分比。
+ */
 @Composable
 private fun CoverPicker(
     coverUrl: String?,
-
+    /** 0f–1f = 上传中；-1f = 空闲 */
     progress: Float,
     fetching: Boolean,
     onPick: () -> Unit,
@@ -982,6 +1049,10 @@ private fun createCameraFile(context: Context): Pair<Uri, File> {
     return FileProvider.getUriForFile(context, context.packageName + ".fileprovider", file) to file
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 顶部「发布」
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Composable
 private fun PublishButton(text: String, enabled: Boolean, onClick: () -> Unit) {
     Box(
@@ -1005,10 +1076,14 @@ private fun PublishButton(text: String, enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * Markdown 工具栏
+ * ══════════════════════════════════════════════════════════════════ */
+
 private data class MdTool(
     val icon: ImageVector,
     val label: String,
-
+    /** null 表示需要额外弹面板（图片），由 onPickImage 处理 */
     val action: MdAction?,
 )
 
@@ -1028,7 +1103,7 @@ private fun MarkdownToolbar(
     onAction: (MdAction) -> Unit,
     onPickImage: () -> Unit,
 ) {
-
+    // Markdown 工具条：扁平文字按钮，上下细线分割（与 WebUI 一致）
     Row(
         Modifier
             .fillMaxWidth()
@@ -1077,6 +1152,10 @@ private fun MarkdownToolbar(
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 小件
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Composable
 private fun ImageSourceRow(
     icon: ImageVector,
@@ -1114,6 +1193,7 @@ private fun ImageSourceRow(
     }
 }
 
+/** 提及补全：把触发用的那个 @ 换成完整编号（光标未必在末尾，按光标前一位找）。 */
 private fun applyMention(value: TextFieldValue, userId: String): TextFieldValue {
     val text = value.text
     val caret = value.selection.max.coerceIn(0, text.length)

@@ -3,11 +3,15 @@ package dev.arisu.shrine.core.markdown
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
 
+/**
+ * 工具栏动作。语义照 GitHub 的 markdown-toolbar：
+ * 行内样式再点一次取消，标题/列表/引用按整行处理，代码按单行行内、多行围栏处理。
+ */
 enum class MdAction { Bold, Italic, Heading, List, Code, Quote, Link }
 
 fun applyMarkdownAction(value: TextFieldValue, action: MdAction): TextFieldValue = when (action) {
     MdAction.Bold -> toggleInline(value, "**", "**", trimFirst = true)
-
+    // 用 * 而不是 _：渲染器只认 *，而且 @User_000015 的下划线不能被当成斜体记号
     MdAction.Italic -> toggleInline(value, "*", "*", trimFirst = true)
     MdAction.Heading -> toggleHeading(value, 2)
     MdAction.List -> toggleUnorderedList(value)
@@ -23,6 +27,15 @@ private val FenceRe = Regex("""^```.*$""")
 private val UrlRe = Regex("""^https?://\S+$""")
 private val LinkRe = Regex("""^\[([^\]]*)]\(([^)]*)\)$""")
 
+/* ── 行内样式 ───────────────────────────────────────────── */
+
+/**
+ * 加粗/斜体/行内代码共用。
+ *
+ * 选中/光标落在已有记号里就剥掉记号（再点一次取消）；否则包起来。
+ * 没有选区时插一对空记号，光标落中间——不塞「粗体」这类占位词，
+ * 免得只点一下没输入就把占位词留进正文。
+ */
 fun toggleInline(
     value: TextFieldValue,
     prefix: String,
@@ -34,6 +47,7 @@ fun toggleInline(
     val end = value.selection.max.coerceIn(0, text.length)
     val collapsed = start == end
 
+    // 已经是 ***粗斜体***：再点斜体去掉一层，别继续叠星号
     if (prefix == "*" && suffix == "*" && !collapsed) {
         val selected = text.substring(start, end)
         if (selected.length >= 6 && selected.startsWith("***") && selected.endsWith("***")) {
@@ -72,6 +86,7 @@ fun toggleInline(
         return TextFieldValue(newText, TextRange(start + prefix.length))
     }
 
+    // 选中的内容整体包住；两端空白留在记号外（GitHub 的 trimFirst）
     var core = text.substring(start, end)
     var leading = ""
     var trailing = ""
@@ -90,8 +105,9 @@ fun toggleInline(
     return TextFieldValue(newText, TextRange(selStart, selStart + core.length))
 }
 
+/** 找出包住选区/光标的那对记号；没有就返回 null */
 private fun findWrap(text: String, start: Int, end: Int, prefix: String, suffix: String): Pair<Int, Int>? {
-
+    // 选区本身带记号（例：整段 **粗体** 被选中）
     if (end - start >= prefix.length + suffix.length &&
         text.regionMatches(start, prefix, 0, prefix.length) &&
         text.regionMatches(end - suffix.length, suffix, 0, suffix.length) &&
@@ -100,7 +116,7 @@ private fun findWrap(text: String, start: Int, end: Int, prefix: String, suffix:
     ) {
         return start to end
     }
-
+    // 记号贴在选区两侧（例：只选了粗体两个字）
     if (start >= prefix.length && end + suffix.length <= text.length &&
         text.regionMatches(start - prefix.length, prefix, 0, prefix.length) &&
         text.regionMatches(end, suffix, 0, suffix.length) &&
@@ -109,7 +125,7 @@ private fun findWrap(text: String, start: Int, end: Int, prefix: String, suffix:
     ) {
         return (start - prefix.length) to (end + suffix.length)
     }
-
+    // 光标落在记号中间（例：**粗|体**，再点一次取消）
     if (start == end) {
         val lineFrom = lineStart(text, start)
         val lineTo = lineEnd(text, end)
@@ -137,9 +153,10 @@ private fun findWrap(text: String, start: Int, end: Int, prefix: String, suffix:
     return null
 }
 
+/** 下划线既可能是斜体记号，也可能是 @User_000015 的一部分；星号要避开 ** 加粗 */
 private fun markerBoundary(text: String, index: Int, marker: String, opening: Boolean): Boolean {
     if (marker == "*") {
-
+        // 单个 * 才是斜体；** 或 *** 里的 * 不抢
         return text.getOrNull(index - 1) != '*' && text.getOrNull(index + marker.length) != '*'
     }
     if (marker != "_") return true
@@ -164,6 +181,9 @@ private fun starRunAfter(text: String, index: Int): Int {
     return i - index
 }
 
+/* ── 标题 / 列表 / 引用 ─────────────────────────────────── */
+
+/** 标题按整行处理：选中多行就每行加；再点一次把已有的标题记号去掉 */
 fun toggleHeading(value: TextFieldValue, level: Int): TextFieldValue {
     val text = value.text
     val (from, to) = lineRange(text, value.selection.min, value.selection.max)
@@ -200,6 +220,7 @@ fun toggleHeading(value: TextFieldValue, level: Int): TextFieldValue {
     }
 }
 
+/** 无序列表按整行开关；已有别的列表记号先清掉再套，不会叠成 - 1. */
 fun toggleUnorderedList(value: TextFieldValue): TextFieldValue = toggleList(value, bullet = true)
 
 private fun toggleList(value: TextFieldValue, bullet: Boolean): TextFieldValue {
@@ -213,7 +234,7 @@ private fun toggleList(value: TextFieldValue, bullet: Boolean): TextFieldValue {
     val allTarget = nonEmpty.isNotEmpty() && nonEmpty.all { targetRe.containsMatchIn(it) }
 
     if (nonEmpty.isEmpty() && !collapsed) return value
-
+    // 当前是空行：点列表就是起一个新列表项
     if (nonEmpty.isEmpty()) {
         val newText = text.replaceRange(from, to, marker)
         return TextFieldValue(newText, TextRange(from + marker.length))
@@ -251,6 +272,7 @@ private fun toggleList(value: TextFieldValue, bullet: Boolean): TextFieldValue {
     }
 }
 
+/** 引用按整行开关；加引用时上下各留一个空行，避免和正文粘成一段 */
 fun toggleQuote(value: TextFieldValue): TextFieldValue {
     val text = value.text
     val (from, to) = lineRange(text, value.selection.min, value.selection.max)
@@ -290,6 +312,12 @@ fun toggleQuote(value: TextFieldValue): TextFieldValue {
     }
 }
 
+/* ── 代码 / 链接 ─────────────────────────────────────────── */
+
+/**
+ * 代码按钮照 GitHub：单行是行内代码，跨行是围栏代码块。
+ * 围栏块再点一次会连围栏一起撤掉。
+ */
 fun toggleCode(value: TextFieldValue): TextFieldValue {
     val text = value.text
     val start = value.selection.min.coerceIn(0, text.length)
@@ -304,6 +332,7 @@ fun toggleCode(value: TextFieldValue): TextFieldValue {
     val block = text.substring(from, to)
     val blockLines = block.split('\n')
 
+    // 选区自己带着围栏
     if (blockLines.size >= 2 &&
         blockLines.first().trimStart().startsWith("```") &&
         blockLines.last().trim() == "```"
@@ -315,6 +344,7 @@ fun toggleCode(value: TextFieldValue): TextFieldValue {
         return TextFieldValue(newText, TextRange(selStart, selEnd))
     }
 
+    // 围栏在选区外：上一行是 ```，下一行是 ```
     val beforeLineStart = lineStart(text, from - 1)
     val beforeLine = if (from > 0) text.substring(beforeLineStart, from - 1) else null
     val afterLineEnd = if (to < text.length && text[to] == '\n') lineEnd(text, to + 1) else to
@@ -332,6 +362,7 @@ fun toggleCode(value: TextFieldValue): TextFieldValue {
         return TextFieldValue(newText, TextRange(selStart, selEnd))
     }
 
+    // 加围栏：整行搬进代码块，内容保持选中
     val replacement = "```\n$block\n```"
     val newText = text.replaceRange(from, to, replacement)
     val selStart = from + 4 + (start - from)
@@ -339,6 +370,10 @@ fun toggleCode(value: TextFieldValue): TextFieldValue {
     return TextFieldValue(newText, TextRange(selStart, selEnd))
 }
 
+/**
+ * 链接：选区是 URL → 生成 []（URL）并把光标放到方括号里；
+ * 选区是已有链接 → 拆回链接文字；否则包成 [文字](url) 并选中 url。
+ */
 fun toggleLink(value: TextFieldValue): TextFieldValue {
     val text = value.text
     val start = value.selection.min.coerceIn(0, text.length)
@@ -366,6 +401,8 @@ fun toggleLink(value: TextFieldValue): TextFieldValue {
     return TextFieldValue(newText, TextRange(urlStart, urlStart + 3))
 }
 
+/* ── 行工具 ─────────────────────────────────────────────── */
+
 private fun lineStart(text: String, index: Int): Int {
     if (index <= 0) return 0
     val newline = text.lastIndexOf('\n', index - 1)
@@ -383,12 +420,14 @@ private fun lineRange(text: String, selectionStart: Int, selectionEnd: Int): Pai
     return lineStart(text, start) to lineEnd(text, end)
 }
 
+/** 第 index 行在新块里的起始偏移 */
 private fun lineOffset(lines: List<String>, index: Int): Int {
     var offset = 0
     for (i in 0 until index.coerceIn(0, lines.size - 1)) offset += lines[i].length + 1
     return offset
 }
 
+/** 加块级样式时上下补空行（GitHub 的 surroundWithNewlines） */
 private fun newlinesAround(text: String, start: Int, end: Int): Pair<String, String> {
     val before = text.substring(0, start)
     val after = text.substring(end)

@@ -19,6 +19,11 @@ import dev.arisu.shrine.core.design.InkMuted
 import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.data.model.Role
 
+/**
+ * 封面身份区：昵称独占一行居中，职务标签尾随在个人状态之后。
+ * 昵称加职务整体居中会把昵称挤偏，挂在状态后面两边都不耽误。
+ * 「我的客房」和他人主页共用。
+ */
 @Composable
 internal fun ProfileIdentity(nickname: String, role: Role, status: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {

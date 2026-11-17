@@ -43,6 +43,12 @@ import dev.arisu.shrine.data.repo.Shrine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+/**
+ * 表情包面板：自留表情的网格，第一格是「添加」，长按一张可以删。
+ *
+ * 上限由服务端下发（[Shrine.stickerLimit]），不在界面里硬编码；
+ * 别人发过的表情也能收——帖子与评论里的图长按即可「添加到表情包」。
+ */
 @Composable
 fun StickerPanel(
     onPick: (Sticker) -> Unit,
@@ -62,7 +68,7 @@ fun StickerPanel(
         } catch (e: Exception) {
             if (e is CancellationException) throw e
             loading = false
-
+            // 有缓存就继续用，只把失败说出来
             if (items.isEmpty()) notice = e.toApiMessage()
         }
     }
@@ -117,7 +123,7 @@ fun StickerPanel(
             cells.chunked(4).forEach { row ->
                 Row(
                     Modifier.fillMaxWidth(),
-
+                    // 居中排布：一行四格但面板比四格宽，左对齐会在右边留出一截空白
                     horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -166,12 +172,13 @@ fun StickerPanel(
     if (settingsOpen) {
         StickerSettingsOverlay(onClose = {
             settingsOpen = false
-
+            // 关掉设置时按服务器重取：顺序与增删都可能变过
             scope.launch { runCatching { items = Shrine.myStickers() } }
         })
     }
 }
 
+/** 一格表情：凹槽里 Fit 展示，透明底/动图都不会被裁 */
 @Composable
 private fun StickerCell(
     sticker: Sticker,
@@ -191,7 +198,8 @@ private fun StickerCell(
             model = sticker.url,
             contentDescription = if (sticker.animated) "动图表情" else "表情",
             contentScale = ContentScale.Fit,
-
+            // 圆角要落在图片自己身上：只裁外框时，内缩 4dp 的图四角正好落在直边段，
+            // 看起来仍是方的（管理界面同一处理）
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(8.dp)),
@@ -199,6 +207,7 @@ private fun StickerCell(
     }
 }
 
+/** 「设置」格：占着原先「添加」的位置，进去才是添加与拖拽排序 */
 @Composable
 private fun SettingsCell(onClick: () -> Unit) {
     Box(

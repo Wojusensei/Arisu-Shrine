@@ -33,16 +33,24 @@ import dev.arisu.shrine.core.design.heatColor
 import dev.arisu.shrine.data.model.TileDay
 import java.time.LocalDate
 
+/**
+ * 参拜热度：近一年的方格图，53 列 × 7 行，最后一格是今天。
+ *
+ * 服务端从「今天往前 370 天」连续发出瓷砖，起点落在星期几不固定；
+ * 这里按起点补齐到周一再切列——不补的话整张表会随起点整体错位
+ * （用户实测：星期天那格落进了星期六一行）。
+ */
 @Composable
 fun HeatmapCard(
     tiles: List<TileDay>,
     header: @Composable ColumnScope.() -> Unit,
     modifier: Modifier = Modifier,
 ) {
-
+    // 切周列是纯计算但每次重组都要重跑一遍（逐日 LocalDate 解析），按数据记住结果
     val columns = remember(tiles) { tiles.weekColumns() }
     val scroll = rememberScrollState()
 
+    // 默认滚到最右端：最新的一周在最右边。
     LaunchedEffect(scroll, columns.size) {
         snapshotFlow { scroll.maxValue }.collect { max ->
             if (max > 0) scroll.scrollTo(max)
@@ -95,6 +103,7 @@ fun HeatmapCard(
     }
 }
 
+/** 周一 / 周三 / 周五 三行标签，行高与格子严格对齐。 */
 @Composable
 private fun WeekdayLabels() {
     val labels = listOf("周一", "", "周三", "", "周五", "", "")
@@ -153,10 +162,14 @@ private fun TileLegend() {
     }
 }
 
+/**
+ * 按「周一起始」切周：首列前补 null 占位，让每一列的第 0 行都是周一。
+ * 服务端保证最后一格是今天；date 是上海时区的 yyyy-MM-dd。
+ */
 internal fun List<TileDay>.weekColumns(): List<List<TileDay?>> {
     if (isEmpty()) return emptyList()
     val first = runCatching { LocalDate.parse(first().date) }.getOrNull()
-
+    // 解析不了就按原样切：宁可错位也不崩
     val pad = first?.let { it.dayOfWeek.value - 1 } ?: 0
     val padded = List<TileDay?>(pad.coerceIn(0, 6)) { null } + this
     return padded.chunked(7)

@@ -22,6 +22,10 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
+/**
+ * 带数据的页面/组件画廊：封面信息顺序、签名完整性、介绍语封面等
+ * 曾多次出问题的展示逻辑，在这里用真实数据渲染做回归。
+ */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
@@ -65,7 +69,7 @@ class DataGalleryTest : ScreenshotBase() {
 
     @Test
     fun myRoomCover() {
-
+        // 封面：昵称+职务徽章 → 状态 → 签名（最多三行完整显示）
         shot("组件-客房封面") {
             PageBackground {
                 dev.arisu.shrine.feature.profile.CoverSection(me = sampleUser, onEditProfile = {})

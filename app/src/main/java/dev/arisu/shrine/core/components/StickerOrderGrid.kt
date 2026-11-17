@@ -41,14 +41,21 @@ import dev.arisu.shrine.data.model.Sticker
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
+/** 一行四格（与面板同规）；格 64 + 间距 10 = 74dp 一格位 */
 internal const val GRID_COLS = 4
 internal val STICKER_CELL = 64.dp
 internal val STICKER_GAP = 10.dp
 
+/** 拖拽跨格的方向 */
 internal enum class DragDir { Left, Right, Up, Down }
 
+/** 视觉槽位：首格（「添加」）占 0 号位，表情从 1 号位起 */
 internal fun visualSlot(index: Int): Int = index + 1
 
+/**
+ * 还能不能往这个方向再跨一格：左右不越行（换行靠上下拖），上下不出格，
+ * 也不能挪进 0 号位——那儿是「添加」格，不属于表情。
+ */
 internal fun canStep(dir: DragDir, index: Int, count: Int): Boolean = when (dir) {
     DragDir.Right -> visualSlot(index) % GRID_COLS < GRID_COLS - 1 && index + 1 <= count - 1
     DragDir.Left -> visualSlot(index) % GRID_COLS > 0 && index - 1 >= 0
@@ -56,9 +63,16 @@ internal fun canStep(dir: DragDir, index: Int, count: Int): Boolean = when (dir)
     DragDir.Up -> index - GRID_COLS >= 0
 }
 
+/** 槽位 → 格栅内左上角像素坐标 */
 internal fun slotOffsetPx(slot: Int, pitchPx: Float): Offset =
     Offset((slot % GRID_COLS) * pitchPx, (slot / GRID_COLS) * pitchPx)
 
+/**
+ * 表情格栅：长按拖起 → 拖动中其余格子滑开让路 → 松手落位。
+ *
+ * 直接改写 [items] 的顺序，只当草稿：拖完不落库（用户收拾到一半退出不该生效），
+ * 由调用方在「保存」时统一提交。[firstCell] 是 0 号槽位的固定格（「添加」），不参与排序。
+ */
 @Composable
 fun StickerOrderGrid(
     items: SnapshotStateList<Sticker>,
@@ -68,13 +82,15 @@ fun StickerOrderGrid(
     val scope = rememberCoroutineScope()
     val pitchPx = with(LocalDensity.current) { (STICKER_CELL + STICKER_GAP).toPx() }
 
+    // 拖拽态：拖起的 id、它的下标、跟手余量（每跨一格就扣掉整步）、起拖格的槽位基准
     var dragId by remember { mutableStateOf<String?>(null) }
     var dragIndex by remember { mutableStateOf(-1) }
     var residual by remember { mutableStateOf(Offset.Zero) }
     var liftBase by remember { mutableStateOf(Offset.Zero) }
-
+    // 松手后还在滑回槽位的那一格：动画走完才算归位（缩放也跟着收回）
     var settleId by remember { mutableStateOf<String?>(null) }
 
+    // 每格的位置动画，按 id 存：顺序一变，格子的树位置跟着变，状态不能丢
     val slides = remember { mutableMapOf<String, Animatable<Offset, AnimationVector2D>>() }
     val glide = remember {
         spring<Offset>(
@@ -86,6 +102,7 @@ fun StickerOrderGrid(
 
     fun slotTopLeft(index: Int): Offset = slotOffsetPx(visualSlot(index), pitchPx)
 
+    /** 相邻换位。拖起的那格把基准挪到新槽，配合调用方对跟手余量的扣减，视觉上不跳 */
     fun swap(a: Int, b: Int) {
         if (a !in items.indices || b !in items.indices) return
         val tmp = items[a]
@@ -95,16 +112,17 @@ fun StickerOrderGrid(
         if (items[b].id == dragId) liftBase = slotTopLeft(b)
     }
 
+    /** 松手落位：从当前位置滑进槽位。取消手势也走这里，免得半路闪跳 */
     fun settleTo(id: String) {
         val index = items.indexOfFirst { it.id == id }
         val to = if (index >= 0) slotTopLeft(index) else liftBase
         val start = residual
         settleId = id
         scope.launch {
-
+            // 落位结束后由位置动画接管渲染，先把终槽写上，交接不闪
             slides[id]?.snapTo(to)
             if (start != Offset.Zero) {
-
+                // 临时位移量从松手点滑回零：这一格的落位动画
                 Animatable(start, Offset.VectorConverter).animateTo(Offset.Zero, glide) {
                     if (settleId == id) residual = value
                 }
@@ -135,7 +153,7 @@ fun StickerOrderGrid(
                     val slide = slides.getOrPut(sticker.id) {
                         Animatable(target, Offset.VectorConverter)
                     }
-
+                    // 槽位一变就滑过去；拖起的那格自己跟手，不参与
                     LaunchedEffect(target) {
                         if (sticker.id != dragId) slide.animateTo(target, glide)
                     }
@@ -164,7 +182,7 @@ fun StickerOrderGrid(
                                     onDragStart = {
                                         val i = items.indexOfFirst { it.id == sticker.id }
                                         if (i < 0) return@detectDragGesturesAfterLongPress
-
+                                        // 上一格还没落完位就被抓起来：这一轮接管
                                         settleId = null
                                         dragId = sticker.id
                                         dragIndex = i
@@ -177,7 +195,7 @@ fun StickerOrderGrid(
                                             return@detectDragGesturesAfterLongPress
                                         }
                                         residual += amount
-
+                                        // 越过半格就与相邻格换位：其余格子滑开让路，拖起的那格始终跟手
                                         val half = pitchPx / 2f
                                         while (residual.x > half &&
                                             canStep(DragDir.Right, dragIndex, items.size)
@@ -218,7 +236,7 @@ fun StickerOrderGrid(
                                         val id = dragId
                                         dragId = null
                                         dragIndex = -1
-
+                                        // 已经换过的位不回滚：那一版就是草稿顺序
                                         if (id != null) settleTo(id)
                                     },
                                 )
@@ -230,7 +248,7 @@ fun StickerOrderGrid(
                             model = sticker.url,
                             contentDescription = if (sticker.animated) "动图表情" else "表情",
                             contentScale = ContentScale.Fit,
-
+                            // 管理界面一律圆角：方角缩略图跟这套拟物材质不搭
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)),
                         )
                     }

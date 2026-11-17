@@ -8,8 +8,13 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 
+/**
+ * 神社自绘图标集：与 Material 图标同一 24dp 网格。
+ * 风格：实心剪影——与启动图标同一套语言，小尺寸下轮廓依然清晰。
+ */
 object ShrineIcons {
 
+    /** 鸟居实心剪影（与启动图标同一图形）。用于「神社祝部」tab。 */
     val Torii: ImageVector by lazy {
         ImageVector.Builder(
             name = "Torii",
@@ -53,6 +58,7 @@ object ShrineIcons {
         }.build()
     }
 
+    /** 御神签筒实心剪影：三签头 + 沿口 + 圆底筒身。 */
     val Omikuji: ImageVector by lazy {
         ImageVector.Builder(
             name = "Omikuji",
@@ -92,6 +98,7 @@ object ShrineIcons {
         }.build()
     }
 
+    /** 鲤鱼旗实心剪影：旗杆 + 鱼形风幡（眼用 even-odd 镂空）。用于「神社游会」tab。 */
     val Koinobori: ImageVector by lazy {
         ImageVector.Builder(
             name = "Koinobori",
@@ -128,6 +135,7 @@ object ShrineIcons {
         }.build()
     }
 
+    /** 标题 T 字。Markdown 工具「标题」。 */
     val Title: ImageVector by lazy {
         ImageVector.Builder(
             name = "Title",
@@ -149,6 +157,7 @@ object ShrineIcons {
         }.build()
     }
 
+    /** 燃烧中的香（参拜者御守）：火苗 + 香杆 + 香座，实心剪影。 */
     val Incense: ImageVector by lazy {
         ImageVector.Builder(
             name = "Incense",
@@ -158,20 +167,20 @@ object ShrineIcons {
             viewportHeight = 24f,
         ).apply {
             path(fill = SolidColor(Color.Black)) {
-
+                // 火苗
                 moveTo(12f, 2f)
                 curveTo(13.6f, 3.8f, 14.8f, 5.4f, 14.8f, 7.1f)
                 curveToRelative(0f, 1.55f, -1.25f, 2.8f, -2.8f, 2.8f)
                 reflectiveCurveToRelative(-2.8f, -1.25f, -2.8f, -2.8f)
                 curveToRelative(0f, -1.7f, 1.2f, -3.3f, 2.8f, -5.1f)
                 close()
-
+                // 香杆
                 moveTo(11.25f, 10.6f)
                 lineTo(12.75f, 10.6f)
                 lineTo(12.75f, 19.2f)
                 lineTo(11.25f, 19.2f)
                 close()
-
+                // 香座
                 moveTo(7.2f, 20.2f)
                 lineTo(16.8f, 20.2f)
                 lineTo(16.8f, 22f)
@@ -181,6 +190,7 @@ object ShrineIcons {
         }.build()
     }
 
+    /** 绘马牌（even-odd 镂空边框）。通知「奉纳申请」。 */
     val Ema: ImageVector by lazy {
         ImageVector.Builder(
             name = "Ema",
@@ -219,6 +229,7 @@ object ShrineIcons {
         }.build()
     }
 
+    /** 樱花瓣：带缺口的单瓣剪影。空状态与弹层的点缀。 */
     val Sakura: ImageVector by lazy {
         ImageVector.Builder(
             name = "Sakura",
@@ -240,6 +251,11 @@ object ShrineIcons {
         }.build()
     }
 
+
+
+
+
+    /** 涡环云：云头一道由外向内卷的厚螺线（白描），云尾从螺线外缘顺出、平滑收细。 */
     val Kumo: ImageVector by lazy {
         ImageVector.Builder(
             name = "Kumo",
@@ -248,7 +264,7 @@ object ShrineIcons {
             viewportWidth = 72f,
             viewportHeight = 30f,
         ).apply {
-
+            // 螺线云头：半径每四分之一圈收缩，一圈半卷入圆心；粗描边=涡带
             path(
                 stroke = SolidColor(Color.Black),
                 strokeAlpha = 1f,
@@ -262,7 +278,7 @@ object ShrineIcons {
                 curveTo(19.65f, 8.2f, 20.8f, 10.9f, 20.8f, 13f)
                 curveTo(20.8f, 15.1f, 18.82f, 16.3f, 17f, 16.3f)
             }
-
+            // 云尾：从螺线右缘顺出，向右收细成尖
             path(
                 fill = SolidColor(Color.Black),
                 fillAlpha = 0.55f,

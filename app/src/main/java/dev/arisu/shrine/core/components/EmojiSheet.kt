@@ -26,18 +26,25 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import dev.arisu.shrine.data.model.Sticker
 
+/** 表情面板的可选表情。帖子详情与绘马回复共用一份。 */
 val EmojiPalette = listOf(
     "😀", "😄", "😅", "😂", "🙂", "😉", "😍", "🤔",
     "😴", "😭", "😡", "🥺", "👍", "👏", "🙏", "🎉",
     "🔥", "⭐", "🌸", "🍵", "🎴", "⛩️", "❄️", "🌙",
 )
 
+/** 面板里的三格：表情、颜文字与自留表情包 */
 private enum class SheetTab(val label: String) {
     EMOJI("表情"),
     KAOMOJI("颜文字"),
     STICKER("表情包"),
 }
 
+/**
+ * 底部表情面板（ModalBottomSheet）：点选即回调并自动收起。
+ * 帖子详情的评论输入条与绘马回复输入条共用同一套交互；
+ * 传了 [onSticker] 才出现「表情包」那一格。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EmojiSheet(
@@ -46,7 +53,7 @@ fun EmojiSheet(
     onSticker: ((Sticker) -> Unit)? = null,
 ) {
     var tab by remember { mutableStateOf(SheetTab.EMOJI) }
-
+    // 表情包是用户自己的东西，没有就不占一格；颜文字人人可用
     val tabs = remember(onSticker) {
         if (onSticker != null) {
             listOf(SheetTab.EMOJI, SheetTab.KAOMOJI, SheetTab.STICKER)

@@ -47,6 +47,10 @@ import dev.arisu.shrine.data.local.Draft
 import dev.arisu.shrine.data.local.DraftStore
 import dev.arisu.shrine.data.repo.Shrine
 
+/**
+ * 草稿箱。回复草稿按目标帖子/绘马归档，发帖与发绘马各留一份最新稿。
+ * 点击回到原处继续写；删除先确认。
+ */
 @Composable
 fun DraftsScreen(
     onBack: () -> Unit,
@@ -68,6 +72,7 @@ fun DraftsScreen(
         loaded = true
     }
 
+    // 从原帖/原绘马返回时重新读一遍：刚发出去的草稿不该还挂在列表上
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         val uid = me?.id ?: return@LifecycleEventEffect
         scope.launch {

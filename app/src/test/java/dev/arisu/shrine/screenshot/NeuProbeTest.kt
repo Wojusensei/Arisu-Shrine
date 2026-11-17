@@ -39,6 +39,10 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import java.io.File
 
+/**
+ * 新拟物探针：改所有页面之前，先确认两层真实模糊的反向投影
+ * 在渲染管线里确实出得来。
+ */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")
@@ -50,7 +54,7 @@ class NeuProbeTest {
     @Test
     fun probeNeumorphism() {
         rule.setContent {
-
+            // 探针基线按亮色录制（ArisuTheme 默认 isDark=false）
             ArisuShrineTheme {
                 PageBackground {
                     Column(
@@ -61,6 +65,7 @@ class NeuProbeTest {
                     ) {
                         Text("新拟物探针", style = MaterialTheme.typography.headlineSmall)
 
+                        // 1. 真模糊双层投影的凸起面
                         NeuSurface(
                             shape = RoundedCornerShape(22.dp),
                             depth = 6.dp,
@@ -73,6 +78,7 @@ class NeuProbeTest {
                             }
                         }
 
+                        // 2. elevation 近似的凸起面（列表里大量用的那种）
                         Column(
                             Modifier
                                 .fillMaxWidth()
@@ -84,6 +90,7 @@ class NeuProbeTest {
                             Text("用在列表里的大量小卡片上", style = MaterialTheme.typography.bodySmall)
                         }
 
+                        // 3. 凹陷面
                         Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                             NeuInset(
                                 Modifier
@@ -106,6 +113,7 @@ class NeuProbeTest {
                             }
                         }
 
+                        // 4. 朱色强调面
                         Box(
                             Modifier
                                 .fillMaxWidth()
@@ -120,6 +128,7 @@ class NeuProbeTest {
                             )
                         }
 
+                        // 5. 灰色剪影头像
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(14.dp),

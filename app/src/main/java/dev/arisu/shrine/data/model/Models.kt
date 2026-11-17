@@ -22,6 +22,10 @@ import dev.arisu.shrine.core.design.StateResolved
 import dev.arisu.shrine.core.design.StateResolvedBg
 import dev.arisu.shrine.core.design.InkFaint
 
+/* ══════════════════════════════════════════════════════════════════
+ * 身份体系
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Serializable
 enum class Role(val label: String, val rank: Int) {
     KANNUSHI("神主", 5),
@@ -30,13 +34,17 @@ enum class Role(val label: String, val rank: Int) {
     TEMP_HOUSHI("临时奉仕", 2),
     MEMBER("社员", 1);
 
+    /** 奉仕及以上：可删他人帖、处理举报、警告（禁言/封禁需宫司+） */
     val canModerate: Boolean get() = rank >= 3
 
+    /** 宫司及以上：可置顶/精华、封禁用户 */
     val canCurate: Boolean get() = rank >= 4
 
+    /** 神主：可改用户角色 */
     val canAssignRoles: Boolean get() = rank >= 5
 }
 
+// 身份色全站统一一套：神主金、宫司朱红、奉仕与临时奉仕同蓝、社员灰（头像环、身份徽标共用）
 val Role.accent: Color
     get() = when (this) {
         Role.KANNUSHI -> Gold
@@ -46,6 +54,7 @@ val Role.accent: Color
         Role.MEMBER -> InkFaint
     }
 
+/** 服务端 wire 值（member / temp_houshi / …）→ Role；未知值一律按社员处理。 */
 fun roleFromWire(wire: String): Role = when (wire) {
     "kannushi" -> Role.KANNUSHI
     "guuji" -> Role.GUUJI
@@ -63,10 +72,14 @@ val Role.accentSoft: Color
         Role.MEMBER -> StateClosedBg
     }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 用户
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Serializable
 @Immutable
 data class User(
-
+    /** 社员编号，如 User_000001 */
     val id: String,
     val nickname: String,
     val role: Role,
@@ -74,11 +87,11 @@ data class User(
     val bio: String = "",
     val statusEmoji: String? = null,
     val statusText: String? = null,
-
+    /** 用于生成固定头像的色相种子 */
     val fixedAvatarSeed: Int = 0,
-
+    /** 活跃头像：用哪个种子绘制；null 表示没有活跃头像 */
     val activeAvatarSeed: Int? = null,
-
+    /** 是否启用活跃头像 */
     val activeAvatarEnabled: Boolean = true,
     val fixedAvatarUrl: String? = null,
     val activeAvatarUrl: String? = null,
@@ -91,29 +104,32 @@ data class User(
     val followerCount: Int = 0,
     val onlineHours: Int = 0,
     val postCount: Int = 0,
-
+    /** 账面（单位 0.1 円）：零头不丢地累积被奉纳收入 */
     val balanceTenths: Long = 0,
-
+    /** 主页展示开关（键缺省视为展示） */
     val showFields: Map<String, Boolean> = emptyMap(),
-
+    /** 通知范围 */
     val notifyScope: Map<String, Boolean> = emptyMap(),
     val following: Boolean = false,
     val followsMe: Boolean = false,
     val achievements: List<Achievement> = emptyList(),
 )
 
+/** 大数计数：过万压成「x.x万」，一格宽里放得下（234569 → "23.5万"、10000 → "1万"） */
 fun countCn(n: Long): String = if (n < 10000) n.toString() else {
     val w = n / 10000.0
     val s = if (w >= 100) "%.0f".format(w) else "%.1f".format(w).removeSuffix(".0")
     s + "万"
 }
 
+/** 账面（0.1 円单位）转展示文：整十不带小数，否则保留一位（78 → "78"、783 → "78.3"） */
 fun Long.yenText(): String {
     val whole = this / 10
     val frac = this % 10
     return if (frac == 0L) whole.toString() else "$whole.$frac"
 }
 
+/** 展示用头像种子：启用活跃头像且有活跃头像时用活跃头像，否则回退固定头像 */
 val User.displayAvatarSeed: Int
     get() = if (activeAvatarEnabled && activeAvatarSeed != null) activeAvatarSeed else fixedAvatarSeed
 
@@ -126,6 +142,10 @@ data class Achievement(
     val description: String,
     val unlocked: Boolean = true,
 )
+
+/* ══════════════════════════════════════════════════════════════════
+ * 有栖茶话
+ * ══════════════════════════════════════════════════════════════════ */
 
 @Serializable
 enum class Board(val label: String) {
@@ -144,14 +164,14 @@ enum class PostSort(val label: String) {
 @Serializable
 @Immutable
 data class Post(
-
+    /** 帖子编号，如 arisu_000001 */
     val id: String,
     val board: Board,
     val title: String,
     val body: String,
-
+    /** 介绍语：列表封面展示的一句话（选填） */
     val intro: String = "",
-
+    /** 封面图；空则展示时回落作者头像 */
     val coverUrl: String? = null,
     val authorId: String,
     val authorName: String = "",
@@ -160,21 +180,22 @@ data class Post(
     val createdAt: String,
     val commentCount: Int = 0,
     val upCount: Int = 0,
-
+    /** 被收藏次数，列表与详情一并展示 */
     val saveCount: Int = 0,
-
+    /** 被奉纳的赛钱总额（円） */
     val offerCount: Int = 0,
-
+    /** 当前用户是否已给该帖奉纳过 */
     val offered: Boolean = false,
     val upvoted: Boolean = false,
     val tracked: Boolean = false,
     val favorited: Boolean = false,
     val essence: Boolean = false,
     val pinned: Boolean = false,
-
+    /** 正文里被 @ 的社员：编号到昵称，渲染时用昵称顶替编号展示 */
     val mentionNames: Map<String, String> = emptyMap(),
 )
 
+/** 评论 / 回复。parentId 非空即为嵌套回复。 */
 @Serializable
 @Immutable
 data class Comment(
@@ -185,19 +206,23 @@ data class Comment(
     val authorRole: Role = Role.MEMBER,
     val authorAvatar: String? = null,
     val content: String,
-
+    /** 评论附图（本站图床，空 = 纯文字） */
     val imageUrl: String? = null,
     val createdAt: String,
     val likeCount: Int = 0,
     val liked: Boolean = false,
-
+    /** 被回复的评论 id */
     val parentId: String? = null,
-
+    /** 被回复者昵称，用于「回复 @某某」 */
     val replyToNickname: String? = null,
     val mine: Boolean = false,
-
+    /** 内容里被 @ 的社员：编号到昵称，渲染时用昵称顶替编号展示 */
     val mentionNames: Map<String, String> = emptyMap(),
 )
+
+/* ══════════════════════════════════════════════════════════════════
+ * 神社祝部 · 绘马
+ * ══════════════════════════════════════════════════════════════════ */
 
 @Serializable
 enum class EmaTag(val label: String, val color: Color, val background: Color) {
@@ -218,7 +243,7 @@ enum class EmaState(val label: String, val color: Color, val background: Color) 
 @Serializable
 @Immutable
 data class Ema(
-
+    /** #1、#2 … */
     val id: Int,
     val title: String,
     val body: String,
@@ -245,6 +270,10 @@ data class EmaReply(
     val createdAt: String,
 )
 
+/* ══════════════════════════════════════════════════════════════════
+ * 神社日志
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Serializable
 enum class ReleaseChannel(val label: String) {
     STABLE("稳定版"),
@@ -268,6 +297,10 @@ data class ReleaseNote(
     val body: String,
     val latest: Boolean = false,
 )
+
+/* ══════════════════════════════════════════════════════════════════
+ * 社务箱
+ * ══════════════════════════════════════════════════════════════════ */
 
 @Serializable
 enum class NoticeKind(val label: String) {
@@ -299,13 +332,18 @@ data class Notice(
     val summary: String,
     val createdAt: String,
     val read: Boolean = false,
-
+    /** 已收藏（社务箱的收藏标记，区别于帖子收藏夹） */
     val starred: Boolean = false,
     val status: NoticeStatus? = null,
-
+    /** 点击后跳转的目标路由 */
     val targetRoute: String? = null,
 )
 
+/* ══════════════════════════════════════════════════════════════════
+ * 表情包
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 一张自留表情：存的是本站图床地址；[animated] 用来标注它会动 */
 @Serializable
 @Immutable
 data class Sticker(
@@ -313,6 +351,10 @@ data class Sticker(
     val url: String,
     val animated: Boolean = false,
 )
+
+/* ══════════════════════════════════════════════════════════════════
+ * 收藏 / 关注
+ * ══════════════════════════════════════════════════════════════════ */
 
 @Serializable
 @Immutable
@@ -322,10 +364,14 @@ data class Collection(
     val count: Int,
     val coverSeed: Int,
     val isDefault: Boolean = false,
-
+    /** 收藏夹里最新一条帖子里的图片（网络加载，空则回退色块） */
     val coverUrl: String? = null,
     val contains: Boolean = false,
 )
+
+/* ══════════════════════════════════════════════════════════════════
+ * 我的客房
+ * ══════════════════════════════════════════════════════════════════ */
 
 @Serializable
 enum class ProfileTab(val label: String) {
@@ -335,11 +381,16 @@ enum class ProfileTab(val label: String) {
     FAVORITED("收藏的帖子"),
 }
 
+/** 参拜热度的一格 */
 @Serializable
 data class TileDay(
     val date: String,
     val level: Int,
 )
+
+/* ══════════════════════════════════════════════════════════════════
+ * 神社游会 · 御神签
+ * ══════════════════════════════════════════════════════════════════ */
 
 @Serializable
 enum class OmikujiFortune(val label: String) {
@@ -361,6 +412,7 @@ data class OmikujiDraw(
     val drawnAt: String,
 )
 
+/** 御签榜一行：rank 服务端算好（同分按求签先后严格排位），isMe 标记自己 */
 @Serializable
 @Immutable
 data class OmikujiLeaderRow(
@@ -372,6 +424,7 @@ data class OmikujiLeaderRow(
     val isMe: Boolean = false,
 )
 
+/** 自己的今日名次；未求签时为 null */
 @Serializable
 @Immutable
 data class OmikujiStanding(
@@ -379,6 +432,7 @@ data class OmikujiStanding(
     val luck: Int,
 )
 
+/** 御签榜：前十名次 + 自己附近的名次；两端都为空时整块不渲染 */
 @Serializable
 @Immutable
 data class OmikujiBoard(

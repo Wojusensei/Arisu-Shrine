@@ -30,6 +30,11 @@ import dev.arisu.shrine.core.design.NeuShadow
 import dev.arisu.shrine.data.model.Role
 import dev.arisu.shrine.data.model.accent
 
+/**
+ * 头像：有网络 URL 时用 Coil 加载，加载失败或没设置时
+ * 回退到一枚暖灰的人像剪影（压在浅浅的凹槽圆底上）。
+ * [ring] + [role] 画身份环：环不贴头像，留一圈空隙（与个人主页大头像一致）。
+ */
 @Composable
 fun ArisuAvatar(
     seed: Int,
@@ -63,7 +68,9 @@ fun ArisuAvatar(
                 )
         )
         if (url != null) {
-
+            // 加载完成前露出底层占位底色，完成后 220ms 淡入——不再有生硬的灰块切换。
+            // 内存命中（图已在缓存里）同帧直出，不再每次进屏都跑一遍淡入——
+            // 切页时十几个头像同时起动画，全在给转场添乱
             var loaded by androidx.compose.runtime.remember(url) { androidx.compose.runtime.mutableStateOf(false) }
             var instant by androidx.compose.runtime.remember(url) { androidx.compose.runtime.mutableStateOf(false) }
             val imgAlpha = if (instant) 1f
@@ -73,7 +80,8 @@ fun ArisuAvatar(
                 label = "avatarFade",
             ).value
             AsyncImage(
-
+                // 头像显示尺寸最大也就 130dp 上下，挂 400px 缩略图够用：
+                // 原图动辄一两 MB，一屏十几个头像全按原图拉是列表卡顿的大头
                 model = dev.arisu.shrine.core.net.thumbUrl(url, 400),
                 contentDescription = name,
                 contentScale = ContentScale.Crop,
@@ -97,6 +105,9 @@ fun ArisuAvatar(
     }
 }
 
+/**
+ * 个人主页的大头像：一圈身份色细描边 + 一圈留白，双层套环。
+ */
 @Composable
 fun ArisuAvatarRinged(
     seed: Int,
@@ -123,6 +134,7 @@ fun ArisuAvatarRinged(
     }
 }
 
+/** 列表里的小头像，带一圈极浅描边。 */
 @Composable
 fun ArisuAvatarOutlined(seed: Int, name: String, size: Dp = 40.dp, modifier: Modifier = Modifier, url: String? = null) {
     Box(
@@ -136,6 +148,7 @@ fun ArisuAvatarOutlined(seed: Int, name: String, size: Dp = 40.dp, modifier: Mod
     }
 }
 
+/** 留给旧调用点：新拟物下不再按种子取色。 */
 fun avatarColorFor(seed: Int): Color = NeuAvatarBg
 
 fun avatarInitial(name: String): String = name.trim().take(1).ifEmpty { "栖" }

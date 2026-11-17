@@ -48,6 +48,10 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
+/**
+ * 浏览足迹。按今天/昨天/更早分组，帖子与绘马共用一套条目；
+ * 帖子点进去会回到上次读到的那条评论。
+ */
 @Composable
 fun HistoryScreen(
     onBack: () -> Unit,
@@ -67,6 +71,7 @@ fun HistoryScreen(
         loaded = true
     }
 
+    // 从帖子/绘马返回时刷新时间与顺序
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         val uid = me?.id ?: return@LifecycleEventEffect
         scope.launch {

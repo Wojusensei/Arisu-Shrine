@@ -24,7 +24,10 @@ class MainActivity : ComponentActivity() {
     private var readingScale: Float = 1f
 
     override fun attachBaseContext(newBase: Context) {
-
+        // 主题规则的源头：默认亮色，本机手动覆盖永久生效（DataStore）。
+        // 在 attachBaseContext 注入 uiMode，启动窗口背景（values-night）与
+        // windowBackground 都按偏好解析——冷启动首帧即正确，不闪色。
+        // 系统深浅不再参与：默认亮色，拨过开关以手动为准。
         nightOverride = runBlocking { ThemePrefs.currentNightOverride(newBase) }
         readingScale = runBlocking { ReadingPrefs.currentScale(newBase) }
         val dark = nightOverride ?: false
@@ -37,7 +40,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-
+        // 开关拨动后的即时切换走 ArisuTheme.setNightPref（全树重组，不重建 Activity）；
+        // 这里只在冷启动时把偏好灌进来。
         ArisuTheme.apply(nightOverride)
         ReadingScale.apply(readingScale)
         setContent {

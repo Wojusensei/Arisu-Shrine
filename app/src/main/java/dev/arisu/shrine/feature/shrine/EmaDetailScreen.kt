@@ -99,6 +99,13 @@ import dev.arisu.shrine.data.model.EmaReply
 import dev.arisu.shrine.data.model.EmaState
 import dev.arisu.shrine.data.model.Role
 
+/**
+ * 绘马详情。
+ *
+ * 标题栏：返回 + 更多菜单（编辑 / 删除 / 改变状态，按权限显示）
+ * 正文：编号 + 标题 + 状态 + 标签 + 发起人 + Markdown 正文
+ * 回复：列表 + 底部输入框
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EmaDetailScreen(
@@ -112,22 +119,23 @@ fun EmaDetailScreen(
     var stateMenuOpen by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     var showEmoji by remember { mutableStateOf(false) }
-
+    // 全屏看图：绘马与回复里的图也能放大、存相册、收进表情夹
     var previewUrl by remember { mutableStateOf<String?>(null) }
     var collectedStickers by remember { mutableStateOf<Set<String>>(emptySet()) }
     var reportOpen by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<dev.arisu.shrine.data.model.Ema?>(null) }
-
+    // 回复草稿驻留：串门看发起人主页再回来，写到一半的话还在。
+    // 带选区：表情/表情包插在光标处，插完光标跟着内容走，不会把上一张图的 Markdown 拆开
     var reply by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(""))
     }
     var replyLoaded by rememberSaveable(emaId) { mutableStateOf(false) }
     var replyRestored by rememberSaveable(emaId) { mutableStateOf(false) }
     var sending by remember { mutableStateOf(false) }
-
+    // 首帧：先把上次读到的绘马与回帖摆上来（列表点进来几乎无感），网络回来再覆盖
     var ema by remember { mutableStateOf(Shrine.peekEma(emaId)) }
     var replies by remember { mutableStateOf(Shrine.peekEmaReplies(emaId) ?: emptyList()) }
-    var loadState by remember { mutableStateOf(if (ema == null) "loading" else "ok") }
+    var loadState by remember { mutableStateOf(if (ema == null) "loading" else "ok") } // loading | ok | missing | fail
     val me by Shrine.me.collectAsStateWithLifecycle()
     var pendingReplyDelete by remember { mutableStateOf<EmaReply?>(null) }
     val scope = rememberCoroutineScope()
@@ -140,7 +148,7 @@ fun EmaDetailScreen(
                 replies = Shrine.emaReplies(emaId)
                 loadState = "ok"
             } catch (e: dev.arisu.shrine.data.remote.ApiError) {
-
+                // 内容已在屏上（缓存直出）时刷新失败不夺走阅读：只有手上空空才进失败/不存在态
                 loadState = when {
                     e.message?.contains("不存在") == true -> "missing"
                     ema != null -> "ok"
@@ -158,17 +166,18 @@ fun EmaDetailScreen(
             val uid = Shrine.me.value?.id
             if (uid != null && reply.text.isBlank()) {
                 val saved = DraftStore.get(uid, DraftStore.COMMENT_EMA, emaId.toString())
-
+                // 读盘这几毫秒里用户可能已经落笔：那就别再用旧稿盖掉
                 if (saved != null && reply.text.isBlank() && saved.body.isNotBlank()) {
                     reply = TextFieldValue(saved.body, TextRange(saved.body.length))
                     replyRestored = true
                 }
             }
-
+            // 恢复完再放行自动保存，否则空表单会先把本地那份删掉
             replyLoaded = true
         }
     }
 
+    // 足迹
     LaunchedEffect(ema?.id) {
         val e = ema ?: return@LaunchedEffect
         val uid = Shrine.me.value?.id ?: return@LaunchedEffect
@@ -178,6 +187,7 @@ fun EmaDetailScreen(
         )
     }
 
+    // 输入停顿后落盘；清空即删掉本地那份
     LaunchedEffect(reply.text, replyLoaded, ema?.title) {
         if (!replyLoaded) return@LaunchedEffect
         val uid = Shrine.me.value?.id ?: return@LaunchedEffect
@@ -206,7 +216,8 @@ fun EmaDetailScreen(
             subtitle = ema?.let { "#${it.id}" },
             onBack = onBack,
             actions = {
-
+                // 非作者也要有菜单入口（举报）；作者/管理层看到编辑删除等。
+                // 菜单必须挂在触发按钮的 Box 里，否则 DropdownMenu 会按父容器定位弹到别处
                 val menuEma = ema
                 if (menuEma != null) {
                     Box {
@@ -255,7 +266,8 @@ fun EmaDetailScreen(
                                 },
                                 onDelete = {
                                     menuOpen = false
-
+                                    // 作者与管理删除都先确认：此前作者路径直接删，
+                                    // 手一抖整块绘马就没了（帖子路径一直有确认）
                                     deleteTarget = menuEma
                                 },
                             )
@@ -278,7 +290,7 @@ fun EmaDetailScreen(
                 title = "删除绘马",
                 body = if (isAuthor) "删除后不可恢复。" else "删除后不可恢复，删除理由将通知给发起人。",
                 confirmText = "确认删除",
-
+                // 管理删除需填理由（与服务端一致）；作者自删不需要
                 reasonHint = if (isAuthor) null else "删除理由（必填）",
                 onConfirm = { reason ->
                     Shrine.deleteEma(target.id, if (isAuthor) null else reason)
@@ -289,9 +301,11 @@ fun EmaDetailScreen(
             )
         }
 
+        // 与帖子详情同一套表情面板
         if (showEmoji) {
             EmojiSheet(
-
+                // 插在光标处，并把光标落到插入内容之后；此前是字符串追加，
+                // 光标留在旧末尾，接着打字会把上一张表情包的 Markdown 拆坏
                 onSelect = { reply = insertMark(reply, MdMark(it)) },
                 onSticker = { sticker ->
                     val snippet = "![$MARKDOWN_STICKER_ALT](${sticker.url})\n"
@@ -301,13 +315,14 @@ fun EmaDetailScreen(
             )
         }
 
+        // 全屏看图（绘马正文与回复共用）
         val previewing = previewUrl
         if (previewing != null) {
             dev.arisu.shrine.core.components.ImageViewerDialog(
                 url = previewing,
                 addedToStickers = previewing in collectedStickers,
                 onAddSticker = { imageUrl ->
-
+                    // 成败由看图器自己在底部提示，这里只负责落库与状态
                     Shrine.addSticker(imageUrl)
                     collectedStickers = collectedStickers + imageUrl
                 },
@@ -315,6 +330,7 @@ fun EmaDetailScreen(
             )
         }
 
+        // 举报绘马（文案与帖子举报一致）
         if (reportOpen) {
             dev.arisu.shrine.core.components.ArisuConfirmDialog(
                 title = "举报内容",
@@ -330,6 +346,8 @@ fun EmaDetailScreen(
             )
         }
 
+        // 删除绘马回复（作者本人或维护人员，一律先确认）；
+        // 维护人员删他人回复需填理由，否则服务端 400 直接卡死在弹窗里
         pendingReplyDelete?.let { target ->
             val modDeleting = canModerate && target.authorId != me?.id
             dev.arisu.shrine.core.components.ArisuConfirmDialog(
@@ -356,7 +374,9 @@ fun EmaDetailScreen(
                 val ema0 = ema
                 if (ema0 != null) {
                     Box(Modifier.weight(1f).fillMaxWidth()) {
-
+                        // 列表页懒加载：此前整页 verticalScroll + 全量组合，回复一多
+                        // 进页就要把所有回复（连同每条正文的 Markdown 解析）一次做掉，
+                        // 热门绘马开页明显卡。正文/标题仍是一次性组合的头部
                         val emaList = rememberLazyListState()
                         LazyColumn(
                             state = emaList,
@@ -456,7 +476,8 @@ fun EmaDetailScreen(
                                         }
                                         EmaReplyRow(
                                             reply = item,
-
+                                            // 层级门控与服务端 requireOver 同规：
+                                            // 维护人员对平级及以上回复不显示删除，省得点了必 403
                                             canDelete = item.authorId == me?.id ||
                                                 (me?.role?.canModerate == true && item.authorRole.rank < (me?.role?.rank ?: 0)),
                                             onOpenUser = onOpenUser,
@@ -468,6 +489,7 @@ fun EmaDetailScreen(
                                 item(key = "end") { ShrineListEnd(text = "已经到底了") }
                             }
 
+                            // 给悬浮的回复条留出空间，保证最后一条不会被盖住
                             item(key = "tail") { Spacer(Modifier.height(120.dp)) }
                         }
 
@@ -488,7 +510,7 @@ fun EmaDetailScreen(
                             }
                             ReplyComposer(
                                 value = reply,
-
+                                // 服务端回复上限 1000 字，超出会被整条打回
                                 onValueChange = { if (it.text.length <= 1000) reply = it },
                                 onEmoji = { showEmoji = true },
                                 onSend = {
@@ -498,7 +520,8 @@ fun EmaDetailScreen(
                                         scope.launch {
                                             try {
                                                 val created = Shrine.addEmaReply(emaId, text)
-
+                                                // 发送成功即乐观落列表并清稿：若等「重取列表」都成功才清，
+                                                // 重取失败会诱导用户对着已发出的回复再发一遍
                                                 replies = replies + created
                                                 ema = ema0.copy(replyCount = replies.size)
                                                 reply = TextFieldValue("")
@@ -530,6 +553,7 @@ fun EmaDetailScreen(
 
 }
 
+/** 更多菜单：举报（人人可见，作者除外）/ 编辑 / 删除。状态改变走正文里的独立菜单。 */
 @Composable
 private fun EmaMoreMenu(
     canReport: Boolean,
@@ -579,6 +603,7 @@ private fun EmaMoreMenu(
     }
 }
 
+/** 状态菜单：维护人员的「改变状态」独立下拉，挂在正文触发点上。 */
 @Composable
 private fun EmaStateMenu(
     onDismiss: () -> Unit,
@@ -634,6 +659,7 @@ private fun EmaAuthorRow(
     }
 }
 
+/** 发起人身份标签。 */
 @Composable
 private fun EmaRoleBadge(role: Role) {
     RoleTag(role)
@@ -666,7 +692,8 @@ private fun EmaReplyRow(
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-
+                // 与评论区同一套对齐：昵称+徽标占弹性槽位，日期钉在最右，
+                // 名字长短不改变日期的横向位置
                 Row(
                     Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
@@ -725,6 +752,7 @@ private fun EmaReplyRow(
     }
 }
 
+/** 底部回复输入条：表情 · 输入框 · 朱色圆形发送（与帖子详情同一套结构）。 */
 @Composable
 private fun ReplyComposer(
     value: TextFieldValue,
@@ -763,11 +791,11 @@ private fun ReplyComposer(
             placeholder = "写下您的回复…",
             containerColor = NeuInset,
             modifier = Modifier.weight(1f),
-
+            // 回车即换行（与评论区同一套），不再收起键盘
             singleLine = false,
             maxLines = 5,
         )
-
+        // 间隔不可省：紧贴时发送键的凸起阴影会压到输入框
         Spacer(Modifier.width(8.dp))
         Box(
             Modifier

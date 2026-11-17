@@ -89,6 +89,7 @@ fun ArisuApp() {
     }
 }
 
+/** 启动页：阴阳玉 + 站名，会话校验完成后自动进入。 */
 @Composable
 private fun SplashScreen() {
     PageBackground {
@@ -119,10 +120,13 @@ private fun ShrineApp(loggedIn: Boolean) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-
+    // 选中态与可见性同样做路由归一化：祝部路由带 query（shrine?tab=xxx），
+    // 精确匹配永远失败 → 图标不变红。剥掉 query 后再匹配主 tab。
     val normalizedRoute = currentRoute?.substringBefore('?')
     val currentTab = ArisuTab.entries.firstOrNull { it.route == normalizedRoute }
 
+    // 前后台直接驱动心跳：回前台立即补跳一拍（未读数随心跳回来，不再单独发请求），
+    // 进后台暂停心跳——此前后台也 60 秒常跳，费电且把在线时长虚撑起来
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
@@ -136,6 +140,8 @@ private fun ShrineApp(loggedIn: Boolean) {
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
+    // 页面底（暖白渐变 + 朱色氛围光）铺在最外层，
+    // 悬浮的毛玻璃底栏才能「透」出下面的颜色。
     val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     val backgroundClickSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     PageBackground(
@@ -151,7 +157,7 @@ private fun ShrineApp(loggedIn: Boolean) {
                     ArisuBottomBar(
                         current = currentTab,
                         onSelect = { tab ->
-
+                            // 再点当前板块：不重新导航（否则 pop+push 会重播转场、重载页面），只滚回顶部
                             if (tab == currentTab) ScrollTopBus.request(tab.route)
                             else navController.switchTab(tab)
                         },
@@ -162,7 +168,8 @@ private fun ShrineApp(loggedIn: Boolean) {
             Box(
                 Modifier
                     .fillMaxSize()
-
+                    // 把底栏高度声明为「已消费」，之后任何 .imePadding()
+                    // 都按（键盘高度 - 底栏高度）精确补垫——输入条正好落在键盘上沿
                     .consumeWindowInsets(androidx.compose.foundation.layout.PaddingValues(bottom = innerPadding.calculateBottomPadding()))
                     .padding(bottom = innerPadding.calculateBottomPadding())
             ) {
@@ -174,7 +181,7 @@ private fun ShrineApp(loggedIn: Boolean) {
 
 @Composable
 private fun ArisuNavHost(navController: NavHostController, currentRoute: String?, loggedIn: Boolean) {
-
+    // 主 tab 路由模式（含祝部带参路由），用于判定转场方向
     val tabPatterns = remember {
         ArisuTab.entries.map { it.route } + (Routes.SHRINE + "?tab={tab}")
     }
@@ -185,7 +192,8 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
         navController = navController,
         startDestination = if (loggedIn) Routes.CHAT else Routes.LOGIN,
         modifier = Modifier.fillMaxSize(),
-
+        // 主 tab 之间：按板块顺序做方向性滑入（与 WebUI 一致）；
+        // 二级页面：从右侧推进来，返回时反向退出
         enterTransition = {
             val from = initialState.destination.route
             val to = targetState.destination.route
@@ -213,17 +221,17 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
             slideOutHorizontally(tween(280)) { it / 5 } + fadeOut(tween(200))
         },
     ) {
-
+        /* ── 注册 / 登录 / 找回密码 ──────────────────────── */
         composable(Routes.LOGIN) {
             LoginScreen(
-                onLogin = {  },
+                onLogin = { /* 会话状态翻转，导航图整体重建到 CHAT */ },
                 onGoRegister = { navController.navigate(Routes.REGISTER) { launchSingleTop = true } },
                 onForgot = { navController.navigate(Routes.FORGOT) { launchSingleTop = true } },
             )
         }
         composable(Routes.REGISTER) {
             RegisterScreen(
-                onRegister = {  },
+                onRegister = { /* 同上 */ },
                 onGoLogin = { navController.popBackStack() },
             )
         }
@@ -231,6 +239,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
             ForgotPasswordScreen(onBack = { navController.popBackStack() })
         }
 
+        /* ── 有栖茶话 ───────────────────────────────────── */
         composable(
             route = Routes.CHAT,
         ) {
@@ -275,7 +284,8 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
                 onEditPost = { navController.navigate(Routes.editPost(it)) { launchSingleTop = true } },
             )
         }
-
+        /* 改帖：与撰写同一套整页面板（弹窗里写不下长文，封面也没处取景）。
+         * 资料的取法与绘马那条一致：有本地缓存就先摆上，没有就联网取，失败可重试。 */
         composable(
             route = Routes.EDIT_POST,
             arguments = listOf(navArgument("postId") { type = NavType.StringType }),
@@ -285,7 +295,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
             var editLoadFailed by remember { mutableStateOf(false) }
             var editReload by remember { mutableStateOf(0) }
             LaunchedEffect(postId, editReload) {
-
+                // 有缓存就直接用：中途换成联网取回的新实例会把已落笔的稿子冲掉
                 if (editPost != null) return@LaunchedEffect
                 editLoadFailed = false
                 editPost = try {
@@ -302,7 +312,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
                     initialBoard = loaded.board,
                     editPost = loaded,
                     onBack = { navController.popBackStack() },
-
+                    // 改完退回详情：那边一露面就重新取一遍，拿到的就是新稿
                     onPublished = { navController.popBackStack() },
                 )
             } else if (editLoadFailed) {
@@ -315,6 +325,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
             }
         }
 
+        /* ── 神社祝部 ───────────────────────────────────── */
         composable(
             route = Routes.SHRINE + "?tab={tab}",
             arguments = listOf(navArgument("tab") { type = NavType.IntType; defaultValue = 0 }),
@@ -356,7 +367,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
         ) { entry ->
             val emaId = entry.arguments?.getInt("emaId") ?: 0
             var editEma by remember { mutableStateOf<dev.arisu.shrine.data.model.Ema?>(null) }
-
+            // 加载失败不再静默退化成新建模式（此前保存会把「编辑」变成重发一块新绘马）
             var editLoadFailed by remember { mutableStateOf(false) }
             var editReload by remember { mutableStateOf(0) }
             LaunchedEffect(emaId, editReload) {
@@ -375,7 +386,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
                     onClick = { editReload++ },
                 )
             } else if (editEma == null) {
-
+                // 资料未到的窗口不渲染「新建」形态：标题栏会闪现发绘马页，输入的还会被覆盖
                 dev.arisu.shrine.core.components.ShrineLoadingState()
             } else {
                 NewEmaScreen(
@@ -395,6 +406,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
             )
         }
 
+        /* ── 神社游会 ───────────────────────────────────── */
         composable(
             route = Routes.PLAY,
         ) {
@@ -405,6 +417,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
             )
         }
 
+        /* ── 我的客房 ───────────────────────────────────── */
         composable(
             route = Routes.ME,
         ) {
@@ -500,6 +513,7 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
             )
         }
 
+        /* ── 社务箱 / 搜索 ──────────────────────────────── */
         composable(
             route = Routes.NOTICE_DETAIL,
             arguments = listOf(navArgument("noticeId") { type = NavType.StringType; defaultValue = "" }),
@@ -508,7 +522,8 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
                 noticeId = it.arguments?.getString("noticeId").orEmpty(),
                 onBack = { navController.popBackStack() },
                 onOpenRoute = { route ->
-
+                    // 服务端下发的 targetRoute 原样进 NavController：空 id/非数字等
+                    // 畸形值会抛 IllegalArgumentException 直接崩——宁可不跳也不崩
                     runCatching {
                         when {
                             route.startsWith("post/") -> navController.navigate(route) { launchSingleTop = true }
@@ -517,14 +532,16 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
                             route == "staff" -> navController.navigate(Routes.SHRINE + "?tab=1") { launchSingleTop = true }
                             route == "changelog" -> navController.navigate(Routes.SHRINE + "?tab=2") { launchSingleTop = true }
                             route == "reports" -> navController.navigate(Routes.reports()) { launchSingleTop = true }
-
+                            // report/N：举报类通知（管理员收到的新举报 / 举报结果），
+                            // 之前没有分支——点「前往查看」毫无反应（用户实测反馈）。
+                            // 带上 N：队列里找不到它，说明已被别的管理人员处理
                             route.startsWith("report/") -> navController.navigate(
                                 Routes.reports(route.removePrefix("report/"))
                             ) { launchSingleTop = true }
                         }
                     }
                 },
-
+                // 收藏/标为未读/删除都要让下层的社务箱回来后刷新
                 onChanged = {
                     navController.previousBackStackEntry?.savedStateHandle?.let { sh ->
                         sh.set("inbox_dirty", (sh.get<Int>("inbox_dirty") ?: 0) + 1)
@@ -565,7 +582,11 @@ private fun ArisuNavHost(navController: NavHostController, currentRoute: String?
 }
 
 private fun NavHostController.switchTab(tab: ArisuTab) {
-
+    // 不保存/恢复状态：每次切到主板块都是默认视图（选中项复位 + 回到顶部）。
+    // 此前的 restoreState 会把滚动位置一并还原，列表停在上次的位置，看起来像「没复位」。
+    //
+    // 回「有栖茶话」还要连条目一起重建：它是起始页，launchSingleTop 会复用旧条目，
+    // rememberSaveable 的页签态（幻想乡闻/最热）照旧还原——用户要的是回正殿·最新。
     val isChat = tab.route == Routes.CHAT
     navigate(tab.route) {
         if (isChat) {
@@ -579,3 +600,4 @@ private fun NavHostController.switchTab(tab: ArisuTab) {
         launchSingleTop = true
     }
 }
+

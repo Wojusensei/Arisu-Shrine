@@ -11,8 +11,10 @@ import retrofit2.http.POST
 import retrofit2.http.Part
 import retrofit2.http.Query
 
+/** Retrofit 接口，路径与后端一一对应。 */
 interface ApiService {
 
+    // ---- 认证 ----
     @POST("api/auth/code")
     suspend fun sendCode(@Body req: SendCodeReq): SendCodeRes
 
@@ -31,6 +33,7 @@ interface ApiService {
     @POST("api/auth/logout")
     suspend fun logout(@Body req: LogoutReq): OkRes
 
+    // ---- 我 ----
     @GET("api/me")
     suspend fun me(): MeDto
 
@@ -85,6 +88,7 @@ interface ApiService {
     @GET("api/me/followers")
     suspend fun myFollowers(): UserBriefListRes
 
+    // ---- 用户 ----
     @GET("api/users/{id}")
     suspend fun userDetail(@retrofit2.http.Path("id") id: Long): UserDetailDto
 
@@ -100,6 +104,7 @@ interface ApiService {
     @DELETE("api/users/{id}/follow")
     suspend fun unfollow(@retrofit2.http.Path("id") id: Long): FollowingRes
 
+    // ---- 拉黑（静默：对方不会收到任何提示） ----
     @POST("api/users/{id}/block")
     suspend fun blockUser(@retrofit2.http.Path("id") id: Long): BlockRes
 
@@ -108,6 +113,7 @@ interface ApiService {
 
     @GET("api/me/blocks")
     suspend fun myBlocks(): BlockedListRes
+
 
     @POST("api/users/{id}/report")
     suspend fun reportUser(@retrofit2.http.Path("id") id: Long, @Body req: ReportReq): OkRes
@@ -130,6 +136,7 @@ interface ApiService {
     @POST("api/users/{id}/role")
     suspend fun setRole(@retrofit2.http.Path("id") id: Long, @Body req: RoleReq): OkRes
 
+    // ---- 帖子 ----
     @GET("api/posts")
     suspend fun listPosts(
         @Query("board") board: String,
@@ -147,6 +154,8 @@ interface ApiService {
     @PATCH("api/posts/{id}")
     suspend fun updatePost(@retrofit2.http.Path("id") id: Long, @Body req: PostPatchReq): PostDto
 
+    // DELETE + @Body 是 Retrofit 禁止的组合（调用时抛 Non-body HTTP method cannot contain @Body），
+    // 必须走 @HTTP(hasBody=true)。此前 App 端删除从未真正发出过请求。
     @retrofit2.http.HTTP(method = "DELETE", path = "api/posts/{id}", hasBody = true)
     suspend fun deletePost(@retrofit2.http.Path("id") id: Long, @Body req: DeleteReasonReq): OkRes
 
@@ -186,6 +195,7 @@ interface ApiService {
     @retrofit2.http.HTTP(method = "DELETE", path = "api/comments/{id}", hasBody = true)
     suspend fun deleteComment(@retrofit2.http.Path("id") id: Long, @Body req: DeleteReasonReq): OkRes
 
+    // ---- 绘马 ----
     @GET("api/emas")
     suspend fun listEmas(
         @Query("tags") tags: String?,
@@ -222,6 +232,7 @@ interface ApiService {
     @retrofit2.http.HTTP(method = "DELETE", path = "api/emas/{emaId}/replies/{rid}", hasBody = true)
     suspend fun deleteEmaReply(@retrofit2.http.Path("emaId") emaId: Long, @retrofit2.http.Path("rid") rid: Long, @Body req: DeleteReasonReq): OkRes
 
+    // ---- 奉仕会 ----
     @GET("api/staff")
     suspend fun staff(): StaffRes
 
@@ -237,6 +248,7 @@ interface ApiService {
     @POST("api/staff/applications/{id}/decide")
     suspend fun decideApplication(@retrofit2.http.Path("id") id: Long, @Body req: DecideReq): DecideRes
 
+    // ---- 社务箱 ----
     @GET("api/notices")
     suspend fun notices(
         @Query("category") category: String,
@@ -266,6 +278,7 @@ interface ApiService {
     @DELETE("api/notices/{id}")
     suspend fun deleteNotice(@retrofit2.http.Path("id") id: Long): OkRes
 
+    // ---- 举报 ----
     @GET("api/reports")
     suspend fun reports(
         @Query("status") status: String,
@@ -276,9 +289,11 @@ interface ApiService {
     @POST("api/reports/{id}/resolve")
     suspend fun resolveReport(@retrofit2.http.Path("id") id: Long, @Body req: ResolveReq): OkRes
 
+    // ---- 搜索 / 游会 / 日志 / 上传 ----
     @GET("api/search")
     suspend fun search(@Query("q") q: String, @Query("regex") regex: String): SearchResultDto
 
+    /** 提及选择器：只查社员，逐键补全用 */
     @GET("api/search/users")
     suspend fun searchUsers(@Query("q") q: String): MentionUsersDto
 
@@ -322,6 +337,8 @@ interface ApiService {
     @DELETE("api/stickers/{id}")
     suspend fun deleteSticker(@Path("id") id: Long): OkRes
 }
+
+// ---- 轻量响应壳 ----
 
 @kotlinx.serialization.Serializable
 data class EmailChangeReq(

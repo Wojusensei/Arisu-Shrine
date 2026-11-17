@@ -5,10 +5,16 @@ import androidx.compose.ui.text.input.TextFieldValue
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+/**
+ * 编辑动作对齐 GitHub markdown-toolbar：
+ * 行内再点取消、标题/列表/引用按整行、代码单行行内/多行围栏、链接选中 URL。
+ */
 class MarkdownEditTest {
 
     private fun value(text: String, start: Int, end: Int = start) =
         TextFieldValue(text, TextRange(start, end))
+
+    /* ── 行内 ────────────────────────────────────────────── */
 
     @Test
     fun boldWrapsSelection() {
@@ -19,7 +25,7 @@ class MarkdownEditTest {
 
     @Test
     fun boldAgainUnwrapsSelection() {
-
+        // 只选文字、记号在两侧
         val after = toggleInline(value("**hello** world", 2, 7), "**", "**", trimFirst = true)
         assertEquals("hello world", after.text)
         assertEquals(TextRange(0, 5), after.selection)
@@ -62,7 +68,7 @@ class MarkdownEditTest {
 
     @Test
     fun italicOnBoldTextMakesItBoldItalic() {
-
+        // **hello** 两侧是加粗记号，不能被单个 * 抢走
         val after = toggleInline(value("**hello**", 2, 7), "*", "*", trimFirst = true)
         assertEquals("***hello***", after.text)
         assertEquals(TextRange(3, 8), after.selection)
@@ -88,6 +94,8 @@ class MarkdownEditTest {
         assertEquals("hello world", after.text)
         assertEquals(TextRange(0, 5), after.selection)
     }
+
+    /* ── 标题 ────────────────────────────────────────────── */
 
     @Test
     fun headingPrefixesWholeLine() {
@@ -122,6 +130,8 @@ class MarkdownEditTest {
         assertEquals("## ", after.text)
         assertEquals(TextRange(3), after.selection)
     }
+
+    /* ── 列表 ────────────────────────────────────────────── */
 
     @Test
     fun listPrefixesCurrentLine() {
@@ -170,6 +180,8 @@ class MarkdownEditTest {
         assertEquals(TextRange(4), after.selection)
     }
 
+    /* ── 引用 ────────────────────────────────────────────── */
+
     @Test
     fun quotePrefixesEverySelectedLine() {
         val after = toggleQuote(value("a\nb", 0, 3))
@@ -194,6 +206,8 @@ class MarkdownEditTest {
         val after = toggleQuote(value("quote\npara", 0, 5))
         assertEquals("> quote\n\npara", after.text)
     }
+
+    /* ── 代码 ────────────────────────────────────────────── */
 
     @Test
     fun codeWrapsSingleLineInline() {
@@ -229,6 +243,8 @@ class MarkdownEditTest {
         assertEquals("a\nb", after.text)
         assertEquals(TextRange(0, 3), after.selection)
     }
+
+    /* ── 链接 ────────────────────────────────────────────── */
 
     @Test
     fun linkWrapsTextAndSelectsUrl() {

@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
+/** 从本地草稿恢复时的一条提示，可手动关掉。 */
 @Composable
 fun DraftRestoredBanner(
     onDismiss: () -> Unit,

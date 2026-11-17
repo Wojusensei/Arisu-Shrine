@@ -4,6 +4,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * 预取触发条件：距末尾还剩 [PREFETCH_DISTANCE] 条时开始拉下一页，
+ * 而不是等滑到最后一条（旧实现是末尾哨兵项进入组合才触发）。
+ */
 class LazyPrefetchTest {
 
     @Test
@@ -15,7 +19,7 @@ class LazyPrefetchTest {
 
     @Test
     fun `进入尾部区间触发`() {
-
+        // 20 条、提前 8 条：第 12 条（下标 11）可见时开始预取
         assertTrue(shouldPrefetch(lastVisibleIndex = 11, itemCount = 20))
         assertTrue(shouldPrefetch(lastVisibleIndex = 15, itemCount = 20))
         assertTrue(shouldPrefetch(lastVisibleIndex = 19, itemCount = 20))

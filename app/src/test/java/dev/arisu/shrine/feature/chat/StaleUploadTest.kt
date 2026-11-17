@@ -3,6 +3,10 @@ package dev.arisu.shrine.feature.chat
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+/**
+ * 进程在上传途中被杀时，草稿里会留下没有对应暂存件的占位符。
+ * 恢复草稿与发布前都要把整行清掉，不能把 `![图片](上传中-1)` 发进正文。
+ */
 class StaleUploadTest {
 
     @Test

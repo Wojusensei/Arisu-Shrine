@@ -42,6 +42,14 @@ import dev.arisu.shrine.data.repo.Shrine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 
+/**
+ * 提及选择器：正文/评论里输入 @ 唤起，按昵称或编号搜社员。
+ * 选中插入 @User_编号——昵称会重名，只有编号能被服务端无歧义解析，
+ * 编号形态与搜索页的「编号直达」同一套语言。
+ *
+ * 走 /api/search/users 而不是全站搜索：后者每 2 秒才放行一次，
+ * 逐键补全时后面的字都会被限频挡住，界面看起来就像「查无此人」。
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MentionPickerSheet(
@@ -53,7 +61,7 @@ fun MentionPickerSheet(
     var query by remember { mutableStateOf("") }
     var attempt by remember { mutableStateOf(0) }
     var state by remember { mutableStateOf<MentionSearch>(MentionSearch.Idle) }
-
+    // 退格/改字会反复查同一个词：结果留一份，回头就是瞬时的
     val cache = remember {
         object : LinkedHashMap<String, List<User>>(16, 0.75f, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<User>>?) =
@@ -63,6 +71,7 @@ fun MentionPickerSheet(
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
 
+    // 输入 @ 是为了找人，不是为了让您再点一次搜索框
     LaunchedEffect(Unit) {
         delay(260)
         runCatching { focus.requestFocus() }
@@ -79,7 +88,7 @@ fun MentionPickerSheet(
             state = if (users.isEmpty()) MentionSearch.Empty else MentionSearch.Results(users)
             return@LaunchedEffect
         }
-
+        // 防抖期也要有「在查」的反馈，不能让输入框下方空着
         state = MentionSearch.Loading
         delay(220)
         state = try {
@@ -173,6 +182,7 @@ fun MentionPickerSheet(
     }
 }
 
+/** 选择器里的单行状态：转圈、提示、失败后重试都走这一格 */
 @Composable
 private fun MentionStatusRow(
     text: String,
@@ -206,6 +216,7 @@ private fun MentionStatusRow(
     }
 }
 
+/** 限频不是错误：隔 260ms 再试一次，比让用户自己重按更稳 */
 private suspend fun fetchMentionUsers(q: String): List<User> = try {
     Shrine.searchMentionUsers(q)
 } catch (e: ApiError) {

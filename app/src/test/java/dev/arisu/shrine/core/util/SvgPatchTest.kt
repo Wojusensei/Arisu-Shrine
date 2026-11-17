@@ -6,6 +6,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * shields.io 徽章：logo 藏在 <image> 的 base64 内层 SVG 里，
+ * 解码器不认这层，必须摊平成正路径，否则徽章只剩文字。
+ */
 class SvgPatchTest {
 
     private fun badge(logo: String): String {
@@ -24,7 +28,7 @@ class SvgPatchTest {
         assertFalse(out.contains("<image"))
         assertTrue(out.contains("<g transform=\"translate(5.0,3.0) scale(0.5833333,0.5833333)\" fill=\"#fff\">"))
         assertTrue(out.contains("<path d=\"M12 2L2 7v10l10 5 10-5V7z\"/>"))
-
+        // 标题也随内层根元素剥掉，正文与文字原样留着
         assertFalse(out.contains("<title>Logo</title>"))
         assertTrue(out.contains("Python"))
     }
@@ -43,7 +47,7 @@ class SvgPatchTest {
 
     @Test
     fun `raster images and foreign hrefs are left alone`() {
-
+        // 位图内联图（png/gif）解码器自己认，动了它访客计数器这类图就空了
         val gif = "R0lGODlhAQABAAAAACw="
         val src = "<svg width=\"10\" height=\"10\">" +
             "<image x=\"0\" y=\"0\" width=\"4\" height=\"4\" href=\"data:image/gif;base64,$gif\"/>" +

@@ -94,6 +94,12 @@ import dev.arisu.shrine.nav.FOLLOW_MODE_FOLLOWERS
 import dev.arisu.shrine.nav.FOLLOW_MODE_FOLLOWING
 import dev.arisu.shrine.nav.Routes
 
+/**
+ * 我的客房：个人封面 + 数据栏 + 参拜热度 + 内容分类 + 功能入口。
+ *
+ * 整页只有外层一个 [Column] 纵向滚动；帖子列表用 Column + forEach 平铺，
+ * 不使用嵌套的 LazyColumn。
+ */
 @Composable
 fun MyRoomScreen(
     unreadCount: Int,
@@ -108,13 +114,14 @@ fun MyRoomScreen(
     onOpenDrafts: () -> Unit = {},
     onOpenHistory: () -> Unit = {},
     modifier: Modifier = Modifier,
-
+    /** 截图工具用：直接选中第 N 个内容标签 */
     initialTabIndex: Int = 0,
 ) {
-
+    // 客房内容常驻：内存记忆 → 落盘缓存 → 都没有才播整页加载动画（QQ 式板块切换）
     val cached = remember {
         roomMemory.get("room", Shrine.me.value?.id) ?: run {
-
+            // 三个计数不在 myRoom 里，得从各自的列表缓存里数出来；
+            // 缺任何一份就不用缓存直出——宁可转一圈，也不把「有 N 篇」显示成 0 篇
             val room = Shrine.peekMyRoom() ?: return@run null
             val tracked = Shrine.peekAuthorPosts(room.me.id, "tracked") ?: return@run null
             val liked = Shrine.peekAuthorPosts(room.me.id, "liked") ?: return@run null
@@ -135,12 +142,12 @@ fun MyRoomScreen(
         mutableStateOf(cached?.achievements ?: Shrine.achievementCatalog.map { it.second.copy(unlocked = false) })
     }
     var counts by remember { mutableStateOf(cached?.counts ?: Quad(0, 0, 0, 0)) }
-
+    // 有常驻缓存时跳过整页加载动画，静默刷新即可（QQ 式板块切换）
     var loading by remember { mutableStateOf(cached == null) }
     var failed by remember { mutableStateOf(false) }
     var reloadKey by remember { mutableStateOf(0) }
     val scope = rememberCoroutineScope()
-
+    // 内容标签与祝部子板块同理：进帖子再返回仍停在原标签
     var tab by rememberSaveable {
         mutableStateOf(ProfileTab.entries[initialTabIndex.coerceIn(0, ProfileTab.entries.size - 1)])
     }
@@ -154,7 +161,7 @@ fun MyRoomScreen(
             tiles = room.tiles
             today = Triple(room.todayMinutes, room.todayPosts, room.todayComments)
             achievements = room.achievements
-
+            // 三个计数各自容错：一个请求失败不该把「我的内容」四行全打成 0 篇
             var trackedN = 0
             var likedN = 0
             var favoritedN = 0
@@ -171,7 +178,7 @@ fun MyRoomScreen(
             failed = false
             roomMemory.put("room", room.me.id, RoomSnapshot(room.me, tiles, today, achievements, counts))
         } catch (e: Exception) {
-
+            // 已有内容时刷新失败保留旧页面，只有首载无数据才进入失败态
             if (me == null) failed = true
         }
         loading = false
@@ -189,6 +196,7 @@ fun MyRoomScreen(
     }
     val meState = me ?: return
 
+    // 主内容整体淡入：加载态消失的瞬间由内容淡入承接，动画不会显得被硬切
     FadeIn(modifier = modifier) {
     Column(modifier.fillMaxSize()) {
         ArisuTopBar(
@@ -218,7 +226,7 @@ fun MyRoomScreen(
         ) {
         Box(Modifier.fillMaxSize()) {
         val meScroll = rememberScrollState()
-
+        // 底栏再点一次当前板块：不重新导航，直接滚回顶部
         LaunchedEffect(Unit) {
             ScrollTopBus.events.collect { route ->
                 if (route == Routes.ME) scope.launch { meScroll.smoothScrollToTop() }
@@ -233,6 +241,8 @@ fun MyRoomScreen(
 
             StatsCard(me = meState, onOpenFollowList = onOpenFollowList)
 
+            // GitHub 顺序：README 在贡献图上方。服务端只把可见性开关用于别人视角，
+            // /me 恒下发完整内容，所以自己的客房总能看到自己写的东西
             if (meState.customMarkdown.isNotBlank() || meState.customCss.isNotBlank()) {
                 Spacer(Modifier.height(12.dp))
                 SectionLabel(text = "自定义区域", modifier = Modifier.padding(horizontal = 16.dp))
@@ -282,7 +292,8 @@ fun MyRoomScreen(
                 onNote = { note = it },
                 achievements = achievements,
                 onToggleActiveAvatar = { on ->
-
+                    // 乐观翻转：滑杆动画立即播放，PATCH 后台进行，失败回滚。
+                    // 此前等 updateMe+load() 网络往返后才动，远程服务器下一个来回滑杆会僵住
                     val before = me
                     me = before?.copy(activeAvatarEnabled = on)
                     scope.launch {
@@ -330,12 +341,18 @@ fun MyRoomScreen(
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 个人封面
+ * ══════════════════════════════════════════════════════════════════ */
+
 private val CoverHeight = 284.dp
 
+/** 四周留白：封面是页面上「挖」出来的一块凹面板，所以不通铺到屏幕边。 */
 private val CoverMargin = 18.dp
 
 private val CoverShape = RoundedCornerShape(28.dp)
 
+/** 内容整体上移一点，给右下角的「编辑资料」让位，同时保持视觉居中。 */
 private val CoverContentBottom = 38.dp
 
 @Composable
@@ -374,7 +391,7 @@ internal fun CoverSection(me: User, onEditProfile: () -> Unit) {
                     status = listOfNotNull(me.statusEmoji, me.statusText).joinToString(" "),
                 )
             }
-
+            // 签名独立层：50 字可完整读（最多三行）
             if (me.signature.isNotBlank()) {
                 Spacer(Modifier.height(9.dp))
                 Text(
@@ -389,6 +406,7 @@ internal fun CoverSection(me: User, onEditProfile: () -> Unit) {
             }
         }
 
+        // 右下角一枚扁平胶囊，与全站按钮同一语言：无浮雕，朱色落在文字上。
         if (true) {
             SoftPill(
                 text = "编辑资料",
@@ -403,6 +421,11 @@ internal fun CoverSection(me: User, onEditProfile: () -> Unit) {
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 数据栏
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 封面正下方的扁平数据行：大面板凹凸统一的另一面是「能不用面板就不用」。 */
 @Composable
 private fun StatsCard(me: User, onOpenFollowList: (String) -> Unit) {
     Row(
@@ -436,6 +459,10 @@ private fun StatsCard(me: User, onOpenFollowList: (String) -> Unit) {
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 内容分类
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Composable
 private fun PostsSection(meId: String, tab: ProfileTab, onOpenPost: (String) -> Unit, reloadKey: Int) {
     val wireTab = when (tab) {
@@ -444,12 +471,14 @@ private fun PostsSection(meId: String, tab: ProfileTab, onOpenPost: (String) -> 
         ProfileTab.LIKED -> "liked"
         ProfileTab.FAVORITED -> "favorited"
     }
-
+    // remember 必须带 tab 键：切内容标签时先摆上新标签的缓存，
+    // 此前无键导致「收藏」标签下短暂显示「发布」的帖子。
+    // 内存记忆没有时再落到盘上那份（冷启动进客房也不再先空一下）
     val cachedPosts = remember(tab) {
         postsMemory.get("${meId}:${tab.name}", meId) ?: Shrine.peekAuthorPosts(meId, wireTab)
     }
     var posts by remember(tab) { mutableStateOf(cachedPosts ?: emptyList()) }
-
+    // 有缓存时直接显示旧内容，本次请求只做静默刷新
     var loading by remember(tab) { mutableStateOf(cachedPosts == null) }
     var failed by remember(tab) { mutableStateOf(false) }
     var retryKey by remember(tab) { mutableStateOf(0) }
@@ -463,9 +492,9 @@ private fun PostsSection(meId: String, tab: ProfileTab, onOpenPost: (String) -> 
             }
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-
+            // 首载失败不再伪装成「还没有发过帖子」：给失败态和重试入口
             if (cachedPosts == null) failed = true
-            posts
+            posts // 刷新失败保留旧列表
         }
         loading = false
     }
@@ -496,11 +525,17 @@ private fun PostsSection(meId: String, tab: ProfileTab, onOpenPost: (String) -> 
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
     ) {
-
+        // 帖子多时全量平铺会把主页拉得老长：默认三条，展开后分页
         CollapsiblePostList(posts = posts, onOpenPost = onOpenPost)
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 功能入口（四个分组）
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 我的四类内容数量（发布/追踪/喜欢/收藏） */
+// 我的客房内容常驻：切走再切回直接显示上次内容、后台静默刷新
 private data class RoomSnapshot(
     val me: User,
     val tiles: List<dev.arisu.shrine.data.model.TileDay>,
@@ -538,7 +573,7 @@ private fun EntryGroups(
             .fillMaxWidth()
             .padding(horizontal = 16.dp),
     ) {
-
+        /* ── 资料 ───────────────────────────────────────────── */
         SectionLabel(text = "资料")
         SectionCard {
             SettingNavRow(
@@ -588,6 +623,7 @@ private fun EntryGroups(
 
         Spacer(Modifier.height(4.dp))
 
+        /* ── 我的内容 ───────────────────────────────────────── */
         SectionLabel(text = "我的内容")
         SectionCard {
             SettingNavRow(
@@ -629,12 +665,13 @@ private fun EntryGroups(
 
         Spacer(Modifier.height(4.dp))
 
+        /* ── 展示 ───────────────────────────────────────────── */
         SectionLabel(text = "展示")
         SectionCard {
             SettingNavRow(
                 title = "自定义区域",
                 value = if (customEdited) "已编辑" else "未编辑",
-
+                // 直接送去编辑资料的自定义区域段落；只弹说明是占位行为
                 onClick = onEditProfile,
             )
             SettingNavRow(
@@ -663,6 +700,7 @@ private fun EntryGroups(
 
         Spacer(Modifier.height(4.dp))
 
+        /* ── 其他 ───────────────────────────────────────────── */
         SectionLabel(text = "其他")
         SectionCard {
             SettingNavRow(
@@ -681,7 +719,7 @@ private fun AchievementsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-
+        // 全宽弹窗（用户定版：格子要横向长方形，默认窄弹窗会把两列挤成方块）
         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
         properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
         title = {
@@ -695,7 +733,8 @@ private fun AchievementsDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 achievements.chunked(2).forEach { pair ->
-
+                    // 行高取两张卡中较高者：已解锁卡没有「未解锁」药丸，若随内容收缩，
+                    // 同行底部与上下行间距都会参差（用户点名过卡片高矮要统一）
                     Row(
                         Modifier.fillMaxWidth().height(IntrinsicSize.Min),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -712,6 +751,7 @@ private fun AchievementsDialog(
     )
 }
 
+/** 御守图标：与文案一一对应（鸟居/文稿/礼花/绘马/签/阴阳玉/香/云月）。 */
 @Composable
 private fun AchievementIcon(name: String, unlocked: Boolean) {
     val tint = if (unlocked) dev.arisu.shrine.core.design.Vermilion
@@ -724,10 +764,10 @@ private fun AchievementIcon(name: String, unlocked: Boolean) {
         "上上签" -> ShrineIcons.Omikuji
         "参拜者" -> ShrineIcons.Incense
         "夜行性" -> Icons.Rounded.NightsStay
-        else -> null
+        else -> null // 社务常客用阴阳玉
     }
     if (name == "社务常客") {
-
+        // 御守格子里的阴阳玉不转：它是徽标不是加载指示（用户点名）
         YinYangOrb(
             size = 22.dp,
             rotating = false,
@@ -742,7 +782,9 @@ private fun AchievementIcon(name: String, unlocked: Boolean) {
 
 @Composable
 private fun AchievementCell(achievement: Achievement, modifier: Modifier = Modifier) {
-
+    // 格子必须一样大：所有格子同构（图标+一行名字+一行描述），横向长方形（用户定版：
+    // 三行描述占位曾把格子拉成竖长条，已压回）。「未解锁」药丸已删：朱/灰双色已可分辨。
+    // 图标群居中偏上、文字群居中偏下，靠小间距拉开层次
     Column(
         modifier
             .clip(RoundedCornerShape(12.dp))
@@ -774,6 +816,10 @@ private fun AchievementCell(achievement: Achievement, modifier: Modifier = Modif
         Spacer(Modifier.height(8.dp))
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+ * 小工具
+ * ══════════════════════════════════════════════════════════════════ */
 
 private fun truncate(text: String, max: Int): String =
     if (text.length <= max) text else text.take(max) + "…"

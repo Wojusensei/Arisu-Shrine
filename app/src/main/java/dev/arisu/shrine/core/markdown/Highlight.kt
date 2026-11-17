@@ -1,5 +1,10 @@
 package dev.arisu.shrine.core.markdown
 
+/**
+ * 轻量语法高亮：不追求贴住语言规范，关键词/字符串/注释/数字/注解五类认得出就够读。
+ * 纯字符串进出（无 Compose 依赖），渲染端拿 [TokenSpan] 列表上色，这里只管切词。
+ */
+
 enum class TokenKind { KEYWORD, STRING, COMMENT, NUMBER, ANNOTATION }
 
 data class TokenSpan(val start: Int, val end: Int, val kind: TokenKind)
@@ -9,11 +14,11 @@ internal class LangSpec(
     val lineComments: List<String> = emptyList(),
     val blockComment: Pair<String, String>? = null,
     val stringDelims: List<String> = listOf("\"", "'"),
-
+    /** 三引号串（python 文档串）跨行有效 */
     val tripleQuotes: Boolean = false,
-
+    /** 反引号模板串（kotlin/js）跨行有效 */
     val backtickString: Boolean = false,
-
+    /** @ 前缀注解（java/kotlin） */
     val annotationPrefix: Boolean = false,
     val caseInsensitive: Boolean = false,
 )
@@ -112,6 +117,7 @@ private val LANGS: Map<String, LangSpec> = mapOf(
     ),
 )
 
+/** 语言别名归一：js/ts/sh/py/yml/html/cpp 这些常见写法都落到就近的方言上 */
 internal fun normalizeLang(raw: String): String = when (raw.trim().lowercase()) {
     "js", "ts", "tsx", "jsx", "typescript", "mjs" -> "javascript"
     "golang" -> "go"
@@ -127,6 +133,11 @@ internal fun normalizeLang(raw: String): String = when (raw.trim().lowercase()) 
 
 private fun isIdentPart(c: Char) = c.isLetterOrDigit() || c == '_'
 
+/**
+ * 扫描出一段代码里的五类词元（区间为左闭右开）。
+ * 逐字符线性扫描：字符串/注释先到先得，所以「注释符号在字符串里」不会被误判。
+ * 不认识的方言返回空表（按纯文本渲染）。
+ */
 internal fun highlightTokens(code: String, rawLang: String): List<TokenSpan> {
     val spec = LANGS[normalizeLang(rawLang)] ?: return emptyList()
     val loweredKeywords = if (spec.caseInsensitive) {
@@ -140,13 +151,14 @@ internal fun highlightTokens(code: String, rawLang: String): List<TokenSpan> {
     while (i < n) {
         val c = code[i]
         when {
-
+            // 行注释：到行尾
             spec.lineComments.any { code.startsWith(it, i) } -> {
                 val start = i
                 while (i < n && code[i] != '\n') i++
                 spans.add(TokenSpan(start, i, TokenKind.COMMENT))
             }
 
+            // 块注释：吃到收尾串（跨行有效）
             spec.blockComment != null && code.startsWith(spec.blockComment.first, i) -> {
                 val start = i
                 val close = spec.blockComment.second
@@ -156,6 +168,7 @@ internal fun highlightTokens(code: String, rawLang: String): List<TokenSpan> {
                 spans.add(TokenSpan(start, i, TokenKind.COMMENT))
             }
 
+            // python 三引号串
             spec.tripleQuotes && (code.startsWith("\"\"\"", i) || code.startsWith("'''", i)) -> {
                 val delim = code.substring(i, i + 3)
                 val start = i
@@ -165,6 +178,7 @@ internal fun highlightTokens(code: String, rawLang: String): List<TokenSpan> {
                 spans.add(TokenSpan(start, i, TokenKind.STRING))
             }
 
+            // 字符串：单行串不吃换行（三引号/模板串例外），反斜杠转义跳一格
             c == '"' || c == '\'' || (spec.backtickString && c == '`') -> {
                 val multiline = spec.backtickString && c == '`'
                 val start = i
@@ -185,6 +199,7 @@ internal fun highlightTokens(code: String, rawLang: String): List<TokenSpan> {
                 spans.add(TokenSpan(start, i, TokenKind.STRING))
             }
 
+            // 数字：十六进制/小数/下划线分隔都整体吃
             c.isDigit() && (i == 0 || !isIdentPart(code[i - 1])) -> {
                 val start = i
                 while (i < n && (code[i].isLetterOrDigit() || code[i] == '_' ||
@@ -193,6 +208,7 @@ internal fun highlightTokens(code: String, rawLang: String): List<TokenSpan> {
                 spans.add(TokenSpan(start, i, TokenKind.NUMBER))
             }
 
+            // @注解（java/kotlin）
             spec.annotationPrefix && c == '@' && i + 1 < n && (code[i + 1].isLetter() || code[i + 1] == '_') -> {
                 val start = i
                 i++
@@ -200,6 +216,7 @@ internal fun highlightTokens(code: String, rawLang: String): List<TokenSpan> {
                 spans.add(TokenSpan(start, i, TokenKind.ANNOTATION))
             }
 
+            // 标识符：命中语言词表才算关键词
             c.isLetter() || c == '_' -> {
                 val start = i
                 while (i < n && isIdentPart(code[i])) i++

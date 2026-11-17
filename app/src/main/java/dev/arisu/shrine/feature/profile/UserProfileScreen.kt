@@ -92,12 +92,22 @@ private val MuteDurations = listOf("1 小时", "1 天", "7 天", "30 天", "永�
 
 private val CoverHeight = 262.dp
 
+/** 四周留白：封面是页面上「挖」出来的一块凹面板，所以不通铺到屏幕边。 */
 private val CoverMargin = 18.dp
 
 private val CoverShape = RoundedCornerShape(28.dp)
 
+/** 内容整体上移一点，给右下角的按钮让位，同时保持视觉居中。 */
 private val CoverContentBottom = 38.dp
 
+/**
+ * 他人主页。
+ *
+ * 结构与「我的客房」保持同一套：封面、向上重叠的数据栏、参拜热度、TA 的帖子。
+ * 差别只在封面右上角的关注按钮与顶部的更多菜单。
+ *
+ * 更多菜单里的禁言/警告面板：确认后调服务端接口。
+ */
 @Composable
 fun UserProfileScreen(
     userId: String,
@@ -107,7 +117,7 @@ fun UserProfileScreen(
     onOpenFollowList: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-
+    // 首帧：先把上次看过的资料摆上来（从关注列表点进来几乎无感），网络回来再覆盖
     var user by remember { mutableStateOf(Shrine.peekUser(userId)?.user) }
     var tiles by remember { mutableStateOf(Shrine.peekTiles(userId).orEmpty()) }
     var loading by remember { mutableStateOf(user == null) }
@@ -125,9 +135,9 @@ fun UserProfileScreen(
     var rolePanelOpen by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
     var reportOpen by remember { mutableStateOf(false) }
-
+    // 我有没有拉黑 TA（静默：TA 看不到这个状态）
     var blocked by remember { mutableStateOf(false) }
-
+    // TA 是否被封禁：只有管理角色拿得到，用来决定菜单里显示「封禁」还是「解除封禁」
     var banned by remember { mutableStateOf(false) }
     var blockConfirm by remember { mutableStateOf(false) }
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
@@ -136,6 +146,7 @@ fun UserProfileScreen(
     var muteReason by rememberSaveable { mutableStateOf("") }
     var warnText by rememberSaveable { mutableStateOf("") }
 
+    // 首载与下拉刷新共用；刷新失败保留已有资料，只有首载进入失败态
     suspend fun load() {
         try {
             val detail = Shrine.user(userId)
@@ -146,7 +157,7 @@ fun UserProfileScreen(
             failed = false
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-
+            // 此前刷新一次接口抖动就把整页替换成失败空态，注释与代码自相矛盾
             if (user == null) failed = true
         }
         loading = false
@@ -187,7 +198,7 @@ fun UserProfileScreen(
                         expanded = moreMenuOpen,
                         onDismissRequest = { moreMenuOpen = false },
                     ) {
-
+                        // 禁言/封禁宫司起步；警告奉仕即可用（与服务端 requireAdmin 对齐）
                         if (me?.role?.canModerate == true && userId != me?.id) {
                             if (me?.role?.canCurate == true) {
                                 DropdownMenuItem(
@@ -321,10 +332,14 @@ fun UserProfileScreen(
 
             Spacer(Modifier.height(12.dp))
 
+            // 以 blocked 为键重建：拉黑/解除后帖子区立刻按新的可见范围重取
             androidx.compose.runtime.key(blocked) {
                 PostsSection(userId = userId, total = userState.postCount, initialTab = initialPostTab, isSelf = userId == me?.id, onOpenPost = onOpenPost)
             }
 
+            // GitHub 规则：没有 README 就不出这一节。服务端在用户关掉可见性时
+            // 直接不下发内容（ToPublic 清空），内容为空即等价于「隐藏/未编辑」，
+            // 客户端不再看 show_fields——公开资料的 DTO 本来就不带它
             if (userState.customMarkdown.isNotBlank() || userState.customCss.isNotBlank()) {
                 Spacer(Modifier.height(12.dp))
                 dev.arisu.shrine.core.components.SectionLabel(
@@ -412,6 +427,7 @@ fun UserProfileScreen(
         )
     }
 
+    // 禁言/警告/调身份三张面板共用一把在途锁：确认连点不再发两笔管理操作
     var sheetBusy by remember { mutableStateOf(false) }
     if (mutePanelOpen) {
         MuteSheet(
@@ -515,6 +531,10 @@ fun UserProfileScreen(
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 封面区
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Composable
 private fun CoverSection(
     user: User,
@@ -532,7 +552,7 @@ private fun CoverSection(
         modifier = Modifier
             .fillMaxWidth()
             .padding(start = CoverMargin, top = CoverMargin, end = CoverMargin)
-
+            // 他人主页多一行「关注」按钮（签名正下方），三行签名的极端情况也不挤爆
             .height(if (isSelf) CoverHeight else CoverHeight + 28.dp),
         shape = CoverShape,
         depth = 5.dp,
@@ -542,7 +562,7 @@ private fun CoverSection(
         Column(
             Modifier
                 .align(Alignment.Center)
-
+                // 自我视角保留原版式的下偏留白；他人主页加按钮行后整体真居中（原偏移会把内容顶得过低）
                 .padding(bottom = if (isSelf) CoverContentBottom else 0.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
@@ -564,7 +584,7 @@ private fun CoverSection(
                     status = status,
                 )
             }
-
+            // 签名独立层：不受 76dp 内边距挤压，50 字可完整读（最多三行）
             if (user.signature.isNotBlank()) {
                 Spacer(Modifier.height(9.dp))
                 Text(
@@ -578,10 +598,11 @@ private fun CoverSection(
                 )
             }
 
+            // 关注按钮：签名正下方（自己主页不显示；拉黑后也不显示——点了不会有任何反应）
             if (!isSelf && !blocked) {
                 Spacer(Modifier.height(12.dp))
                 Box {
-
+                    // 关注/取关/特别关注共用一把在途锁：连点不会「关注上又被取关」
                     var followBusy by remember { mutableStateOf(false) }
                     fun runFollow(block: suspend () -> Unit) {
                         if (followBusy) return
@@ -591,7 +612,7 @@ private fun CoverSection(
                                 block()
                                 onReload()
                             } catch (e: Exception) {
-
+                                // 弱网下点关注毫无反应会让人反复点，失败要有回声
                                 if (e is kotlinx.coroutines.CancellationException) throw e
                                 onNotice(e.toApiMessage())
                             }
@@ -626,6 +647,13 @@ private fun CoverSection(
     }
 }
 
+/**
+ * 签名正下方的关注按钮：
+ * 未关注 = 主题色实底凸起胶囊、白字，一眼可辨；
+ * 已关注 = 凹槽灰字，点击弹出管理菜单。
+ * 之前经由 SoftPill 渲染，而 SoftPill 丢弃 background 参数——朱色底从未画出来过，
+ * 白字压在浅色凹槽上等于隐形。
+ */
 @Composable
 private fun FollowPill(following: Boolean, onClick: () -> Unit) {
     if (following) {
@@ -659,6 +687,11 @@ private fun FollowPill(following: Boolean, onClick: () -> Unit) {
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 数据栏
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 封面正下方的扁平数据行。关注列表接口只有「我的」，他人主页这两格不可点（点了会开自己的列表）。 */
 @Composable
 private fun StatsCard(user: User, isSelf: Boolean, onOpenFollowList: (String) -> Unit) {
     Row(
@@ -691,9 +724,20 @@ private fun StatsCard(user: User, isSelf: Boolean, onOpenFollowList: (String) ->
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 参拜热度
+ * ══════════════════════════════════════════════════════════════════ */
+
+/* HeatmapCard / 星期标签 / 图例见 core/components/Heatmap.kt（与「我的客房」共用一份） */
+
+/* ══════════════════════════════════════════════════════════════════
+ * TA 的帖子
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Composable
 private fun PostsSection(userId: String, total: Int, initialTab: Int, isSelf: Boolean, onOpenPost: (String) -> Unit) {
-
+    // 追踪/喜欢/收藏仅本人可见（服务端 403 保护），他人主页只展示发布的
+    // rememberSaveable：进帖子详情再返回，仍停在原来的标签
     var tab by rememberSaveable { mutableIntStateOf(initialTab.coerceIn(0, if (isSelf) 3 else 0)) }
     val wireTab = when (tab) {
         1 -> "tracked"
@@ -701,7 +745,7 @@ private fun PostsSection(userId: String, total: Int, initialTab: Int, isSelf: Bo
         3 -> "favorited"
         else -> "posts"
     }
-
+    // 首帧先摆上次那份（进他人主页不再先空一下），网络回来再覆盖
     val cachedPosts = remember(userId, wireTab) { Shrine.peekAuthorPosts(userId, wireTab) }
     var posts by remember { mutableStateOf(cachedPosts.orEmpty()) }
     var loading by remember { mutableStateOf(cachedPosts == null) }
@@ -709,7 +753,7 @@ private fun PostsSection(userId: String, total: Int, initialTab: Int, isSelf: Bo
     var postsReload by remember { mutableStateOf(0) }
 
     LaunchedEffect(userId, wireTab, postsReload) {
-
+        // 已经有内容（缓存直出 / 上次拉到的）就静默刷新，不整块换成「少女祈祷中」
         loading = posts.isEmpty()
         postsFailed = false
         posts = try {
@@ -717,7 +761,7 @@ private fun PostsSection(userId: String, total: Int, initialTab: Int, isSelf: Bo
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             postsFailed = true
-            posts
+            posts // 刷新失败保留已有内容，只有手上空空才落进失败态
         }
         loading = false
     }
@@ -754,11 +798,15 @@ private fun PostsSection(userId: String, total: Int, initialTab: Int, isSelf: Bo
                 }
             )
         } else {
-
+            // 帖子多时全量平铺会把主页拉得老长：默认三条，展开后分页
             CollapsiblePostList(posts = posts, onOpenPost = onOpenPost)
         }
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+ * 禁言 / 警告面板
+ * ══════════════════════════════════════════════════════════════════ */
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -857,6 +905,10 @@ private fun WarnSheet(
     }
 }
 
+/**
+ * 身份调整面板（仅神主可见）：单选新身份，确认后立即生效并经社务箱通知对方。
+ * 与服务端 POST /users/{id}/role 对应（仅神主、不可自改）。
+ */
 @Composable
 private fun RoleSheet(
     targetName: String,

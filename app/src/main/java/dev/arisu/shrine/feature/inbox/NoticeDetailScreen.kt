@@ -62,8 +62,20 @@ import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
 import kotlinx.coroutines.launch
 
+/**
+ * 通知详情：任何通知都可以点进来查看完整内容，不再"没有路由就点了没反应"。
+ *
+ * · 正文卡：类型徽标 + 编号 + 时间 + 完整内容（列表里被截断的部分在这里完整呈现）
+ * · 功能区：收藏通知（开关）、标为未读、删除通知（确认框）——
+ *   与设置页同一套 SectionCard 行件，社务箱列表的动作这里都有
+ * · 行动：有跳转目标的给「前往查看」；回复类通知内置快捷回复框；
+ *   奉纳者申请类对宫司及以上给「前往审批」。
+ *
+ * 进入时按路由参数的 id 从服务器重取（进程回收后 Holder 失效也能恢复），
+ * Holder 里的那份作为首帧数据先渲染。
+ */
 object NoticeDetailHolder {
-
+    /** 进入详情前由社务箱设置；进程被回收后为 null，详情页按 id 重取 */
     var current: Notice? = null
 }
 
@@ -75,19 +87,21 @@ fun NoticeDetailScreen(
     onChanged: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-
+    // Holder 命中且 id 对得上才直接用，否则等按 id 重取
     var notice by remember {
         mutableStateOf(NoticeDetailHolder.current?.takeIf { it.id == noticeId })
     }
     var loadFailed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var replyOpen by rememberSaveable { mutableStateOf(false) }
-
+    // 快捷回复写到一半去「前往查看」核对，回来不丢
     var reply by rememberSaveable { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var bar by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
 
+    // Holder 没接上（进程回收/系统通知直达）时按 id 重取。
+    // id 为空（路由参数被拼坏）或取回 null（非数字 id）同样进失败态，不能永远转圈
     LaunchedEffect(noticeId) {
         if (notice == null) {
             loadFailed = if (noticeId.isEmpty()) true else try {
@@ -101,9 +115,13 @@ fun NoticeDetailScreen(
     }
 
     LaunchedEffect(notice?.id) {
-
+        // 进详情即已读，且**无条件**向服务器重发一次：社务箱那跳的 markRead 可能在
+        // 弱网里悄悄失败，而 Holder 带着乐观的 read=true 进来——此前据此跳过补发，
+        // 结果通知在服务器上仍是未读：列表红点与角标赖着不走，只有「全部已读」能清
+        // （用户实测反馈）。服务端接口幂等（已读时 UPDATE 落空），多发一次无副作用。
         notice?.let { n ->
-
+            // 弱网下这一次标记可能悄悄失败（角标赖着不走，用户得反复进出才能清），
+            // 就地重试两轮再放行；服务端接口幂等，多发几次无副作用
             var ok = false
             for (attempt in 0 until 3) {
                 if (runCatching { Shrine.markRead(n.id) }.isSuccess) {
@@ -114,7 +132,7 @@ fun NoticeDetailScreen(
             }
             if (ok) {
                 notice = n.copy(read = true)
-
+                // 无论此前显示什么状态都回一次脏标记：让社务箱以服务器为准重取
                 onChanged()
             }
         }
@@ -137,7 +155,7 @@ fun NoticeDetailScreen(
 
         if (notice == null) {
             if (loadFailed) {
-
+                // 重取失败：给一次原地重试的机会，再不行就回社务箱
                 ShrineEmptyState(
                     note = "通知内容已不可用，请返回社务箱重新打开",
                     onClick = {
@@ -205,13 +223,14 @@ fun NoticeDetailScreen(
                     }
                 }
 
+                // 功能区：收藏 / 标为未读 / 删除，与设置页同一套行件
                 SectionCard(modifier = Modifier.padding(top = 10.dp)) {
                     SettingSwitchRow(
                         title = "收藏通知",
                         checked = current.starred,
                         icon = Icons.Rounded.Star,
                         onCheckedChange = { want ->
-
+                            // 乐观更新，失败回滚并就地提示
                             notice = current.copy(starred = want)
                             scope.launch {
                                 try {
@@ -268,6 +287,7 @@ fun NoticeDetailScreen(
                     )
                 }
 
+                // 回复类通知：内置快捷回复（与 WebUI 一致），直接回到目标帖子的评论区
                 if (current.kind == dev.arisu.shrine.data.model.NoticeKind.REPLY && route?.startsWith("post/") == true) {
                     Spacer(Modifier.height(10.dp))
                     TextButton(onClick = { replyOpen = !replyOpen }) {
@@ -281,7 +301,7 @@ fun NoticeDetailScreen(
                                 onValueChange = { if (it.length <= 2000) reply = it },
                                 placeholder = "回复这篇帖子…",
                                 modifier = Modifier.weight(1f),
-
+                                // 回车即换行
                                 singleLine = false,
                                 maxLines = 5,
                             )
@@ -292,7 +312,8 @@ fun NoticeDetailScreen(
                                     sending = true
                                     scope.launch {
                                         try {
-
+                                            // route 后缀可能是 arisu_000123 也可能是纯数字；
+                                            // postKey 两种形态都认，这里再拼一次前缀会变成双重前缀解析成 0
                                             val postNo = route.removePrefix("post/")
                                             Shrine.addComment(postNo, reply.trim())
                                             reply = ""
@@ -315,6 +336,9 @@ fun NoticeDetailScreen(
                         }
                     }
                 }
+
+                // 举报/申请类通知的处理入口都由上方主按钮承担（route 机制），
+                // 这里不再放第二枚指向相同目标的文字按钮
 
                 Spacer(Modifier.height(24.dp))
             }

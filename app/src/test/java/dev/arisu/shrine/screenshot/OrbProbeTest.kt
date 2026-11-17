@@ -32,6 +32,11 @@ import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
+/**
+ * 阴阳玉探针：盯的是**朱底按钮上那颗载入玉**——此前「白 + 白32%」两瓣都是浅色，
+ * 18dp 下糊成一坨，用户点名两次「不像太极球」。这里渲染真实按钮组件，
+ * 亮暗两套主题各录一张，改配色前后都能拿来对着看。
+ */
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [35], qualifiers = "w411dp-h891dp-xhdpi")

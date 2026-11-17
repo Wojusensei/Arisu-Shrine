@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-
+<!-- 仅 debug 包放行明文：模拟器 10.0.2.2 与局域网 192.168.10.x 的开发服都是 http -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

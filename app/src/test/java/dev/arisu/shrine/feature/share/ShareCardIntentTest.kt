@@ -10,6 +10,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
+/** 分享面板的预览图由系统进程读取，chooser 必须带上同一 URI 的临时读权限。 */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class ShareCardIntentTest {

@@ -152,12 +152,25 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** 回复对象的 saved state 载体：Comment 经 kotlinx 序列化成 JSON 字符串。 */
 private val replyJson = Json { ignoreUnknownKeys = true }
 private val ReplySaver = Saver<Comment?, String>(
     save = { it?.let { c -> replyJson.encodeToString(Comment.serializer(), c) } },
     restore = { it?.let { s -> runCatching { replyJson.decodeFromString(Comment.serializer(), s) }.getOrNull() } },
 )
 
+/**
+ * 帖子详情。
+ *
+ * 标题栏：返回 + 更多（编辑 / 删除 / 复制帖子编号 / 举报）
+ * 正文：  标题 / 作者卡 / Markdown 正文卡（图片可点开全屏）
+ * 互动：  顶 / 追踪 / 收藏 / 评论，四等分，整条一块凸起面
+ * 评论：  按主消息归组（回复紧跟父消息，回复与父消息之间不画分割线），长按评论弹出复制 / 举报 / 删除
+ * 底部：  悬浮的毛玻璃输入条（表情面板 + 发送）
+ *
+ * 改帖不在这里做：走 [onEditPost] 去发帖页那套整页面板（弹窗里既写不下长文、
+ * 也没地方给封面重新取景）。改完退回来重新取一遍，页面拿到的就是新稿。
+ */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun PostDetailScreen(
@@ -172,11 +185,13 @@ fun PostDetailScreen(
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
+    // 首帧：先把上次读到的帖与评论摆上来（列表点进来几乎无感），网络回来再覆盖。
+    // 拿得到缓存就当已就绪，刷新失败也不把用户从内容上踢下去
     var post by remember { mutableStateOf(Shrine.peekPost(postId)) }
     var comments by remember { mutableStateOf(Shrine.peekComments(postId) ?: emptyList()) }
-
+    // 显示用：回复归到主消息名下（分割线规则也依赖这个次序）
     val commentsShown = remember(comments) { comments.groupedByThread() }
-    var loadState by remember { mutableStateOf(if (post == null) "loading" else "ok") }
+    var loadState by remember { mutableStateOf(if (post == null) "loading" else "ok") } // loading | ok | missing | fail
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var notice by remember { mutableStateOf<String?>(null) }
     val me by Shrine.me.collectAsStateWithLifecycle()
@@ -185,9 +200,9 @@ fun PostDetailScreen(
     var menu by remember { mutableStateOf(false) }
     var deletingPost by remember { mutableStateOf(false) }
     var deletingComment by remember { mutableStateOf<Comment?>(null) }
-
+    // 顶/追踪共用一把在途锁：双击不再发两次 toggle
     var toggling by remember { mutableStateOf(false) }
-
+    // 评论点赞的在途锁与失败提示：连点会发多次 toggle（偶数次=没点上）
     var likedBusy by remember { mutableStateOf<Set<String>>(emptySet()) }
     var reporting by remember { mutableStateOf(false) }
     var reportTargetComment by remember { mutableStateOf<dev.arisu.shrine.data.model.Comment?>(null) }
@@ -196,38 +211,41 @@ fun PostDetailScreen(
     var collectionItems by remember { mutableStateOf<List<dev.arisu.shrine.data.model.Collection>>(emptyList()) }
     var activeCollectionId by remember { mutableStateOf<String?>(null) }
     var showEmoji by remember { mutableStateOf(false) }
-
+    // 奉纳弹窗（在途与动画状态由弹窗自管）
     var offering by remember { mutableStateOf(false) }
     var previewUrl by remember { mutableStateOf<String?>(null) }
-
+    // 评论附图：先落暂存件过一遍编辑器，再带圆环进度上传
     var pendingCommentImage by remember { mutableStateOf<java.io.File?>(null) }
     var uploadProgress by remember { mutableStateOf(-1f) }
-
+    // 已经收进表情夹的图：全屏看图里据此把「添加到表情包」变成「已添加」
     var collectedStickers by remember { mutableStateOf<Set<String>>(emptySet()) }
-
+    // 草稿与回复对象跨页面驻留：点评论者头像串门再回来，写到一半的话还在。
+    // 带选区：表情/提及插在光标处后，光标要跟着内容走，不能再落进 Markdown 里
     var draft by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(""))
     }
     var replyTo by rememberSaveable(stateSaver = ReplySaver) { mutableStateOf<Comment?>(null) }
-
+    // 草稿附带图：存的是本站图床 URL（上传后即定），发出去才离开草稿
     var draftImage by rememberSaveable { mutableStateOf<String?>(null) }
-
+    // 本地草稿只在进入页面时恢复一次；跨页面返回时 rememberSaveable 里的更近
     var draftLoaded by rememberSaveable(postId) { mutableStateOf(false) }
     var draftRestored by rememberSaveable(postId) { mutableStateOf(false) }
-
+    // 续读：只恢复一次；「上次读到」细线停在那条评论上方
     var restoreAttempted by rememberSaveable(postId) { mutableStateOf(false) }
     var lastReadMarker by rememberSaveable(postId) { mutableStateOf<String?>(null) }
     var uploadingImage by remember { mutableStateOf(false) }
     var newCollection by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
     var showMention by remember { mutableStateOf(false) }
-
+    // 触发选择器的那个 @ 在正文里的位置；选人后原位替换，不再假设它在末尾
     var mentionAt by remember { mutableStateOf(-1) }
 
+    // 首载与下拉刷新共用。刷新失败时保留已有内容继续阅读，只有首载才进入错误态
     suspend fun refresh() {
         try {
             val p = Shrine.post(postId)
-
+            // 长正文的块解析放到后台，主线程只负责渲染缓存结果；
+            // 解析失败也照常显示原文，不把整页打进错误态
             withContext(Dispatchers.Default) { runCatching { parseMarkdown(p.body) } }
             post = p
             comments = Shrine.commentsOf(postId)
@@ -252,13 +270,15 @@ fun PostDetailScreen(
             val uid = Shrine.me.value?.id
             if (uid != null && draft.text.isBlank() && draftImage == null && replyTo == null) {
                 val saved = DraftStore.get(uid, DraftStore.COMMENT_POST, postId)
-
+                // 读盘这几毫秒里用户可能已经落笔：那就别再用旧稿盖掉
                 if (saved != null && draft.text.isBlank() && draftImage == null && replyTo == null &&
                     (saved.body.isNotBlank() || saved.imageUrl != null || saved.replyToId != null)
                 ) {
                     draft = TextFieldValue(saved.body, TextRange(saved.body.length))
                     draftImage = saved.imageUrl
-
+                    // 评论列表取成功且找不到 → 原回复对象已删除，丢掉 parentId，
+                    // 否则发出去只会被服务端整条打回；正文与附图仍恢复。
+                    // 首载失败时列表可能为空，不能据此判断，保留草稿里的对象等重试
                     replyTo = saved.replyToId?.let { id ->
                         comments.firstOrNull { it.id == id }
                             ?: if (loadState == "ok") null else Comment(
@@ -273,11 +293,12 @@ fun PostDetailScreen(
                     draftRestored = true
                 }
             }
-
+            // 恢复完再放行自动保存，否则空表单会先把本地那份删掉
             draftLoaded = true
         }
     }
 
+    // 输入停顿后落盘；清空即删掉本地那份
     LaunchedEffect(draft.text, draftImage, replyTo, draftLoaded, post?.title) {
         if (!draftLoaded) return@LaunchedEffect
         val uid = Shrine.me.value?.id ?: return@LaunchedEffect
@@ -300,6 +321,10 @@ fun PostDetailScreen(
         )
     }
 
+    /**
+     * 服务端删评论会连整棵子树一起软删；本地列表与缓存也按同一范围移除，
+     * 否则子评论会留在界面上，重进还会从旧缓存里先闪一下。
+     */
     suspend fun forgetDeletedComment(target: Comment) {
         val removed = comments.subtreeIds(target.id)
         val left = comments.filterNot { it.id in removed }
@@ -311,6 +336,7 @@ fun PostDetailScreen(
         Shrine.cacheComments(postId, left)
     }
 
+    /** 上传评论附图：走放宽超时的上传通道，进度落在输入条的圆环上 */
     fun uploadCommentImage(file: java.io.File) {
         uploadingImage = true
         uploadProgress = 0f
@@ -326,6 +352,7 @@ fun PostDetailScreen(
         }
     }
 
+    // 足迹与续读
     LaunchedEffect(post?.id) {
         val p = post ?: return@LaunchedEffect
         val uid = Shrine.me.value?.id ?: return@LaunchedEffect
@@ -339,7 +366,7 @@ fun PostDetailScreen(
         val entry = HistoryStore.get(uid, HistoryStore.POST, postId) ?: return@LaunchedEffect
         val id = entry.lastCommentId ?: return@LaunchedEffect
         val index = commentsShown.indexOfFirst { it.id == id }
-
+        // 原评论被删时退到记下的下标，至少回到附近；找不到就放弃
         val target = if (index >= 0) index else entry.lastIndex
         if (target < 10 || target >= commentsShown.size) return@LaunchedEffect
         lastReadMarker = if (index >= 0) id else null
@@ -375,6 +402,7 @@ fun PostDetailScreen(
     val isAuthor = post != null && currentUser != null && post!!.authorId == currentUser.id
     val canDeletePost = isAuthor || (currentUser?.role?.canModerate ?: false)
 
+    // 页面底色由最外层的 PageBackground 提供，本页保持透明。
     Column(
         modifier
             .fillMaxSize()
@@ -412,14 +440,14 @@ fun PostDetailScreen(
                                 },
                             )
                         }
-
+                        // 宫司及以上：精华 / 置顶（服务端二次校验）
                         if ((currentUser?.role?.rank ?: 0) >= 4) {
                             DropdownMenuItem(
                                 text = { Text(if (post?.essence == true) "取消精华" else "设为精华") },
                                 leadingIcon = { MenuIcon(Icons.Rounded.Star) },
                                 onClick = {
                                     menu = false
-
+                                    // 与顶/追踪同一把在途锁：在途连点会来回 toggle
                                     if (!toggling) {
                                         toggling = true
                                         scope.launch {
@@ -521,6 +549,7 @@ fun PostDetailScreen(
                 .padding(vertical = 6.dp),
         )
 
+        // weight 必须在 Column 作用域内取好：gate 本体作为 Column 的加权子级
         val detailWeight = Modifier.fillMaxWidth().weight(1f)
         ShrineLoadGate(loading = loadState == "loading", modifier = detailWeight) {
         when (loadState) {
@@ -542,12 +571,12 @@ fun PostDetailScreen(
                     LazyColumn(
                         state = listState,
                         modifier = Modifier.fillMaxSize(),
-
+                        // 底部留白要盖过悬浮输入条，最后一条评论才不会被压住
                         contentPadding = PaddingValues(
                             start = 16.dp,
                             end = 16.dp,
                             top = 18.dp,
-
+                            // 悬浮输入条会随手写的内容增高：回复条 60 + 附图预览 68 都要让出来
                             bottom = 122.dp +
                                 (if (replyingTo != null) 60.dp else 0.dp) +
                                 (if (draftImage != null) 68.dp else 0.dp),
@@ -561,7 +590,7 @@ fun PostDetailScreen(
                                 post = p,
                                 onOffer = { offering = true },
                                 onUp = {
-
+                                    // 乐观更新，再交给服务器确认；在途防抖防双击双重 toggle
                                     if (!toggling) {
                                         toggling = true
                                         post = p.copy(upvoted = !p.upvoted, upCount = p.upCount + if (p.upvoted) -1 else 1)
@@ -571,7 +600,8 @@ fun PostDetailScreen(
                                                 post = post?.copy(upvoted = upped, upCount = count)
                                             } catch (e: Exception) {
                                                 errorMsg = e.toApiMessage()
-
+                                                // 只回滚这两个字段，不整体覆盖期间发生的其它更新；
+                                                // 回滚值是点击时的快照，若期间正好刷新过就再拉权威数据纠正
                                                 post = post?.copy(upvoted = p.upvoted, upCount = p.upCount)
                                                 runCatching { Shrine.post(postId) }.getOrNull()?.let { fresh ->
                                                     post = post?.copy(upvoted = fresh.upvoted, upCount = fresh.upCount)
@@ -606,7 +636,7 @@ fun PostDetailScreen(
                                         try {
                                             collectionItems = Shrine.collections()
                                         } catch (e: Exception) {
-
+                                            // 拉取失败不弹空面板，避免「没有收藏夹可选」的假象
                                             showCollections = false
                                             errorMsg = e.toApiMessage()
                                         }
@@ -624,7 +654,7 @@ fun PostDetailScreen(
                             itemsIndexed(
                                 commentsShown,
                                 key = { _, c -> c.id },
-
+                                // 有无图、是否楼中楼分槽，LazyColumn 复用得更准
                                 contentType = { _, c ->
                                     when {
                                         c.imageUrl != null && c.parentId != null -> "comment_image_reply"
@@ -634,7 +664,7 @@ fun PostDetailScreen(
                                     }
                                 },
                             ) { index, comment ->
-
+                                // 分割线只落在主消息与主消息之间：下一条是回复就不画
                                 val dividerAfter = index == commentsShown.lastIndex ||
                                     commentsShown[index + 1].parentId == null
                                 CommentItem(
@@ -647,7 +677,7 @@ fun PostDetailScreen(
                                         if (comment.id in likedBusy) return@label
                                         likedBusy = likedBusy + comment.id
                                         scope.launch {
-
+                                            // 乐观更新先行，失败回滚并就地提示
                                             comments = comments.map {
                                                 if (it.id == comment.id) it.copy(
                                                     liked = !comment.liked,
@@ -670,7 +700,8 @@ fun PostDetailScreen(
                                     },
                                     onReply = { replyTo = comment },
                                     onDelete = {
-
+                                        // 删除一律先确认：自己的评论弹简单确认，
+                                        // 奉仕及以上删别人的评论需要理由（参考 B 站/QQ 的防误触）
                                         deletingComment = comment
                                     },
                                     onCopy = { clipboard.setText(AnnotatedString(comment.content)) },
@@ -685,12 +716,14 @@ fun PostDetailScreen(
                         }
                     }
 
+                    // 回到顶部阴阳玉：滚过一屏后浮现于左下角（输入条上方）
                     ScrollTopOrb(
                         listState = listState,
                         onClick = { scope.launch { listState.smoothScrollToTop() } },
                         modifier = Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 92.dp),
                     )
 
+                    // 输入条浮在内容之上，不占据列表高度
                     Column(
                         Modifier
                             .align(Alignment.BottomCenter)
@@ -711,7 +744,8 @@ fun PostDetailScreen(
                             uploading = uploadingImage,
                             uploadProgress = uploadProgress,
                             onDraftChange = { new ->
-
+                                // 只认刚敲下的一个 @：粘贴、撤销、改写不打扰；
+                                // 按公共前缀找插入点，光标在句中也能唤起
                                 if (new.text.length <= 2000) {
                                     insertedAt(draft.text, new.text)?.let { at ->
                                         if (new.text[at] == '@') {
@@ -725,7 +759,7 @@ fun PostDetailScreen(
                             onEmoji = { showEmoji = true },
                             onPickImage = pickImage@{ uri ->
                                 if (uploadingImage) return@pickImage
-
+                                // 先落暂存件再开编辑器：裁剪/旋转确定后才真的上传
                                 scope.launch {
                                     val file = try {
                                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -754,7 +788,8 @@ fun PostDetailScreen(
                                                 replyToUserId = replyTo?.authorId?.takeIf { it.isNotBlank() },
                                                 imageUrl = draftImage?.takeIf { it.isNotBlank() },
                                             )
-
+                                            // 发送成功即乐观落列表并清稿：此前先清稿再重取，
+                                            // 重取失败草稿没了、列表也没更新，用户会以为没发出去
                                             draft = TextFieldValue("")
                                             draftImage = null
                                             replyTo = null
@@ -785,6 +820,7 @@ fun PostDetailScreen(
         }
         }
 
+        /* ── 奉纳赛钱（赛钱箱 + 投币动画） ─────────────── */
         if (offering) {
             post?.let { cur ->
                 OfferSheet(
@@ -799,6 +835,7 @@ fun PostDetailScreen(
             }
         }
 
+        /* ── 删除帖子（作者直接删；管理删除需填理由） ──── */
         if (deletingPost) {
             ArisuConfirmDialog(
                 title = "删除帖子",
@@ -814,6 +851,7 @@ fun PostDetailScreen(
             )
         }
 
+        /* ── 删除评论（一律先确认） ──────────────────────── */
         deletingComment?.let { target ->
             if (target.mine) {
                 ArisuConfirmDialog(
@@ -843,6 +881,7 @@ fun PostDetailScreen(
             }
         }
 
+        /* ── 举报（理由必填） ───────────────────────────── */
         if (reporting) {
             ArisuConfirmDialog(
                 title = "举报内容",
@@ -860,6 +899,7 @@ fun PostDetailScreen(
             )
         }
 
+        /* ── 收藏夹选择面板 ─────────────────────────────── */
         if (showCollections) {
             ModalBottomSheet(onDismissRequest = { showCollections = false }) {
                 Column(
@@ -880,6 +920,7 @@ fun PostDetailScreen(
                     )
                     Spacer(Modifier.height(10.dp))
 
+                    // 每次打开面板重新初始化选中（if 块随面板离场，remember 状态随之重置）
                     var selectedCollectionId by remember { mutableStateOf<String?>(activeCollectionId) }
 
                     collectionItems.forEach { collection ->
@@ -888,7 +929,7 @@ fun PostDetailScreen(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
                                 .clickable {
-
+                                    // 只改选中，点「确认」才提交；再点已选中项 = 取消选中
                                     selectedCollectionId =
                                         if (selectedCollectionId == collection.id) null else collection.id
                                 }
@@ -928,6 +969,7 @@ fun PostDetailScreen(
 
                     Spacer(Modifier.height(14.dp))
 
+                    // 确认按钮：选中夹子后提交；帖子已收藏但未选中任何夹子时，按钮转为「移出收藏」
                     val moving = selectedCollectionId == null && (post?.favorited == true)
                     SheetButton(
                         text = if (moving) "移出收藏" else "确认",
@@ -940,8 +982,13 @@ fun PostDetailScreen(
                                 try {
                                     val targetName = collectionItems
                                         .firstOrNull { it.id == selectedCollectionId }?.name
-                                    val favored = Shrine.setFavorite(postId, selectedCollectionId?.toLongOrNull())
-
+                                    // collection_id=0 = 服务端的「移出收藏」显式指令；
+                                    // 传默认夹 id 会把别夹的帖子悄悄搬进默认夹
+                                    val favored = Shrine.setFavorite(
+                                        postId,
+                                        if (moving) 0L else selectedCollectionId?.toLongOrNull(),
+                                    )
+                                    // 收藏数本地同步：换夹子不算增减，只有入藏/移出才 ±1
                                     val delta = if (favored == (post?.favorited == true)) 0 else if (favored) 1 else -1
                                     post = post?.copy(favorited = favored, saveCount = (post?.saveCount ?: 0) + delta)
                                     activeCollectionId = if (favored) selectedCollectionId else null
@@ -967,7 +1014,7 @@ fun PostDetailScreen(
                         Spacer(Modifier.width(10.dp))
                         SheetButton(
                             text = "新建",
-
+                            // 与确认按钮共用 sheetBusy：连点会并发建出两个同名夹
                             enabled = newCollection.isNotBlank() && !sheetBusy,
                             onClick = label@{
                                 if (sheetBusy) return@label
@@ -990,15 +1037,17 @@ fun PostDetailScreen(
             }
         }
 
+        /* ── 表情面板 ───────────────────────────────────── */
         if (showEmoji) {
             EmojiSheet(
                 onSelect = { draft = insertMark(draft, MdMark(it)) },
-
+                // 评论只带一张图，表情包点一下就挂在这张图上
                 onSticker = { sticker -> draftImage = sticker.url },
                 onDismiss = { showEmoji = false },
             )
         }
 
+        /* ── 提及选择器：输入 @ 唤起，选人后把触发用的 @ 替换成完整编号 ── */
         if (showMention) {
             MentionPickerSheet(
                 visible = true,
@@ -1009,7 +1058,7 @@ fun PostDetailScreen(
                 onPick = { u ->
                     val at = mentionAt.takeIf { it in draft.text.indices && draft.text[it] == '@' }
                     draft = if (at != null) {
-
+                        // 光标落到 “@编号 ” 之后：接着打字才不会把编号拆开
                         draft.replaceRangeWith(at, at + 1, "@${u.id} ")
                     } else {
                         val insert = "@${u.id} "
@@ -1021,13 +1070,14 @@ fun PostDetailScreen(
             )
         }
 
+        /* ── 图片放大 ───────────────────────────────────── */
         val previewing = previewUrl
         if (previewing != null) {
             ImageViewerDialog(
                 url = previewing,
                 addedToStickers = previewing in collectedStickers,
                 onAddSticker = { imageUrl ->
-
+                    // 成败由看图器自己在底部提示，这里只负责落库与状态
                     Shrine.addSticker(imageUrl)
                     collectedStickers = collectedStickers + imageUrl
                 },
@@ -1035,6 +1085,7 @@ fun PostDetailScreen(
             )
         }
 
+        /* ── 附图编辑：盖在全屏之上，确定才上传 ─────────── */
         val editingImage = pendingCommentImage
         if (editingImage != null) {
             dev.arisu.shrine.feature.editor.ImageEditorOverlay(
@@ -1052,6 +1103,10 @@ fun PostDetailScreen(
         }
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+ * 正文
+ * ══════════════════════════════════════════════════════════════════ */
 
 @Composable
 private fun PostHead(
@@ -1088,6 +1143,7 @@ private fun PostHead(
             fontWeight = FontWeight.Bold,
         )
 
+        // 介绍语：列表里那张摘要卡看得到，进来反而没有——补在标题下、编号上
         if (post.intro.isNotBlank()) {
             Spacer(Modifier.height(8.dp))
             Text(
@@ -1099,6 +1155,7 @@ private fun PostHead(
 
         Spacer(Modifier.height(6.dp))
 
+        // 帖子编号独立成行，编号是本站的门牌
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = "帖子编号",
@@ -1117,6 +1174,7 @@ private fun PostHead(
 
         Spacer(Modifier.height(17.dp))
 
+        // 作者信息与正文平铺，一条细线分割
         Row(verticalAlignment = Alignment.CenterVertically) {
             ArisuAvatar(
                 seed = 0,
@@ -1153,6 +1211,7 @@ private fun PostHead(
         Spacer(Modifier.height(16.dp))
         HairlineDivider()
 
+        // 封面图铺在正文上方，点击放大（与正文图片同一套预览）
         post.coverUrl?.let { cover ->
             Spacer(Modifier.height(16.dp))
             coil3.compose.AsyncImage(
@@ -1177,6 +1236,10 @@ private fun PostHead(
         )
     }
 }
+
+/* ══════════════════════════════════════════════════════════════════
+ * 互动栏
+ * ══════════════════════════════════════════════════════════════════ */
 
 @Composable
 private fun PostActionBar(
@@ -1280,7 +1343,7 @@ private fun ActionCell(
             modifier = Modifier.size(17.dp),
         )
         Spacer(Modifier.width(5.dp))
-
+        // 长数字宁可缩字号也不折行不出点：BasicText 自动从 12sp 往下找放得下的字号
         androidx.compose.foundation.text.BasicText(
             text = text,
             style = MaterialTheme.typography.labelMedium.copy(color = tint),
@@ -1293,6 +1356,12 @@ private fun ActionCell(
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 评论
+ * ══════════════════════════════════════════════════════════════════ */
+
+// @User_编号 提及：可点跳到对应社员主页；其余 @词保持纯文本。
+// 服务端只解析 @User_编号（昵称会重名），所以链接也只给这一形态
 private val commentMentionRe = Regex("""@user_0*(\d{1,12})""", RegexOption.IGNORE_CASE)
 
 private fun commentAnnotated(
@@ -1307,7 +1376,7 @@ private fun commentAnnotated(
     var last = 0
     for (m in commentMentionRe.findAll(content)) {
         append(content.substring(last, m.range.first))
-
+        // 编号归一成 User_000123 形态：手打的 @user_42 也能落到同一个人
         val no = "User_" + "%06d".format(m.groupValues[1].toLong())
         withLink(
             LinkAnnotation.Clickable(
@@ -1322,6 +1391,7 @@ private fun commentAnnotated(
     if (last < content.length) append(content.substring(last))
 }
 
+/** 续读位置的一条细线，停在上次最后读到的那条评论上方。 */
 @Composable
 private fun LastReadDivider() {
     Row(
@@ -1399,7 +1469,9 @@ private fun CommentItem(
             Spacer(Modifier.width(9.dp))
             Column(Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-
+                    // 昵称 + 徽标整体占一个弹性槽位，日期由槽位外的固定间隔顶到最右。
+                    // 此前昵称自带 weight(fill=false)，名字短时右端空档无人吸收，
+                    // 日期会随名字宽度左右漂移（用户实测：四行日期参差不齐）
                     Row(
                         Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically,
@@ -1447,10 +1519,11 @@ private fun CommentItem(
                     color = MaterialTheme.colorScheme.onSurface,
                 )
 
+                // 附图：拇指大的缩略图即可，点开仍可全屏看原图（大小关系参考 QQ）
                 comment.imageUrl?.let { url ->
                     Spacer(Modifier.height(6.dp))
                     coil3.compose.AsyncImage(
-
+                        // 列表里只显示 132dp 宽，拉原图纯属浪费：让服务端出 400px 缩略图
                         model = dev.arisu.shrine.core.net.thumbUrl(url, 400),
                         contentDescription = "评论附图",
                         contentScale = androidx.compose.ui.layout.ContentScale.Fit,
@@ -1481,7 +1554,8 @@ private fun CommentItem(
                             modifier = Modifier.size(14.dp),
                         )
                         Spacer(Modifier.width(4.dp))
-
+                        // 计数字槽定宽：「顶」与「顶 12」不再改变按钮宽度，
+                        // 右边紧挨的「回复」因此不会随着赞数横移（与日期同一套对齐纪律）
                         Box(Modifier.widthIn(min = 34.dp)) {
                             Text(
                                 text = if (comment.likeCount > 0) "顶 " + comment.likeCount else "顶",
@@ -1501,7 +1575,7 @@ private fun CommentItem(
                             .padding(horizontal = 6.dp, vertical = 3.dp),
                     )
                     Spacer(Modifier.weight(1f))
-
+                    // B 站式三点展开：常驻可见，不必长按摸索
                     IconButton(
                         onClick = { menu = true },
                         modifier = Modifier.size(26.dp),
@@ -1516,7 +1590,7 @@ private fun CommentItem(
                 }
             }
         }
-
+        // 回复与父消息之间不画线：只有下一条是新主消息时才分割
         if (showFollowingDivider) {
             HairlineDivider()
         }
@@ -1553,6 +1627,7 @@ private fun CommentItem(
     }
 }
 
+/** 悬浮在输入条上方的一行回复提示。 */
 @Composable
 private fun ReplyBanner(nickname: String, onCancel: () -> Unit) {
     Row(
@@ -1581,12 +1656,13 @@ private fun ReplyBanner(nickname: String, onCancel: () -> Unit) {
     }
 }
 
+/** 悬浮的毛玻璃输入条：表情 · 输入框 · 附图 · 朱色圆形发送。 */
 @Composable
 private fun CommentInputBar(
     draft: TextFieldValue,
     draftImage: String?,
     uploading: Boolean,
-
+    /** 0f–1f = 上传中；-1f = 空闲 */
     uploadProgress: Float,
     onDraftChange: (TextFieldValue) -> Unit,
     onEmoji: () -> Unit,
@@ -1600,7 +1676,7 @@ private fun CommentInputBar(
     ) { uri -> if (uri != null) onPickImage(uri) }
 
     Column(Modifier.fillMaxWidth().imePadding()) {
-
+        // 附图预览：发送前的落位与撤回，缩略图与评论区里的一致
         if (draftImage != null) {
             Row(
                 Modifier
@@ -1660,7 +1736,7 @@ private fun CommentInputBar(
                 placeholder = "说点什么…",
                 modifier = Modifier.weight(1f),
                 containerColor = NeuInset,
-
+                // 回车即换行，不再收起键盘或直接发送；条子随行数长高，到五行为止
                 singleLine = false,
                 maxLines = 5,
             )
@@ -1709,6 +1785,10 @@ private fun CommentInputBar(
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 小件
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Composable
 private fun MenuIcon(icon: ImageVector) {
     Icon(
@@ -1741,6 +1821,9 @@ private fun SheetButton(text: String, enabled: Boolean, onClick: () -> Unit, mod
     }
 }
 
+/** 把相册图片上传到神社，返回可访问的 URL。 */
+
+/** 只看「刚敲进去的一个字」：长度只多一、返回它落下的位置；粘贴/删除都不算 */
 private fun insertedAt(old: String, new: String): Int? {
     if (new.length != old.length + 1) return null
     var i = 0

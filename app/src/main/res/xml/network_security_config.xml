@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-
+<!-- 正式包禁明文：生产必须走 https。开发期的 http 明文只在 debug 源集放行
+     （app/src/debug/res/xml/network_security_config.xml 同名覆盖） -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
 </network-security-config>

@@ -19,17 +19,22 @@ import dev.arisu.shrine.core.design.NeuBaseHigh
 import dev.arisu.shrine.core.design.NeuInset
 import dev.arisu.shrine.core.markdown.MarkdownText
 
+/**
+ * 自定义区域：仿 GitHub 个人主页 README。
+ * Markdown + 安全 CSS（仅 border-radius / background-color / color / font-size），
+ * 未编辑时展示「hello there！」。隐藏该板块时由服务端不下发内容，此处兜底同样显示。
+ */
 @Composable
 fun CustomArea(
     markdown: String,
     safeCss: String,
     modifier: Modifier = Modifier,
 ) {
-    val css = remember(safeCss) { parseSafeCss(safeCss) }
-    val radiusDp = css["border-radius"]?.let { cssPxValue(it) }?.dp
-    val bg = css["background-color"]?.let { parseHexColor(it) }
-    val contentColor = css["color"]?.let { parseHexColor(it) }
-    val fontSize = css["font-size"]?.let { cssPxValue(it) }
+    val safe = remember(safeCss) { parseSafeCssValues(safeCss) }
+    val radiusDp = safe.radiusPx?.dp
+    val bg = safe.background
+    val contentColor = safe.color
+    val fontSize = safe.fontSizePx
 
     Column(
         modifier
@@ -54,25 +59,55 @@ fun CustomArea(
     }
 }
 
-private fun parseSafeCss(css: String): Map<String, String> =
-    css.split(';').mapNotNull { d ->
-        val i = d.indexOf(':')
-        if (i < 0) return@mapNotNull null
-        val k = d.substring(0, i).trim().lowercase()
-        val v = d.substring(i + 1).trim()
-        if (k in setOf("border-radius", "background-color", "color", "font-size") && v.isNotEmpty()) k to v else null
-    }.toMap()
+/** 安全 CSS 解析结果：主页渲染与编辑页预览共用同一份解析器（同一把尺） */
+internal data class SafeCssValues(
+    val radiusPx: Float? = null,
+    val background: Color? = null,
+    val color: Color? = null,
+    val fontSizePx: Float? = null,
+)
 
+/**
+ * 白名单解析 border-radius / background(-color) / color / font-size。
+ * 声明按 `;`、换行与花括号拆（编辑器里允许多行/带选择器写法），
+ * 两处（主页实况与编辑页预览）必须共用本函数，不许各写一份。
+ */
+internal fun parseSafeCssValues(css: String): SafeCssValues {
+    var radius: Float? = null
+    var background: Color? = null
+    var color: Color? = null
+    var fontSize: Float? = null
+    css.split(';', '\n', '{', '}').forEach { declaration ->
+        val colon = declaration.indexOf(':')
+        if (colon <= 0) return@forEach
+        val key = declaration.substring(0, colon).trim().lowercase()
+        val value = declaration.substring(colon + 1).trim()
+        when (key) {
+            "border-radius" -> cssPxValue(value)?.let { radius = it }
+            "background", "background-color" -> safeHexColor(value)?.let { background = it }
+            "color" -> safeHexColor(value)?.let { color = it }
+            "font-size" -> cssPxValue(value)?.let { fontSize = it }
+        }
+    }
+    return SafeCssValues(radius, background, color, fontSize)
+}
+
+/**
+ * px 数值上限与编辑资料页的预览解析（0..400）同规：没有这层，主页端的
+ * font-size: 99999px 会把任何访客看到的排版撑爆——两处解析器必须同一把尺子
+ */
 internal fun cssPxValue(raw: String): Float? =
     raw.filter { it.isDigit() || it == '.' }.toFloatOrNull()?.takeIf { it in 0f..400f }
 
-private fun parseHexColor(v: String): Color? {
-    val hex = v.removePrefix("#").trim()
+/** 3/6/8 位 hex：3 位展开、8 位按 CSS 的 #RRGGBBAA 通道序（不走 android 的 AARRGGBB 误序） */
+internal fun safeHexColor(raw: String): Color? {
+    val hex = raw.trim().removePrefix("#")
     return when (hex.length) {
-        3 -> runCatching {
-            Color(android.graphics.Color.parseColor("#" + hex.map { "$it$it" }.joinToString("")))
-        }.getOrNull()
-        6, 8 -> runCatching { Color(android.graphics.Color.parseColor("#$hex")) }.getOrNull()
+        3 -> hex.map { "$it$it" }.joinToString("").toLongOrNull(16)?.let { Color(0xFF000000L or it) }
+        6 -> hex.toLongOrNull(16)?.let { Color(0xFF000000L or it) }
+        8 -> hex.toLongOrNull(16)?.let {
+            Color(((it and 0xFF) shl 24) or (it ushr 8))
+        }
         else -> null
     }
 }

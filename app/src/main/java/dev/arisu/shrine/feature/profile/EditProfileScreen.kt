@@ -48,7 +48,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.arisu.shrine.core.components.ArisuAvatar
-import dev.arisu.shrine.core.components.cssPxValue
+import dev.arisu.shrine.core.components.parseSafeCssValues
 import dev.arisu.shrine.core.components.ArisuPrimaryButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.foundation.text.KeyboardOptions
@@ -85,6 +85,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.FileProvider
 import java.io.File
 
+/* ══════════════════════════════════════════════════════════════════
+ * 编辑资料
+ * ══════════════════════════════════════════════════════════════════ */
+
 private const val TARGET_FIXED = "fixed"
 private const val TARGET_ACTIVE = "active"
 
@@ -96,6 +100,13 @@ private val StatusEmojis = listOf(
     "😄", "😊", "😴", "🤔", "😎", "🥺", "🚀", "🌙",
 )
 
+/**
+ * 编辑资料。
+ *
+ * 全部字段（含头像与活跃头像开关）先落在本地草稿里，点底部悬浮的「保存」才统一写入；
+ * 头像图片上传只换来一个 URL 进草稿，未保存就退出不会改动资料
+ * （此前上传完立刻 PATCH，退出去也生效，用户实测反馈）。
+ */
 @Composable
 fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val me by Shrine.me.collectAsStateWithLifecycle()
@@ -103,6 +114,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
+    // 表单草稿驻留：跳相册/相机换头像，回来稿子还在
     var nickname by rememberSaveable { mutableStateOf(meState.nickname) }
     var signature by rememberSaveable { mutableStateOf(meState.signature) }
     var statusEmoji by rememberSaveable { mutableStateOf(meState.statusEmoji.orEmpty()) }
@@ -111,22 +123,27 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     var customMarkdown by rememberSaveable { mutableStateOf(meState.customMarkdown) }
     var customCss by rememberSaveable { mutableStateOf(meState.customCss) }
 
+    // 选头像会离开本页（相册/相机），回来不重置编辑/预览切换
     var customTab by rememberSaveable { mutableStateOf(TAB_EDIT) }
     var pickerTarget by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-
+    // 头像上传在途锁：上传中再点会并发发起第二次上传
     var avatarBusy by remember { mutableStateOf(false) }
 
     var email by rememberSaveable { mutableStateOf(meState.email) }
-
+    // 头像草稿：上传/拍照只拿到 URL 存进草稿，随「保存」一起提交；
+    // 未保存直接返回 = 什么都没改（服务端只在提交时收到新地址）
     var fixedAvatarDraft by rememberSaveable { mutableStateOf(meState.fixedAvatarUrl.orEmpty()) }
     var activeAvatarDraft by rememberSaveable { mutableStateOf(meState.activeAvatarUrl.orEmpty()) }
     var activeAvatarEnabledDraft by rememberSaveable { mutableStateOf(meState.activeAvatarEnabled) }
 
+    // 选好的图先落进暂存文件，交给裁剪页定圆形取景；确定后才真正上传。
+    // 两个都进 saveable：相机/相册往返期间进程被回收，回来还接着裁同一张
     var cropSource by rememberSaveable { mutableStateOf<String?>(null) }
     var cropTarget by rememberSaveable { mutableStateOf<String?>(null) }
 
+    // 退出前的未保存提醒：草稿逐项与资料对比（头像草稿也是保存才生效，一并算数）
     val dirty = nickname.trim() != meState.nickname ||
         signature != meState.signature ||
         statusEmoji != meState.statusEmoji.orEmpty() ||
@@ -140,9 +157,10 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     var confirmDiscard by remember { mutableStateOf(false) }
     androidx.activity.compose.BackHandler(enabled = dirty && !saving) { confirmDiscard = true }
 
+    /** 相册选图 → 暂存文件。先整份拷进来再解码：部分机型的相册/云图只允许读一次来源 Uri */
     suspend fun stagePick(uri: Uri): File {
         val dir = File(context.cacheDir, "upload").apply { mkdirs() }
-
+        // 按真实类型定扩展名：EXIF 方向与格式识别都按真实类型来
         val ext = when (context.contentResolver.getType(uri)) {
             "image/png" -> "png"
             "image/gif" -> "gif"
@@ -159,6 +177,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         return file
     }
 
+    /** 裁剪页确定后：把裁好的方形图送上传，只换回一个 URL 进草稿 */
     fun uploadAvatar(file: File, target: String) {
         if (avatarBusy) return
         avatarBusy = true
@@ -184,6 +203,8 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         }
     }
 
+    // 拍照是大内存场景，进程最容易在相机期间被回收：
+    // 待传目标与临时文件路径进 saveable，回收后结果回调仍能对上号
     var pendingAvatarTarget by rememberSaveable { mutableStateOf<String?>(null) }
     var rebinding by remember { mutableStateOf(false) }
     var rebindEmail by remember { mutableStateOf("") }
@@ -222,7 +243,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         val file = pendingCameraPath?.let(::File)
         pendingAvatarTarget = null
         pendingCameraPath = null
-
+        // 拍到的原图直接进裁剪页；暂存文件等裁剪页收尾时删（放弃也一样）
         if (ok && target != null && file != null && file.length() > 0) {
             cropSource = file.absolutePath
             cropTarget = target
@@ -232,7 +253,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     }
 
     fun launchCamera(target: String) {
-
+        // 顺手清掉历次进程死亡/失败遗留的孤儿截图（超过一天的都算）
         runCatching {
             File(context.filesDir, "camera").listFiles()?.forEach {
                 if (System.currentTimeMillis() - it.lastModified() > 24 * 3600_000L) it.delete()
@@ -246,6 +267,8 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         cameraLauncher.launch(uri)
     }
 
+    // 裁剪页盖在编辑页之上：选完图先进这里定圆形取景，确定才上传。
+    // 编辑草稿都在本行之上声明，这一层来回不会动到它们
     val crop = cropSource
     val cropTo = cropTarget
     if (crop != null && cropTo != null) {
@@ -266,6 +289,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
         return
     }
 
+    // 顶栏返回与系统返回同一道确认：改了一半退出去，改动静默消失（用户反馈）
     if (confirmDiscard) {
         AlertDialog(
             onDismissRequest = { confirmDiscard = false },
@@ -293,7 +317,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp),
             ) {
-
+                /* ── 头像 ─────────────────────────────────── */
                 SectionLabel("头像")
                 SectionCard {
                     AvatarNavRow(
@@ -317,7 +341,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     SettingSwitchRow(
                         title = "启用活跃头像",
                         checked = activeAvatarEnabledDraft,
-
+                        // 与头像同一份草稿：保存才生效
                         onCheckedChange = { on -> activeAvatarEnabledDraft = on },
                         showDivider = false,
                     )
@@ -331,6 +355,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     }
                 }
 
+                /* ── 基本资料 ─────────────────────────────── */
                 Spacer(Modifier.height(6.dp))
                 SectionLabel("基本资料")
                 SectionCard {
@@ -384,6 +409,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     }
                 }
 
+                /* ── 联系方式 ─────────────────────────────── */
                 Spacer(Modifier.height(6.dp))
                 SectionLabel("联系方式")
                 SectionCard {
@@ -411,13 +437,14 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                         FieldRow(
                             label = "个人博客 URL",
                             value = blogUrl,
-
+                            // 服务端 URL 字段上限 300
                             onValueChange = { if (it.length <= 300) blogUrl = it },
                             placeholder = "https://",
                         )
                     }
                 }
 
+                /* ── 自定义区域 ───────────────────────────── */
                 Spacer(Modifier.height(6.dp))
                 SectionLabel("自定义区域")
                 SectionCard {
@@ -443,7 +470,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                             )
                             ArisuTextField(
                                 value = customMarkdown,
-
+                                // 服务端自定义 Markdown 上限 20000 字
                                 onValueChange = { if (it.length <= 20000) customMarkdown = it },
                                 placeholder = "支持标题、粗体、列表、代码块、引用、表格……",
                                 singleLine = false,
@@ -463,7 +490,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                             )
                             ArisuTextField(
                                 value = customCss,
-
+                                // 服务端自定义 CSS 上限 20000 字
                                 onValueChange = { if (it.length <= 20000) customCss = it },
                                 placeholder = ".arisu-card { border-radius: 16px; background-color: #FDF9F6; }",
                                 singleLine = false,
@@ -484,6 +511,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                     )
                 }
 
+                // 给底部悬浮的保存条让出位置
                 Spacer(Modifier.height(96.dp))
             }
 
@@ -496,6 +524,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 )
             }
 
+            /* ── 悬浮保存条：与页面同色的凸起面，而不是另一层材质 ── */
             NeuSurface(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -509,7 +538,7 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
                 ArisuPrimaryButton(
                     text = if (saving) "保存中…" else "保存",
                     modifier = Modifier.padding(6.dp),
-
+                    // 昵称必填：清空了还让提交，只会收到服务端一句干巴巴的拒绝
                     enabled = !saving && nickname.isNotBlank(),
                     onClick = {
                         saving = true
@@ -676,6 +705,13 @@ fun EditProfileScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
     }
 }
 
+
+
+/* ══════════════════════════════════════════════════════════════════
+ * 头像选择
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 头像行：左 56dp 预览、中间标题与说明、右侧小箭头。 */
 @Composable
 private fun AvatarNavRow(
     seed: Int,
@@ -757,6 +793,10 @@ private fun SheetOption(icon: ImageVector, text: String, onClick: () -> Unit) {
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 带右下角计数的输入框
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Composable
 private fun CounteredField(
     label: String,
@@ -799,6 +839,10 @@ private fun CounteredField(
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 状态 emoji
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Composable
 private fun EmojiChip(emoji: String, selected: Boolean, onClick: () -> Unit) {
     Box(
@@ -821,8 +865,14 @@ private fun EmojiChip(emoji: String, selected: Boolean, onClick: () -> Unit) {
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 自定义区域
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 按 UTF-8 字节数计算长度：中文一个字 3 字节。 */
 private fun utf8Length(s: String) = s.toByteArray(Charsets.UTF_8).size
 
+/** 按 UTF-8 字节数截断，保证不切断多字节字符。 */
 private fun truncateUtf8(s: String, maxBytes: Int): String {
     if (utf8Length(s) <= maxBytes) return s
     val sb = StringBuilder()
@@ -836,6 +886,7 @@ private fun truncateUtf8(s: String, maxBytes: Int): String {
     return sb.toString()
 }
 
+/** 从自定义 CSS 里解析出来的四个安全属性。 */
 private data class SafeCss(
     val borderRadius: Dp? = null,
     val background: Color? = null,
@@ -843,34 +894,18 @@ private data class SafeCss(
     val fontSize: TextUnit? = null,
 )
 
+/** 预览与个人主页实况共用 core 里的同一份解析器，不许各写一份慢慢走样。 */
 private fun parseSafeCss(css: String): SafeCss {
-    var radius: Dp? = null
-    var background: Color? = null
-    var color: Color? = null
-    var fontSize: TextUnit? = null
-
-    css.split(';', '\n', '{', '}').forEach { declaration ->
-        val colon = declaration.indexOf(':')
-        if (colon <= 0) return@forEach
-        val key = declaration.substring(0, colon).trim().lowercase()
-        val value = declaration.substring(colon + 1).trim()
-        when (key) {
-            "border-radius" -> cssPxValue(value)?.let { radius = it.dp }
-            "background", "background-color" -> hexColor(value)?.let { background = it }
-            "color" -> hexColor(value)?.let { color = it }
-            "font-size" -> cssPxValue(value)?.let { fontSize = it.sp }
-        }
-    }
-    return SafeCss(borderRadius = radius, background = background, color = color, fontSize = fontSize)
+    val v = parseSafeCssValues(css)
+    return SafeCss(
+        borderRadius = v.radiusPx?.dp,
+        background = v.background,
+        color = v.color,
+        fontSize = v.fontSizePx?.sp,
+    )
 }
 
-private fun hexColor(raw: String): Color? {
-    val hex = raw.trim().removePrefix("#")
-    if (hex.length != 6) return null
-    val rgb = hex.toLongOrNull(16) ?: return null
-    return Color(0xFF000000L or rgb)
-}
-
+/** 预览：与个人主页的自定义区域同一枚凹面，套用解析出来的安全 CSS。 */
 @Composable
 private fun CustomPreview(markdown: String, css: String) {
     val safe = remember(css) { parseSafeCss(css) }
@@ -888,15 +923,17 @@ private fun CustomPreview(markdown: String, css: String) {
                 markdown = markdown.ifBlank { "这一页还空着，写点什么吧。" },
                 color = safe.color ?: MaterialTheme.colorScheme.onSurface,
                 style = MaterialTheme.typography.bodyMedium.copy(fontSize = safe.fontSize ?: 14.sp),
-
+                // 预览和主页同一套渲染（徽章原尺寸、连排），所见即所得
                 naturalImages = true,
             )
         }
     }
 }
 
+/** 两段式解码的取样倍率：先看尺寸再决定缩多少，避免整张原图进内存（实现收在 ImagePrep） */
 internal fun generateImageSample(width: Int, height: Int, target: Int): Int =
     dev.arisu.shrine.core.media.imageSampleSize(width, height, target)
 
+// 与注册页同一套邮箱正则：换绑弹窗在本地先挡一手，错误就地显示
 private val RebindEmailRegex = Regex("^[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}$")
 private fun isEmailLocal(s: String) = RebindEmailRegex.matches(s.trim())

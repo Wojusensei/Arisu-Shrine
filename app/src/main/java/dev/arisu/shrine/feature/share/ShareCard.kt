@@ -34,6 +34,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
+/** 分享卡的内容。帖子与绘马共用一套版式，只换类型与副标题。 */
 data class ShareCardData(
     val kind: String,
     val meta: String,
@@ -42,10 +43,14 @@ data class ShareCardData(
     val body: String,
     val author: String,
     val time: String,
-
+    /** 正文与封面里的图；分享卡最多画 4 张，多出来的在最后一格标 +N */
     val images: List<String> = emptyList(),
 )
 
+/**
+ * 生成一张和纸质感的分享卡：朱色气息、神社徽记、标题、正文摘要与落款。
+ * 版式固定 1080 宽，高度随内容，最高 2400；正文超长时逐行减少而不是无限拉长。
+ */
 object ShareCard {
 
     private const val WIDTH = 1080
@@ -54,6 +59,7 @@ object ShareCard {
     private const val MIN_HEIGHT = 960
     private const val CONTENT_W = WIDTH - PAD * 2
 
+    /** 最多画 4 张；再多在最后一格角标里标剩余数量 */
     private const val MAX_IMAGES = 4
     private const val IMAGE_GAP = 14
     private const val IMAGE_GAP_ABOVE = 42
@@ -75,6 +81,7 @@ object ShareCard {
         }
     }
 
+    /** 已经画好的位图直接走系统分享；御签卡等其它卡面共用这条出口 */
     suspend fun shareBitmap(
         context: Context,
         bitmap: Bitmap,
@@ -96,6 +103,7 @@ object ShareCard {
         }
     }
 
+    /** 分享面板的预览图由系统进程读取，必须把 URI 授权一并带到 chooser 上，否则只剩空标题 */
     internal fun chooserWithPreviewGrant(intent: Intent, chooserTitle: String): Intent =
         Intent.createChooser(intent, chooserTitle).apply {
             clipData = intent.clipData
@@ -119,12 +127,13 @@ object ShareCard {
         }
         val titleLayout = layout(data.title.ifBlank { "无题" }, titlePaint, CONTENT_W, 3)
 
+        // 正文配图先下到本地再排版：下载失败的那格画「图片」占位，不让整张卡失败
         val imageUrls = data.images.distinct().take(MAX_IMAGES)
         val imageBitmaps = imageUrls.map { loadBitmap(it) }
         val imageHeight = imagePlanHeight(imageUrls.size)
 
         try {
-
+            // 正文越长，行数越少，整张卡不超过 2400
             var bodyLines = 10
             var bodyLayout = layout(data.body, bodyPaint, CONTENT_W, bodyLines)
             while (bodyLines > 2) {
@@ -140,6 +149,7 @@ object ShareCard {
             val canvas = Canvas(bitmap)
             canvas.drawColor(paper)
 
+            // 顶部一层极淡的朱色气息
             val wash = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 shader = LinearGradient(
                     0f, 0f, 0f, 420f,
@@ -184,6 +194,7 @@ object ShareCard {
             (if (imageHeight > 0) IMAGE_GAP_ABOVE + imageHeight else 0) +
             56 + 96 + PAD
 
+    /** 一张大图、两张并排、三张 2+1、四张 2×2；高度与 drawImages 的排法严格对应 */
     private fun imagePlanHeight(count: Int): Int = when (count) {
         0 -> 0
         1 -> 500
@@ -290,7 +301,7 @@ object ShareCard {
             )
         }
         canvas.restore()
-
+        // 细边压住图片与纸的接缝，浅色图不会糊成一片
         canvas.drawRoundRect(
             rect,
             IMAGE_RADIUS,
@@ -334,7 +345,7 @@ object ShareCard {
         serifSemi: Typeface,
         serifBold: Typeface,
     ) {
-
+        // 左上朱印
         val seal = RectF(PAD.toFloat(), 74f, PAD + 64f, 138f)
         val sealPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = vermilion }
         canvas.drawRoundRect(seal, 12f, 12f, sealPaint)
@@ -391,6 +402,7 @@ object ShareCard {
         }
         canvas.drawText(data.time, PAD.toFloat(), footerY + 34f, time)
 
+        // 右下小印
         val seal = RectF((WIDTH - PAD - 84).toFloat(), (height - PAD - 84).toFloat(), (WIDTH - PAD).toFloat(), (height - PAD).toFloat())
         val sealPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = vermilion }
         canvas.drawRoundRect(seal, 14f, 14f, sealPaint)
@@ -412,8 +424,13 @@ object ShareCard {
         return file
     }
 
+    /** Markdown 摘要：图片交给卡面单独画，正文里不再留「图片」占位文字。 */
     fun plainText(markdown: String): String = markdownPlainText(markdown, keepImages = false)
 
+    /**
+     * 从正文里按出现顺序取图片地址，代码块/行内代码里的示例不算。
+     * 支持 Markdown 图片和 README 常见的 <img src>。
+     */
     fun images(markdown: String): List<String> {
         val cleaned = markdown
             .replace(Regex("```[\\s\\S]*?```"), "")
@@ -434,6 +451,7 @@ object ShareCard {
             .build()
     }
 
+    /** 分享卡只需要一张够画 936 宽的位图；按 1200 长边取样，防大图爆内存 */
     private fun loadBitmap(rawUrl: String): Bitmap? {
         return try {
             val url = when {

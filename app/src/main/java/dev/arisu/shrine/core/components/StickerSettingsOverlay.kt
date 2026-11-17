@@ -49,12 +49,19 @@ import dev.arisu.shrine.data.repo.Shrine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
+/**
+ * 表情包设置：添新表情 + 长按拖拽排序。
+ *
+ * 排序是草稿态：拖动只改本地顺序，点「保存」才写 stickers.sort_order。
+ * 带着未保存的改动想退出，先问一句（保存 / 不保存 / 继续调整）；
+ * 保存成功后留在本页——整理完往往还要接着收几张。
+ */
 @Composable
 fun StickerSettingsOverlay(onClose: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val items = remember { mutableStateListOf<Sticker>() }
-
+    // 已落库的顺序（草稿的对照基准）：载入、新收表情、保存成功时同步
     val savedOrder = remember { mutableStateListOf<String>() }
     var loading by remember { mutableStateOf(true) }
     var notice by remember { mutableStateOf<String?>(null) }
@@ -81,6 +88,7 @@ fun StickerSettingsOverlay(onClose: () -> Unit) {
         loading = false
     }
 
+    /** 落库当前顺序；after 在成功之后执行（保存成功后要退出的场景用） */
     fun save(after: () -> Unit) {
         if (saving) return
         saving = true
@@ -100,7 +108,7 @@ fun StickerSettingsOverlay(onClose: () -> Unit) {
     }
 
     fun requestClose() {
-
+        // 保存在途不许溜：请求随组合一起取消，顺序就白拖了
         if (saving) return
         if (dirty) confirmExit = true else onClose()
     }
@@ -110,7 +118,7 @@ fun StickerSettingsOverlay(onClose: () -> Unit) {
             try {
                 val sticker = Shrine.addSticker(url)
                 items.add(0, sticker)
-
+                // 新收的由服务端排在最前（sort_order 取最小值再减一），草稿基准跟上
                 savedOrder.add(0, sticker.id)
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -129,7 +137,7 @@ fun StickerSettingsOverlay(onClose: () -> Unit) {
         progress = 0f
         scope.launch {
             try {
-
+                // 表情不重编码动图：GIF 原样上传，收进来才还会动
                 collect(Shrine.uploadImageFromUri(context, uri) { progress = it })
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
@@ -158,6 +166,7 @@ fun StickerSettingsOverlay(onClose: () -> Unit) {
         )
     }
 
+    // 系统返回与下滑关闭都从这里过：有草稿先弹确认
     Dialog(onDismissRequest = { requestClose() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Box(
             Modifier
@@ -211,7 +220,7 @@ fun StickerSettingsOverlay(onClose: () -> Unit) {
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-
+                    // 底部保存条压着内容：留出高度，最后一排不会被盖住
                     Spacer(Modifier.height(92.dp))
                 }
             }
@@ -223,6 +232,7 @@ fun StickerSettingsOverlay(onClose: () -> Unit) {
                     modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 10.dp),
                 )
 
+                /* 悬浮保存条：与页面同色的凸起面（与编辑资料同规） */
                 NeuSurface(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -235,7 +245,7 @@ fun StickerSettingsOverlay(onClose: () -> Unit) {
                     ArisuPrimaryButton(
                         text = if (saving) "保存中…" else "保存",
                         modifier = Modifier.padding(6.dp),
-
+                        // 顺序没动过就没有可保存的东西，按钮保持凹下的禁用态
                         enabled = !saving && dirty,
                         busy = saving,
                         onClick = { save {} },
@@ -246,6 +256,7 @@ fun StickerSettingsOverlay(onClose: () -> Unit) {
     }
 }
 
+/** 「添加」格：上传中在同一格画圆环进度 */
 @Composable
 private fun AddCell(
     busy: Boolean,

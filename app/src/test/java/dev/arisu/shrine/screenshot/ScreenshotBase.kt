@@ -14,6 +14,12 @@ import dev.arisu.shrine.core.design.ArisuShrineTheme
 import org.junit.Rule
 import java.io.File
 
+/**
+ * 所有截图测试的公共基类。
+ *
+ * 通过 Robolectric + Roborazzi 在 JVM 上把 Compose 界面真实渲染成 PNG，
+ * 不需要模拟器、不需要真机。产物写到仓库根目录的 `screenshots/`。
+ */
 abstract class ScreenshotBase {
 
     @get:Rule
@@ -21,7 +27,7 @@ abstract class ScreenshotBase {
 
     protected fun shot(name: String, content: @Composable () -> Unit) {
         rule.setContent {
-
+            // 截图基线全部按亮色录制；darkTheme 默认 false，与基线一致
             ArisuShrineTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

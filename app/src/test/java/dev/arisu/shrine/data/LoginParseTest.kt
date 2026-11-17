@@ -6,6 +6,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
 
+/** 登录响应解析回归：服务端真实返回必须能被客户端 DTO 解码。 */
 class LoginParseTest {
 
     @Test

@@ -35,6 +35,13 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 
+/**
+ * 神社日志详情。
+ *
+ * 标题栏：返回 + 版本号
+ * 头部：新拟物凸起卡（版本号 / 发布渠道 / 发布时间 / 更新类型）
+ * 正文：完整的 Markdown
+ */
 @Composable
 fun ChangelogDetailScreen(
     version: String,
@@ -43,7 +50,7 @@ fun ChangelogDetailScreen(
 ) {
     var releases by remember { mutableStateOf<List<dev.arisu.shrine.data.model.ReleaseNote>?>(null) }
     var failed by remember { mutableStateOf(false) }
-
+    // 重试入口：effect 只认 reloadKey，只复位状态不递增它，点重试会永远停在加载态
     var reloadKey by remember { mutableStateOf(0) }
 
     LaunchedEffect(version, reloadKey) {

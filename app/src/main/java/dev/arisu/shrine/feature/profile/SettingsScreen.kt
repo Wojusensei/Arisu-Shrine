@@ -82,6 +82,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.launch
 
+/** 个人主页上可以被隐藏的展示项（标题 → 服务端 show_fields 键），默认全部展示。
+ *  仅列服务端实际支持的键：昵称/计数/成就/热度等始终展示。 */
 private val ProfileDisplayItems: List<Pair<String, String>> = listOf(
     "个性签名" to "signature",
     "个人状态" to "status",
@@ -91,6 +93,14 @@ private val ProfileDisplayItems: List<Pair<String, String>> = listOf(
     "个人邮箱" to "email",
 )
 
+/**
+ * 设置。
+ *
+ * 分组：个人主页展示 / 账号安全 / 通知范围 / 数据 / 关于。
+ * 每组一张与页面同色的凸起面（[SectionCard] 即 NeuSurface），行与行之间用
+ * 内缩发丝线分隔；页面本身不设底色，透出最外层的 PageBackground。
+ * 只有本地 UI 状态，真实项目里应落到 DataStore 并同步到后端。
+ */
 @Composable
 fun SettingsScreen(
     onBack: () -> Unit,
@@ -103,6 +113,7 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
+    // 展示开关从服务器配置初始化（show_fields 缺省视为展示）
     val visibility = remember(me) {
         mutableStateMapOf<String, Boolean>().apply {
             ProfileDisplayItems.forEach { (title, key) ->
@@ -113,7 +124,7 @@ fun SettingsScreen(
 
     var showChangePassword by remember { mutableStateOf(false) }
     var showLogout by remember { mutableStateOf(false) }
-
+    /** 0 = 未开始，1 = 第一次确认，2 = 输入「注销」二次确认 */
     var deactivateStage by remember { mutableStateOf(0) }
     var showExport by remember { mutableStateOf(false) }
 
@@ -122,12 +133,15 @@ fun SettingsScreen(
     var confirmPassword by remember { mutableStateOf("") }
     var deactivateInput by remember { mutableStateOf("") }
 
+    // 服务端消费的键：nickname（改昵称通知）/ follow_avatar（改头像通知）
     var notifyFollowNickname by remember(me) { mutableStateOf(me?.notifyScope?.get("nickname") ?: true) }
     var notifyFollowAvatar by remember(me) { mutableStateOf(me?.notifyScope?.get("follow_avatar") ?: false) }
 
     var busy by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf<String?>(null) }
 
+    // 乐观开关：失败要回滚界面并提示，否则「开关显示已改、服务器没改」，
+    // 退出重进又跳回旧值，用户无从判断
     fun patchShowField(key: String, value: Boolean, revert: () -> Unit) {
         scope.launch {
             try {
@@ -161,7 +175,7 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
         ) {
-
+            /* ── 外观 ─────────────────────────────────────── */
             SectionLabel("外观")
             SectionCard {
                 SettingSwitchRow(
@@ -170,7 +184,7 @@ fun SettingsScreen(
                     icon = Icons.Rounded.DarkMode,
                     checked = ArisuTheme.isDark,
                     onCheckedChange = { dark ->
-
+                        // 先切状态（全树即时重组，无需重建 Activity），再落盘偏好
                         ArisuTheme.setNightPref(dark)
                         scope.launch {
                             try {
@@ -186,12 +200,14 @@ fun SettingsScreen(
                 )
             }
 
+            /* ── 阅读 ─────────────────────────────────────── */
             Spacer(Modifier.height(6.dp))
             SectionLabel("阅读")
             SectionCard {
                 ReadingSizeRow()
             }
 
+            /* ── 个人主页展示 ─────────────────────────────── */
             Spacer(Modifier.height(6.dp))
             SectionLabel("个人主页展示")
             SectionCard {
@@ -215,6 +231,7 @@ fun SettingsScreen(
                 }
             }
 
+            /* ── 账号安全 ─────────────────────────────────── */
             Spacer(Modifier.height(6.dp))
             SectionLabel("账号安全")
             SectionCard {
@@ -257,6 +274,7 @@ fun SettingsScreen(
                 )
             }
 
+            /* ── 通知范围 ─────────────────────────────────── */
             Spacer(Modifier.height(6.dp))
             SectionLabel("通知范围")
             SectionCard {
@@ -279,6 +297,7 @@ fun SettingsScreen(
                 )
             }
 
+            /* ── 数据 ─────────────────────────────────────── */
             Spacer(Modifier.height(6.dp))
             SectionLabel("数据")
             SectionCard {
@@ -291,6 +310,7 @@ fun SettingsScreen(
                 )
             }
 
+            /* ── 关于 ─────────────────────────────────────── */
             Spacer(Modifier.height(6.dp))
             SectionLabel("关于")
             SectionCard {
@@ -325,6 +345,7 @@ fun SettingsScreen(
         }
     }
 
+    /* ── 改密码 ───────────────────────────────────────────── */
     if (showChangePassword) {
         val mismatch = newPassword.isNotEmpty() && confirmPassword.isNotEmpty() && newPassword != confirmPassword
         AlertDialog(
@@ -389,6 +410,7 @@ fun SettingsScreen(
         )
     }
 
+    /* ── 退出登录 ─────────────────────────────────────────── */
     if (showLogout) {
         AlertDialog(
             onDismissRequest = { showLogout = false },
@@ -417,6 +439,7 @@ fun SettingsScreen(
         )
     }
 
+    /* ── 注销账号（二次确认） ─────────────────────────────── */
     if (deactivateStage == 1) {
         AlertDialog(
             onDismissRequest = { deactivateStage = 0 },
@@ -484,6 +507,7 @@ fun SettingsScreen(
         )
     }
 
+    /* ── 数据导出：真生成 Markdown 并拉起系统分享面板 ──── */
     if (showExport) {
         AlertDialog(
             onDismissRequest = { showExport = false },
@@ -497,7 +521,7 @@ fun SettingsScreen(
                         scope.launch {
                             try {
                                 val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-
+                                    // 导出 = 网络取全文 + 写盘，贴文多时都是重活，留在主线程会掉帧甚至 ANR
                                     val md = Shrine.exportPostsMarkdown()
                                     val dir = File(context.cacheDir, "export").apply { mkdirs() }
                                     File(dir, "arisu_posts_export.md").apply { writeText(md) }
@@ -540,6 +564,7 @@ fun SettingsScreen(
     }
 }
 
+/** 正文字号：四档滑杆，拖动或点按落位。 */
 @Composable
 private fun ReadingSizeRow() {
     Column(Modifier.fillMaxWidth()) {
@@ -589,7 +614,7 @@ private fun ReadingSizeSlider() {
     var selected by remember {
         mutableIntStateOf(ReadingScale.steps.indexOf(ReadingScale.nearest(ReadingScale.value)))
     }
-
+    // 拖动过程中滑块跟手（连续值），松手才吸附到最近一档
     var dragValue by remember { mutableFloatStateOf(selected.toFloat()) }
     var dragging by remember { mutableStateOf(false) }
 

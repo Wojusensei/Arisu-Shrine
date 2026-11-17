@@ -9,6 +9,13 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+/**
+ * 令牌静态加密：AndroidKeyStore 内的 AES/GCM 密钥，密钥材料不出安全硬件。
+ * 密文格式 `enc:v1:<base64(iv||ciphertext)>`。
+ * - 读迁移：无前缀的存量明文原样透传，下次落盘自然变成密文
+ * - fail-closed：解密失败（密钥被清/密文被改/换机还原）返回 null，调用方必须按
+ *   「无令牌」处理——宁可重新登录，也不能把来历不明的密文当真
+ */
 object TokenCrypto {
 
     private const val PREFIX = "enc:v1:"
@@ -17,6 +24,7 @@ object TokenCrypto {
     private const val IV_LEN = 12
     private const val TAG_BITS = 128
 
+    /** Keystore 不可用（极旧设备/厂商裁剪）时回落明文：不把令牌丢掉，行为等同加固前 */
     fun encrypt(plain: String): String {
         if (plain.isEmpty()) return plain
         return try {
@@ -28,6 +36,7 @@ object TokenCrypto {
         }
     }
 
+    /** 返回 null 表示解不出可信令牌，调用方按未登录处理 */
     fun decrypt(stored: String): String? {
         if (stored.isEmpty()) return ""
         if (!stored.startsWith(PREFIX)) return stored

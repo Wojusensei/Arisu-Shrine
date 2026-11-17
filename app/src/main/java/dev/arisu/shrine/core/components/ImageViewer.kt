@@ -62,15 +62,23 @@ import dev.arisu.shrine.data.remote.toApiMessage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+/** 放大上限：再往里推只剩马赛克 */
 private const val VIEWER_MAX_ZOOM = 6f
 
+/** 双击落到的倍率 */
 private const val VIEWER_DOUBLE_ZOOM = 2.5f
 
+/**
+ * 全屏看图：双指缩放、单指拖动、双击放大/还原，长按弹「保存原图 / 添加到表情包」。
+ *
+ * 存相册存的是服务端上的原文件，不是屏幕上这张缩放图：29+ 走 MediaStore
+ * 挂起写，不要任何权限；26–28 先申请写外部存储权限再写公共图片目录。
+ */
 @Composable
 fun ImageViewerDialog(
     url: String,
     onDismiss: () -> Unit,
-
+    /** 传了才显示「添加到表情包」；挂起，成功与否由本弹窗自己提示 */
     onAddSticker: (suspend (String) -> Unit)? = null,
     addedToStickers: Boolean = false,
 ) {
@@ -115,7 +123,7 @@ fun ImageViewerDialog(
             Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.scrim.copy(alpha = 0.96f))
-
+                // 点空白处关闭；点在图上的抬手被图的指针处理吃掉，不会误关
                 .clickable { if (!menu) onDismiss() },
         ) {
             BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 8.dp)) {
@@ -123,7 +131,7 @@ fun ImageViewerDialog(
                 val viewportH = constraints.maxHeight.toFloat()
                 val intrinsic = painter.intrinsicSize
                 val hasSize = loaded && intrinsic.isSpecified && intrinsic.width > 0f && intrinsic.height > 0f
-
+                // 铺满展示（Fit）下的显示尺寸，用来算拖动边界
                 val fit = if (hasSize) minOf(viewportW / intrinsic.width, viewportH / intrinsic.height) else 1f
 
                 Box(
@@ -138,7 +146,7 @@ fun ImageViewerDialog(
                                 val maxX = ((displayW - viewportW) / 2f).coerceAtLeast(0f)
                                 val maxY = ((displayH - viewportH) / 2f).coerceAtLeast(0f)
                                 zoom = next
-
+                                // 图比屏幕小就回正，不给拖出黑边的机会
                                 offset = Offset(
                                     (offset.x + pan.x).coerceIn(-maxX, maxX),
                                     (offset.y + pan.y).coerceIn(-maxY, maxY),
@@ -147,7 +155,7 @@ fun ImageViewerDialog(
                         }
                         .pointerInput(url, hasSize) {
                             detectTapGestures(
-
+                                // 单击：没放大就关（沿用旧预览弹窗的习惯），放大中先回正
                                 onTap = {
                                     if (zoom > 1f) {
                                         zoom = 1f
@@ -189,6 +197,7 @@ fun ImageViewerDialog(
                     }
                 }
 
+                // 底部提示与操作：不做常驻按钮，全屏看图时尽量把画面留给图
                 Column(
                     Modifier
                         .align(Alignment.BottomCenter)
@@ -196,7 +205,8 @@ fun ImageViewerDialog(
                         .padding(bottom = 20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-
+                    // 结果提示（存相册／收表情）从下方弹出：看图时视线就在底部，
+                    // 提示浮到顶部或落回底层页面都会被错过
                     NoticePill(notice) { notice = null }
                     val hint = when {
                         saving -> "正在存进相册…"
@@ -208,7 +218,7 @@ fun ImageViewerDialog(
                         Text(
                             text = hint,
                             style = MaterialTheme.typography.labelSmall,
-
+                            // 浮在暗色 scrim 上，提示字恒白，不随主题走
                             color = Color.White.copy(alpha = 0.78f),
                         )
                     }
@@ -258,6 +268,10 @@ fun ImageViewerDialog(
     }
 }
 
+/**
+ * 看图器专用的结果提示片：浮在暗色 scrim 上，配色不跟主题走——
+ * 浅色主题的 inverseSurface 在这层黑底上等于隐形。
+ */
 @Composable
 private fun NoticePill(text: String?, onDismiss: () -> Unit) {
     var shown by remember { mutableStateOf("") }

@@ -3,6 +3,7 @@ package dev.arisu.shrine.core.components
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+/** 下拉刷新状态机（T19）：拉动距离 → 指示器透明度。 */
 class PullAlphaTest {
 
     @Test

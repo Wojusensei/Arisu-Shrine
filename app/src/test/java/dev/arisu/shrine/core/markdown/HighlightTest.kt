@@ -4,6 +4,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/**
+ * 语法高亮切词（纯函数）：五类词元认得出、字符串里的注释符号不误判、
+ * 别名方言能归一、不认识的方言按纯文本出。
+ */
 class HighlightTest {
 
     private fun kinds(code: String, lang: String): List<Pair<String, TokenKind>> =

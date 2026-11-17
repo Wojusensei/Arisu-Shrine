@@ -39,11 +39,17 @@ import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
 import kotlinx.coroutines.launch
 
+/**
+ * 拉黑名单：列出我拉黑的人并逐个解除。
+ *
+ * 拉黑是静默的——被拉黑方没有任何提示，这里也只给本人看；
+ * 管理侧没有查看「谁拉黑了谁」的入口。
+ */
 @Composable
 fun BlockedUsersScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
-
+    // 首帧预置（截图画廊/预览用）：非 null 时不联网
     initial: List<User>? = null,
 ) {
     var items by remember { mutableStateOf(initial) }

@@ -115,12 +115,18 @@ import dev.arisu.shrine.data.model.Role
 import dev.arisu.shrine.data.model.User
 import kotlinx.coroutines.delay
 
+/* ══════════════════════════════════════════════════════════════════
+ * 页面内部使用的小类型
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 列表三态：加载中 / 成功 / 失败。 */
 private sealed interface ListState<out T> {
     data object Loading : ListState<Nothing>
     data class Ok<T>(val items: List<T>, val total: Long) : ListState<T>
     data class Fail(val message: String) : ListState<Nothing>
 }
 
+// 祝部各子板块内容常驻：切走再切回直接显示上次内容、后台静默刷新（QQ 式板块切换）
 private data class EmaQuery(val tags: List<EmaTag>, val states: List<EmaState>, val sort: EmaSort)
 
 private const val EMA_PAGE_SIZE = 20
@@ -133,12 +139,14 @@ private data class StaffSnapshot(
 )
 private val staffMemory = BoardMemory<String, StaffSnapshot>()
 
+/** 三个子板块。 */
 private enum class ShrineTab(val label: String) {
     EMA("绘马"),
     STAFF("奉仕会"),
     LOG("神社日志"),
 }
 
+/** 绘马列表的时间排序。 */
 internal enum class EmaSort(val label: String) {
     NEWEST("最新"),
     OLDEST("最旧"),
@@ -160,6 +168,7 @@ private val EmaState.wire: String
         EmaState.CLOSED -> "closed"
     }
 
+/** 临时奉仕申请可投入的时间档位。 */
 private val EffortOptions = listOf(
     "1-3 小时",
     "3-5 小时",
@@ -167,6 +176,7 @@ private val EffortOptions = listOf(
     "10 小时以上",
 )
 
+/** 检查更新的结果：有新版本（带发布信息）/ 已是最新 / 失败。 */
 private sealed interface CheckState {
     data class UpdateAvailable(
         val release: dev.arisu.shrine.data.model.ReleaseNote,
@@ -176,8 +186,20 @@ private sealed interface CheckState {
     data object Failed : CheckState
 }
 
+/** 一行小提示，代替 android.widget.Toast。 */
 private data class ToastMessage(val text: String, val key: Long)
 
+
+/* ══════════════════════════════════════════════════════════════════
+ * 神社祝部
+ * ══════════════════════════════════════════════════════════════════ */
+
+/**
+ * 神社祝部。
+ *
+ * 标题栏：神社祝部 + 筛选 / 社务箱
+ * 子板块：绘马 / 奉仕会 / 神社日志
+ */
 @Composable
 fun ShrineBoardScreen(
     onOpenUser: (String) -> Unit = {},
@@ -187,10 +209,11 @@ fun ShrineBoardScreen(
     onOpenInbox: () -> Unit,
     onOpenChangelog: (String) -> Unit,
     modifier: Modifier = Modifier,
-
+    /** 截图工具用：直接打开第 N 个子板块 */
     initialTabIndex: Int = 0,
 ) {
-
+    // 子板块可跨页面驻留：进他人主页再返回，仍停在离开时的板块（此前用 remember，
+    // 返回即重置回绘马，从奉仕会成员串门回来像被弹回了大厅）
     var tab by rememberSaveable {
         mutableStateOf(ShrineTab.entries[initialTabIndex.coerceIn(0, ShrineTab.entries.size - 1)])
     }
@@ -230,6 +253,7 @@ fun ShrineBoardScreen(
 
         ShrineStaleBanner()
 
+        // 三个子板块之间淡入淡出
         Crossfade(
             targetState = tab,
             animationSpec = tween(220),
@@ -262,6 +286,10 @@ fun ShrineBoardScreen(
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 绘马
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Composable
 private fun EmaSection(
     tags: MutableList<EmaTag>,
@@ -271,7 +299,7 @@ private fun EmaSection(
     onOpenEma: (Int) -> Unit,
     onNewEma: () -> Unit,
 ) {
-
+    // 首帧：内存记忆 → 落盘缓存 → 都没有才转圈（冷启动进板块也不再先空一下）
     var state by remember {
         mutableStateOf(
             emaMemory.get(EmaQuery(tags.toList(), states.toList(), sort), Shrine.me.value?.id)
@@ -287,14 +315,20 @@ private fun EmaSection(
     }
     val scope = rememberCoroutineScope()
 
+    // 首载与下拉刷新共用同一份数据流。刷新失败时保留旧列表，只有首载无数据才进入失败态——
+    // 之前下拉一次就整页替换成加载态，接口一慢「少女祈祷中」就永远停在屏上。
+    // 请求序号：筛选连点/下拉刷新与晚到的旧响应竞态时，只有最新一次请求允许落地
     var loadSeq by remember { mutableStateOf(0) }
     var page by remember { mutableStateOf(1) }
     var endReached by remember { mutableStateOf(false) }
     var loadingMore by remember { mutableStateOf(false) }
     var loadMoreFailed by remember { mutableStateOf(false) }
-
+    // 刷新在途标志：load 会先把 page 置成按条数反推的页码，若此刻触底加载，
+    // seq/page 快照守卫恒通过，会把「旧筛选列表 + 新筛选第二页」拼在一起
     var refreshing by remember { mutableStateOf(false) }
 
+    // 多选筛选原样传服务端查全库：此前是「拉前 50 条回本地滤」，第 51 条起的
+    // 绘马永远不可见，页脚的「共 N 条」也在撒谎
     val load: suspend () -> Unit = {
         val seq = ++loadSeq
         refreshing = true
@@ -314,7 +348,8 @@ private fun EmaSection(
                 loadMoreFailed = false
                 endReached = result.items.size >= result.total
                 val fresh = ListState.Ok(result.items, result.total)
-
+                // 内容没变就不换对象：每次进屏都会重拉一页，等值时保持旧实例，
+                // 转场期间不再被一次全列表重组打断（data class 结构相等）
                 if ((state as? ListState.Ok) != fresh) state = fresh
                 Shrine.me.value?.id?.let {
                     emaMemory.put(EmaQuery(tags.toList(), states.toList(), sort), it, state)
@@ -362,6 +397,8 @@ private fun EmaSection(
         }
     }
 
+    // 换标签 / 状态 / 排序时：亮一次加载态并滚回顶部；只认真正的切换——
+    // 进绘马详情再返回时 effect 会重跑一次，那会儿清空/滚顶会打断读者（与茶话页同规矩）
     var emaFilterKey by rememberSaveable { mutableStateOf("") }
     val emaListState = rememberLazyListState()
     LaunchedEffect(tags.toList(), states.toList(), sort) {
@@ -382,6 +419,8 @@ private fun EmaSection(
                 onClearSort = { onSortChange(EmaSort.NEWEST) },
             )
 
+            // 分类页签：四类绘马分开看，单选（空 = 全部不筛）。
+            // 原先的分类藏在筛选弹层的多选标签里，入口太深，等于没有分类
             UnderlineTabs(
                 items = EmaTagTabs,
                 selected = tags.firstOrNull(),
@@ -407,7 +446,7 @@ private fun EmaSection(
                         if (s.items.isEmpty()) {
                             ShrineEmptyState(note = "没有绘马")
                         } else {
-
+                            // 距末尾还剩几屏就开始拉下一页（与茶话页同一套）
                             PrefetchOnApproach(emaListState, s.items.size) { loadMore() }
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
@@ -459,8 +498,10 @@ private fun EmaSection(
     }
 }
 
+/** 绘马分类页签：null = 全部（不筛），其余对应四个标签 */
 private val EmaTagTabs: List<EmaTag?> = listOf(null) + EmaTag.entries
 
+/** 已生效的筛选条件，点小叉即可移除。分类走页签，不在这里重复列出。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EmaFilterBar(
@@ -608,6 +649,7 @@ private fun EmaFilterSheet(
     }
 }
 
+/** 筛选面板里的可选中标签。 */
 @Composable
 private fun FilterPill(
     text: String,
@@ -634,6 +676,10 @@ private fun FilterPill(
     }
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 奉仕会
+ * ══════════════════════════════════════════════════════════════════ */
+
 private val StaffRoles = listOf(Role.KANNUSHI, Role.GUUJI, Role.HOUSHI, Role.TEMP_HOUSHI)
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -641,7 +687,7 @@ private val StaffRoles = listOf(Role.KANNUSHI, Role.GUUJI, Role.HOUSHI, Role.TEM
 private fun StaffSection(onOpenUser: (String) -> Unit) {
     var formOpen by remember { mutableStateOf(false) }
     val cachedStaff = remember { staffMemory.get("staff", Shrine.me.value?.id) }
-
+    // 落盘缓存兜底：冷启动直接进奉仕会也有名单，不再先转一圈
     val firstGroups = remember { cachedStaff?.groups ?: Shrine.peekStaff().orEmpty() }
     var groups by remember { mutableStateOf(firstGroups) }
     var loadState by remember {
@@ -660,11 +706,11 @@ private fun StaffSection(onOpenUser: (String) -> Unit) {
         try {
             groups = Shrine.staffGroups()
             loadState = ListState.Ok(groups, groups.sumOf { it.members.size }.toLong())
-
+            // 我的申请状态
             myApplication = Shrine.myStaffApplication()
             Shrine.me.value?.id?.let { staffMemory.put("staff", it, StaffSnapshot(groups, myApplication)) }
         } catch (e: Exception) {
-
+            // 已有内容时静默刷新失败保留旧列表，只有首载无数据才进入失败态
             if (loadState is ListState.Loading) loadState = ListState.Fail(e.toApiMessage())
         }
     }
@@ -712,7 +758,8 @@ private fun StaffSection(onOpenUser: (String) -> Unit) {
 
         item {
             Spacer(Modifier.height(20.dp))
-
+            // 申请状态：pending 等待审核；approved 已是奉仕会成员；
+            // rejected 一周后可再次申请（与服务端冷却一致）
             val app = myApplication
             val cooldownLeft = if (app.applied && app.status == "rejected" && app.createdAt > 0) {
                 val elapsed = (System.currentTimeMillis() / 1000) - app.createdAt
@@ -755,6 +802,7 @@ private fun StaffSection(onOpenUser: (String) -> Unit) {
     }
 }
 
+/** 临时奉仕的职责说明：左侧一条朱线，条目依次列出。 */
 @Composable
 private fun StaffDutyCard() {
     Column(
@@ -806,6 +854,7 @@ private fun DutyLine(text: String) {
     )
 }
 
+/** 同一层身份的人员卡片，多人时纵向排列并用分割线隔开。 */
 @Composable
 private fun StaffCard(members: List<User>, onOpenUser: (String) -> Unit) {
     SectionCard {
@@ -878,7 +927,8 @@ private fun VolunteerApplySheet(
 
     val sheetState = rememberModalBottomSheetState(
         skipPartiallyExpanded = true,
-
+        // 提交中禁止下滑/返回关闭：sheet 用自身 scope 发请求，提前离场会
+        // 掐死在途请求，用户不知道到底交没交上
         confirmValueChange = { !submitting },
     )
     ModalBottomSheet(
@@ -994,6 +1044,7 @@ private fun VolunteerApplySheet(
     }
 }
 
+/** 多行文本框外壳，样式与 ArisuTextField 的多行形态一致。 */
 @Composable
 private fun ArisuTextArea(
     value: String,
@@ -1026,6 +1077,10 @@ private fun ArisuTextArea(
     )
 }
 
+/* ══════════════════════════════════════════════════════════════════
+ * 神社日志
+ * ══════════════════════════════════════════════════════════════════ */
+
 @Composable
 private fun ChangelogSection(onOpenChangelog: (String) -> Unit) {
     var checkResult by remember { mutableStateOf<CheckState?>(null) }
@@ -1050,7 +1105,7 @@ private fun ChangelogSection(onOpenChangelog: (String) -> Unit) {
             loadState = ListState.Ok(releases, releases.size.toLong())
             Shrine.me.value?.id?.let { logMemory.put("log", it, releases) }
         } catch (e: Exception) {
-
+            // 已有内容时静默刷新失败保留旧列表，只有首载无数据才进入失败态
             if (loadState is ListState.Loading) loadState = ListState.Fail(e.toApiMessage())
         }
     }
@@ -1115,7 +1170,7 @@ private fun ChangelogSection(onOpenChangelog: (String) -> Unit) {
                     if (st.items.isEmpty()) {
                         item { ShrineEmptyState(note = "没有日志") }
                     } else {
-
+                        // version+channel 组合做 key：同版本号双渠道常见，单 version 重复即崩
                         items(st.items, key = { it.version + "-" + it.channel }, contentType = { "release" }) { release ->
                             ReleaseNoteCard(
                                 release = release,
@@ -1158,7 +1213,8 @@ private fun ChangelogSection(onOpenChangelog: (String) -> Unit) {
                     onClick = {
                         checkResult = null
                         result.downloadUrl?.let { url ->
-
+                            // 只放行 http(s)：ACTION_VIEW 对任意 scheme 都可能被外层应用
+                            // 当成输入（javascript:/intent: 等），下载地址必须锁死网页协议
                             val uri = android.net.Uri.parse(url)
                             val scheme = uri.scheme?.lowercase()
                             if (scheme == "http" || scheme == "https") {
@@ -1181,6 +1237,7 @@ private fun ChangelogSection(onOpenChangelog: (String) -> Unit) {
     }
 }
 
+/** 当前版本：凸起展示卡，右侧是朱色的检查更新胶囊。 */
 @Composable
 private fun CurrentVersionCard(version: String, checking: Boolean, onCheck: () -> Unit) {
     NeuSurface(
@@ -1229,6 +1286,7 @@ private fun CurrentVersionCard(version: String, checking: Boolean, onCheck: () -
     }
 }
 
+/** 轻提示：一枚悬浮的新拟物凸起小条，2.4 秒后自动消失。 */
 @Composable
 private fun ToastHint(
     message: ToastMessage,
@@ -1306,7 +1364,8 @@ private fun ReleaseNoteCard(release: ReleaseNote, onClick: () -> Unit) {
                 release.body,
                 modifier = Modifier.onSizeChanged { bodyHeightPx = it.height },
             )
-
+            // 只有正文真的超过 220dp 才盖渐隐；否则两条短说明的最后一行
+            // 也会被压暗，看起来像禁用文字
             if (bodyHeightPx >= maxBodyHeightPx) {
                 Box(
                     Modifier
@@ -1324,6 +1383,9 @@ private fun ReleaseNoteCard(release: ReleaseNote, onClick: () -> Unit) {
     }
 }
 
+
+
+/** 宫司及以上的申请批阅卡：待审列表 + 通过/婉拒（附言选填），与 WebUI 的批阅流一致。 */
 @Composable
 private fun PendingApplicationsCard(reloadKey: Int) {
     val scope = rememberCoroutineScope()
@@ -1342,7 +1404,8 @@ private fun PendingApplicationsCard(reloadKey: Int) {
             loadFailed = false
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-
+            // 刷新失败保留旧列表：不再把待审清单整块替换成空态（宫司会误以为没人申请）。
+            // 首载失败单独标出来——空列表 + 失败时「暂时没有」是在撒谎
             loadFailed = apps.isEmpty()
         }
         loading = false
@@ -1402,7 +1465,9 @@ private fun PendingApplicationsCard(reloadKey: Int) {
                         )
                         Spacer(Modifier.height(8.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-
+                            // 通过 = 朱色实底凸起胶囊（白字，一眼可辨）；
+                            // 婉拒 = 凹槽灰字。之前走 SoftPill，其 background
+                            // 参数被丢弃——白字压在白底上，谁都看不见
                             Box(
                                 Modifier
                                     .accentRaised(shape = RoundedCornerShape(999.dp), elevation = 6.dp)

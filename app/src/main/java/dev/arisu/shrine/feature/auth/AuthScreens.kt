@@ -75,11 +75,21 @@ import dev.arisu.shrine.data.remote.toApiMessage
 import dev.arisu.shrine.data.repo.Shrine
 import kotlinx.coroutines.launch
 
+/* ══════════════════════════════════════════════════════════════════
+ * 登录 / 注册 / 忘记密码
+ *
+ * 版心竖向居中偏上：品牌区 → 表单卡片 → 底部切换链接。
+ * 注册走邮箱验证码：邮箱 → 发送验证码（60s 冷却）→ 输码 + 设密码。
+ * 会话长期保活：登录成功后只要不主动退出，永不需要再登录。
+ * ══════════════════════════════════════════════════════════════════ */
+
 private const val MinPasswordLength = 8
 
 private val EmailRegex = Regex("^[A-Za-z0-9._%+\\-]+@[A-Za-z0-9.\\-]+\\.[A-Za-z]{2,}$")
 
 private fun isEmail(s: String) = EmailRegex.matches(s.trim())
+
+/* ── 注册 ─────────────────────────────────────────────────────── */
 
 @Composable
 fun RegisterScreen(
@@ -269,6 +279,8 @@ fun RegisterScreen(
     }
 }
 
+/* ── 登录 ─────────────────────────────────────────────────────── */
+
 @Composable
 fun LoginScreen(
     onLogin: () -> Unit,
@@ -283,7 +295,7 @@ fun LoginScreen(
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val vaultAccounts by Shrine.vaultAccounts.collectAsStateWithLifecycle()
-
+    // 点头像免密切换期间整排禁点，防止并发切两个账号
     var switching by remember { mutableStateOf(false) }
     var removingAccount by remember { mutableStateOf<dev.arisu.shrine.data.VaultAccount?>(null) }
 
@@ -292,6 +304,7 @@ fun LoginScreen(
 
         Spacer(Modifier.height(30.dp))
 
+        // 本机保存过账号时显示 QQ 式头像行：点一下免密回到那个账号
         if (vaultAccounts.isNotEmpty()) {
             Text(
                 text = "最近登录",
@@ -302,7 +315,7 @@ fun LoginScreen(
             Spacer(Modifier.height(10.dp))
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 4.dp),
-
+                // 账号少时整排居中，与上方居中的「最近登录」标题对齐；放不下时靠左可滑
                 horizontalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterHorizontally),
             ) {
                 vaultAccounts.take(5).forEach { account ->
@@ -317,14 +330,15 @@ fun LoginScreen(
                                         switching = true
                                         val ok = Shrine.switchAccount(account)
                                         if (!ok) {
-
+                                            // 令牌失效（30 天没用/被下线/改过密码）：预填邮箱走密码登录
                                             email = account.email
                                             error = "该账号需要重新登录"
                                         }
                                         switching = false
                                     }
                                 },
-
+                                // QQ 同款：长按头像删除本机账号记录（当前登录的账号在账号管理里
+                                // 没有移除入口，唯一账号的记录只能从这里删）
                                 onLongClick = { removingAccount = account },
                             )
                             .padding(4.dp),
@@ -381,6 +395,7 @@ fun LoginScreen(
 
             Spacer(Modifier.height(6.dp))
 
+            // 「忘记密码」右对齐放在密码框下方，避免和眼睛图标挤在同一侧
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 Text(
                     text = "忘记密码",
@@ -430,6 +445,8 @@ fun LoginScreen(
         AuthFootnote("社员编号依入社先后发放，自 User_000001 起")
     }
 
+    // 长按头像删除本机账号记录：只删档案不碰其他设备的会话；
+    // 该账号正在本机登录时顺带登出，避免「记录删了会话还挂着」
     removingAccount?.let { target ->
         dev.arisu.shrine.core.components.ArisuConfirmDialog(
             title = "删除这个账号记录？",
@@ -444,6 +461,8 @@ fun LoginScreen(
         )
     }
 }
+
+/* ── 忘记密码 ─────────────────────────────────────────────────── */
 
 @Composable
 fun ForgotPasswordScreen(
@@ -620,6 +639,9 @@ fun ForgotPasswordScreen(
     }
 }
 
+/* ── 共用小组件 ───────────────────────────────────────────────── */
+
+/** 「发送验证码」按钮：60 秒倒计时，等待时展示静止阴阳玉。 */
 @Composable
 private fun CodeSendButton(
     enabled: Boolean,
@@ -667,13 +689,17 @@ private fun AuthErrorText(error: String?) {
     }
 }
 
+/**
+ * 版心骨架：不设背景，只铺一枚很大、很淡、完整的鸟居做气氛。
+ */
 @Composable
 private fun AuthScaffold(
     modifier: Modifier = Modifier,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Box(modifier.fillMaxSize()) {
-
+        // 完整、不裁切、极淡的鸟居水印，压在版心之后。
+        // 用 InkFaint：亮色是暖灰压印、暗色是微亮压印；NeuShadow 在夜里是纯黑，水印会隐形
         Icon(
             imageVector = ShrineIcons.Torii,
             contentDescription = null,
@@ -695,7 +721,8 @@ private fun AuthScaffold(
             Column(
                 Modifier
                     .fillMaxWidth()
-
+                    // 顺序很重要：先 verticalScroll 再 heightIn，
+                    // heightIn 才会作用在 Column 自身上，Arrangement.Center 才生效。
                     .verticalScroll(rememberScrollState())
                     .heightIn(min = this@BoxWithConstraints.maxHeight),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -706,6 +733,7 @@ private fun AuthScaffold(
     }
 }
 
+/** 朱色印章式品牌标记：纯 Vermilion 实底 + 白色鸟居。 */
 @Composable
 private fun AuthBrandHeader(subtitle: String) {
     val shape = RoundedCornerShape(18.dp)
@@ -746,6 +774,7 @@ private fun AuthBrandHeader(subtitle: String) {
     }
 }
 
+/** 包住所有输入框的一张凸起面板：底同页，槽内凹。 */
 @Composable
 private fun AuthFormCard(content: @Composable ColumnScope.() -> Unit) {
     NeuSurface(
@@ -764,6 +793,7 @@ private fun AuthFormCard(content: @Composable ColumnScope.() -> Unit) {
     }
 }
 
+/** 输入框上方的小标签。 */
 @Composable
 private fun AuthFieldLabel(text: String) {
     Text(
@@ -777,6 +807,7 @@ private fun AuthFieldLabel(text: String) {
     )
 }
 
+/** 密码框右侧的眼睛图标，点击切换明文 / 遮蔽。 */
 @Composable
 private fun PasswordVisibilityToggle(
     visible: Boolean,
@@ -793,6 +824,7 @@ private fun PasswordVisibilityToggle(
     )
 }
 
+/** 底部灰色小字提示。 */
 @Composable
 private fun AuthFootnote(text: String) {
     Text(
@@ -804,6 +836,7 @@ private fun AuthFootnote(text: String) {
     )
 }
 
+/** 「已有账号？去登录」这类文字链接。 */
 @Composable
 private fun AuthTextLink(
     plain: String,

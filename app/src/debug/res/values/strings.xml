@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-
+<!-- 调试包专属：桌面图标名带「调试」后缀，与正式包（无后缀）肉眼可辨，
+     防止装完两个包之后点错（两包 applicationId 不同，可共存） -->
 <resources>
     <string name="app_name">有栖神社·调试</string>
 </resources>

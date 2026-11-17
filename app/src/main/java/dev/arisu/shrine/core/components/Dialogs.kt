@@ -19,6 +19,14 @@ import dev.arisu.shrine.core.design.Vermilion
 import dev.arisu.shrine.data.remote.toApiMessage
 import kotlinx.coroutines.launch
 
+/**
+ * 通用确认弹窗：确认钮内建防抖（在途期间禁用，杜绝连点重复提交），
+ * 可选理由输入（管理删除、举报这类必须填理由的场景）——填写内容经 [onConfirm]
+ * 的 reason 参数带回（未启用理由时为空串）。
+ * onConfirm 是挂起函数——失败时错误原文显示在弹窗里，弹窗保持打开可重试；
+ * 成功后的关窗由调用方在 onConfirm 里自己决定。
+ * 此前五六个确认弹窗各写一份、全都没有防抖，连点会向服务器发两笔请求。
+ */
 @Composable
 fun ArisuConfirmDialog(
     title: String,
@@ -26,7 +34,7 @@ fun ArisuConfirmDialog(
     confirmText: String = "确认",
     dismissText: String = "取消",
     reasonHint: String? = null,
-
+    // 理由上限：举报/管理理由服务端一律 500 字，整页粘贴不该等服务端来拒
     reasonMaxChars: Int = 500,
     enabled: Boolean = true,
     onConfirm: suspend (reason: String) -> Unit,
@@ -51,7 +59,7 @@ fun ArisuConfirmDialog(
                         value = reason,
                         onValueChange = { if (it.length <= reasonMaxChars) reason = it },
                         placeholder = reasonHint,
-
+                        // 理由不必挤在一行里：回车即换行（举报理由、删除理由、申请理由共用）
                         singleLine = false,
                         minLines = 2,
                         maxLines = 5,
