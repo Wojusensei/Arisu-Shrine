@@ -6,10 +6,12 @@
 </div>
 
 建造于人间之里外的飘渺存在 —— 高自由度论坛，由 *东方有栖神社开发组* 研制
+- 网页版：无需安装，浏览器直接访问 [arisushrine.com](https://arisushrine.com)，账号与安卓端通用
 - 用户社区：可加入官方 QQ 用户交流群：`1126676443`
 - 开发社区：有意向加入开发组 *东方有栖神社* 者可加入官方 QQ 用户交流群后添加管理员为好友进行申请，审核通过可加入开发者交流群，参与游戏研发或者日常讨论均可，不一定要参与论坛开发
 > [!IMPORTANT]
 > **当前版本**：稳定版 version 1.1.2.0
+> **网页版**：已上线 [arisushrine.com](https://arisushrine.com)，手机与电脑浏览器均可使用
 
 ## ⭐️ STAR
 [![Star History Chart](https://api.star-history.com/svg?repos=Wojusensei/Arisu-Shrine&type=date&legend=top-left)](https://www.star-history.com/#Wojusensei/Arisu-Shrine&type=date&legend=top-left)
@@ -20,6 +22,7 @@
 底部导航共四个 tab：**有栖茶话**、**神社祝部**、**神社游会**、**我的客房**
 底部导航栏固定在屏幕最下方，四个图标横向等距排列，当前选中 tab 图标高亮并显示文字标签，未选中则只显示图标
 **社务箱**入口不在底部导航，而位于顶部标题栏右侧邮件图标，图标右上角有未读红点数字
+*tips：网页端同构以上四个板块 —— 手机浏览器沿用底部导航（1:1 复刻安卓），电脑浏览器改为左侧栏布局，社务箱入口与未读红点逻辑不变*
 
 ### 有栖茶话
 - **正殿**：综合聊天发帖灌水新人报道区
@@ -321,9 +324,10 @@
 ## 仓库结构
 
 ```
-app/          Kotlin and Jetpack Compose
-server/       Go plus Gin and PostgreSQL and Redis
-web-preview/  HTML
+app/                  Kotlin and Jetpack Compose
+server/               Go plus Gin and PostgreSQL and Redis
+server/internal/web/  网页端，Go html/template SSR plus vanilla JS
+web-preview/          HTML
 ```
 
 ## 客户端构建
@@ -337,6 +341,13 @@ web-preview/  HTML
 
 - 发布签名在 `app/signing/keystore.properties` 提供
 - `storeFile / storePassword / keyAlias / keyPassword`，缺省发布包不签名
+
+## 网页端构建
+
+网页端不是独立工程：模板与静态资源都在 `server/internal/web/` 下，经 go:embed 打进服务端二进制，
+构建服务端即构建网页端，无需 Node 工具链
+- 改动网页端模板/静态资源后重启服务生效
+- 手机浏览器为安卓同款布局（底部导航），电脑浏览器为左侧栏布局，同一套模板按断点切换
 
 ## 服务端部署
 
@@ -352,6 +363,7 @@ docker compose -f docker-compose.prod.yml up -d --build
   `smtpdm.aliyun.com:465`，发信地址参考 `noreply@域名`）；
   未配置时生产模式会拒绝注册验证码请求
 - 日常备份：`./scripts/backup.sh`（可挂 crontab）数据库全量以及 uploads 打包
+- 部署完成网页端随二进制直接上线：论坛在 `/`，项目介绍在 `/home`，说明文档在 `/notes`
 
 ## 数据库迁移
 
@@ -379,6 +391,16 @@ docker compose -f docker-compose.prod.yml up -d --build
 | 分页 | Paging 3 |
 | Markdown 渲染 | Markwon |
 | 依赖注入 | Hilt |
+
+### 网页端
+
+| 类别 | 技术 |
+|---|---|
+| 渲染 | Go html/template（服务端渲染，go:embed 随二进制发布） |
+| 脚本 | 原生 JavaScript（动作层 + 心跳 + 夜间模式，无框架） |
+| 样式 | 手写 CSS，手机 1:1 复刻安卓 / PC 左侧栏，按断点切换 |
+| 会话 | HttpOnly Cookie + refresh 轮换，与安卓端 JWT 并存且做同源校验 |
+| 字体 | Noto Serif SC 按字频分档 woff，首屏只 preload 正文档 |
 
 ### 后端
 
